@@ -10,6 +10,7 @@ from code_modification.executor import (
 )
 from code_modification.git_workflow import current_branch
 from code_modification.governance import DEFAULT_INTEGRATION_BRANCH
+from code_modification.verifier import run_task_verification
 
 
 def run_git(repo, *args):
@@ -97,6 +98,12 @@ def test_start_commit_and_finalize_approved_task(tmp_path):
     assert committed.plan_steps[0].commit_hash == commit_hash
     assert "Add workflow marker" in layout.change_log_path.read_text(encoding="utf-8")
 
+    run_task_verification(
+        plan.task_id,
+        commands=["python -m compileall workflow.txt"],
+        project_root=repo,
+    )
+
     integrated = finalize_task_branch(plan.task_id, project_root=repo)
 
     assert integrated.status == "integrated"
@@ -136,6 +143,55 @@ def test_finalize_task_branch_requires_at_least_one_commit(tmp_path):
         assert "at least one task commit is required" in str(exc)
     else:
         raise AssertionError("Expected finalize without commits to fail")
+
+
+def test_finalize_task_branch_requires_passed_verification(tmp_path):
+    repo = init_repo(tmp_path)
+    plan, _layout = create_approval_record(repo)
+    start_approved_task(plan.task_id, approval_text="approved", project_root=repo)
+    (repo / "workflow.txt").write_text("workflow\n", encoding="utf-8")
+    commit_task_step(
+        plan.task_id,
+        summary="Add workflow marker",
+        files=["workflow.txt"],
+        project_root=repo,
+    )
+
+    try:
+        finalize_task_branch(plan.task_id, project_root=repo)
+    except CodeTaskExecutionError as exc:
+        assert "stage 4 verification must pass before finalizing" in str(exc)
+    else:
+        raise AssertionError("Expected finalize without verification to fail")
+
+
+def test_finalize_task_branch_rejects_failed_verification(tmp_path):
+    repo = init_repo(tmp_path)
+    plan, _layout = create_approval_record(repo)
+    start_approved_task(plan.task_id, approval_text="approved", project_root=repo)
+    (repo / "workflow.txt").write_text("workflow\n", encoding="utf-8")
+    commit_task_step(
+        plan.task_id,
+        summary="Add workflow marker",
+        files=["workflow.txt"],
+        project_root=repo,
+    )
+    (repo / "broken.py").write_text("def broken(:\n", encoding="utf-8")
+    try:
+        run_task_verification(
+            plan.task_id,
+            commands=["python -m compileall broken.py"],
+            project_root=repo,
+        )
+    except Exception:
+        pass
+
+    try:
+        finalize_task_branch(plan.task_id, project_root=repo)
+    except CodeTaskExecutionError as exc:
+        assert "stage 4 verification must pass before finalizing" in str(exc)
+    else:
+        raise AssertionError("Expected finalize with failed verification to fail")
 
 
 def test_commit_task_step_requires_task_branch(tmp_path):

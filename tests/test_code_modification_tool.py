@@ -1,6 +1,13 @@
 import json
 
-from tools.code_modification_tool import complete_code_task
+from code_modification.approval import build_approval_plan, write_approval_documents
+from code_modification.executor import commit_task_step, start_approved_task
+from tools.code_modification_tool import (
+    complete_code_task,
+    plan_code_task_verification,
+    record_code_task_safety_review,
+    run_code_task_verification,
+)
 
 
 def test_complete_code_task_writes_plan_and_approval_for_clear_requirement(tmp_path):
@@ -67,3 +74,86 @@ def test_complete_code_task_rejects_non_list_affected_areas(tmp_path):
         assert "affected_areas must be a list of strings" in str(exc)
     else:
         raise AssertionError("Expected TypeError for non-list affected_areas")
+
+
+def test_verification_tools_return_structured_results(tmp_path):
+    project_root = tmp_path / "hermes-agent"
+    project_root.mkdir()
+    _init_git_repo(project_root)
+    plan, layout = build_approval_plan(
+        "Add verification workflow support",
+        project_root,
+        affected_areas=("code_modification",),
+    )
+    write_approval_documents(plan, layout)
+    start_approved_task(plan.task_id, approval_text="approved", project_root=project_root)
+    (project_root / "code_modification").mkdir()
+    (project_root / "code_modification" / "marker.py").write_text("VALUE = 1\n", encoding="utf-8")
+    commit_task_step(
+        plan.task_id,
+        summary="Add verification marker",
+        files=["code_modification/marker.py"],
+        project_root=project_root,
+    )
+
+    planned = json.loads(
+        plan_code_task_verification(plan.task_id, project_root=str(project_root))
+    )
+    assert planned["success"] is True
+    assert planned["status"] == "verification_planned"
+    assert planned["planned_commands"]
+
+    verified = json.loads(
+        run_code_task_verification(
+            plan.task_id,
+            commands=["python -m compileall code_modification/marker.py"],
+            project_root=str(project_root),
+        )
+    )
+    assert verified["success"] is True
+    assert verified["status"] == "verification_passed"
+    assert verified["passed_commands"] == [
+        "python -m compileall code_modification/marker.py",
+    ]
+
+    reviewed = json.loads(
+        record_code_task_safety_review(
+            plan.task_id,
+            ["Does the workflow avoid broad staging?"],
+            answers=["Yes."],
+            conclusion="passed",
+            project_root=str(project_root),
+        )
+    )
+    assert reviewed["success"] is True
+    assert reviewed["status"] == "safety_reviewed"
+
+
+def _init_git_repo(repo):
+    import subprocess
+
+    subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True, text=True)
+    subprocess.run(
+        ["git", "config", "user.email", "tests@example.com"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    subprocess.run(
+        ["git", "config", "user.name", "Tests"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    (repo / "README.md").write_text("initial\n", encoding="utf-8")
+    subprocess.run(["git", "add", "README.md"], cwd=repo, check=True, capture_output=True, text=True)
+    subprocess.run(
+        ["git", "commit", "-m", "Initial commit"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    subprocess.run(["git", "switch", "-c", "main"], cwd=repo, check=True, capture_output=True, text=True)

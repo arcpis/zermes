@@ -62,6 +62,9 @@ class TestResolveToolset:
             "complete_code_task",
             "finalize_code_task_branch",
             "get_code_task_status",
+            "plan_code_task_verification",
+            "record_code_task_safety_review",
+            "run_code_task_verification",
             "start_approved_code_task",
         ]
 
@@ -245,6 +248,9 @@ class TestToolsetConsistency:
         assert "commit_code_task_step" in resolve_toolset("hermes-cli")
         assert "finalize_code_task_branch" in resolve_toolset("hermes-cli")
         assert "get_code_task_status" in resolve_toolset("hermes-cli")
+        assert "plan_code_task_verification" in resolve_toolset("hermes-cli")
+        assert "run_code_task_verification" in resolve_toolset("hermes-cli")
+        assert "record_code_task_safety_review" in resolve_toolset("hermes-cli")
 
 
 class TestPluginToolsets:

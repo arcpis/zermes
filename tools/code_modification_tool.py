@@ -15,6 +15,13 @@ from code_modification.executor import (
     start_approved_task,
 )
 from code_modification.git_workflow import GitWorkflowError
+from code_modification.verifier import (
+    CodeTaskVerificationError,
+    describe_task_verification,
+    plan_task_verification,
+    record_task_safety_review,
+    run_task_verification,
+)
 from tools.registry import registry, tool_error, tool_result
 
 
@@ -76,7 +83,7 @@ def start_approved_code_task(
             project_root=root,
             base_branch=str(base_branch).strip() if base_branch else None,
         )
-    except (CodeTaskExecutionError, GitWorkflowError) as exc:
+    except (CodeTaskExecutionError, CodeTaskVerificationError, GitWorkflowError) as exc:
         return tool_error(str(exc), success=False)
     return _execution_state_result(state)
 
@@ -129,9 +136,71 @@ def get_code_task_status(
     root = Path(project_root).expanduser() if project_root else Path(os.getcwd())
     try:
         status = describe_task_execution(str(task_id or ""), project_root=root)
+        status.update(describe_task_verification(str(task_id or ""), project_root=root))
     except (CodeTaskExecutionError, GitWorkflowError) as exc:
         return tool_error(str(exc), success=False)
     return tool_result(success=True, **status)
+
+
+def plan_code_task_verification(
+    task_id: str,
+    *,
+    project_root: str | None = None,
+    include_full_suite: bool = False,
+) -> str:
+    """Create a verification plan for an approved task branch."""
+    root = Path(project_root).expanduser() if project_root else Path(os.getcwd())
+    try:
+        state = plan_task_verification(
+            str(task_id or ""),
+            project_root=root,
+            include_full_suite=bool(include_full_suite),
+        )
+    except (CodeTaskExecutionError, CodeTaskVerificationError, GitWorkflowError) as exc:
+        return tool_error(str(exc), success=False)
+    return _verification_state_result(state)
+
+
+def run_code_task_verification(
+    task_id: str,
+    *,
+    commands: list[str] | None = None,
+    project_root: str | None = None,
+) -> str:
+    """Run planned or explicit verification commands for an approved task."""
+    root = Path(project_root).expanduser() if project_root else Path(os.getcwd())
+    try:
+        state = run_task_verification(
+            str(task_id or ""),
+            commands=commands,
+            project_root=root,
+        )
+    except (CodeTaskExecutionError, CodeTaskVerificationError, GitWorkflowError) as exc:
+        return tool_error(str(exc), success=False)
+    return _verification_state_result(state)
+
+
+def record_code_task_safety_review(
+    task_id: str,
+    questions: list[str] | None,
+    *,
+    answers: list[str] | None = None,
+    conclusion: str = "",
+    project_root: str | None = None,
+) -> str:
+    """Record the isolated safety review result for an approved task."""
+    root = Path(project_root).expanduser() if project_root else Path(os.getcwd())
+    try:
+        state = record_task_safety_review(
+            str(task_id or ""),
+            questions=questions or [],
+            answers=answers,
+            conclusion=str(conclusion or ""),
+            project_root=root,
+        )
+    except (CodeTaskExecutionError, CodeTaskVerificationError, GitWorkflowError) as exc:
+        return tool_error(str(exc), success=False)
+    return _verification_state_result(state)
 
 
 def _execution_state_result(state, **extra) -> str:
@@ -157,6 +226,38 @@ def _execution_state_result(state, **extra) -> str:
             / state.task_id
             / "final-report.md"
         ),
+        **extra,
+    )
+
+
+def _verification_state_result(state, **extra) -> str:
+    verification_path = (
+        Path(state.project_root).parent
+        / "self-evolution"
+        / "tasks"
+        / state.task_id
+        / "verification.md"
+    )
+    return tool_result(
+        success=True,
+        task_id=state.task_id,
+        status=state.status,
+        development_branch=state.development_branch,
+        verification_path=str(verification_path),
+        planned_commands=[
+            " ".join(command.command) for command in state.planned_commands
+        ],
+        passed_commands=[
+            " ".join(result.command)
+            for result in state.command_results
+            if result.status == "passed"
+        ],
+        failed_commands=[
+            " ".join(result.command)
+            for result in state.command_results
+            if result.status != "passed"
+        ],
+        blocked_reason=state.blocked_reason,
         **extra,
     )
 
@@ -327,6 +428,96 @@ GET_CODE_TASK_STATUS_SCHEMA = {
     },
 }
 
+PLAN_CODE_TASK_VERIFICATION_SCHEMA = {
+    "name": "plan_code_task_verification",
+    "description": (
+        "Create a verification plan for an approved self-evolution task branch. "
+        "This records planned tests, compile checks, and optional full-suite "
+        "coverage without running commands."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "task_id": {
+                "type": "string",
+                "description": "Task id created by complete_code_task.",
+            },
+            "project_root": {
+                "type": "string",
+                "description": "Optional git repository root. Defaults to the current directory.",
+            },
+            "include_full_suite": {
+                "type": "boolean",
+                "description": "When true, include the full scripts/run_tests.sh command in the plan.",
+            },
+        },
+        "required": ["task_id"],
+    },
+}
+
+RUN_CODE_TASK_VERIFICATION_SCHEMA = {
+    "name": "run_code_task_verification",
+    "description": (
+        "Run planned or explicit safe verification commands for an approved "
+        "self-evolution task branch and record the results."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "task_id": {
+                "type": "string",
+                "description": "Task id created by complete_code_task.",
+            },
+            "commands": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Optional explicit safe verification commands to run.",
+            },
+            "project_root": {
+                "type": "string",
+                "description": "Optional git repository root. Defaults to the current directory.",
+            },
+        },
+        "required": ["task_id"],
+    },
+}
+
+RECORD_CODE_TASK_SAFETY_REVIEW_SCHEMA = {
+    "name": "record_code_task_safety_review",
+    "description": (
+        "Record isolated safety review questions, answers, and conclusion for "
+        "an approved self-evolution task."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "task_id": {
+                "type": "string",
+                "description": "Task id created by complete_code_task.",
+            },
+            "questions": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Safety review questions checked in isolation.",
+            },
+            "answers": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Optional answers or findings for the safety review.",
+            },
+            "conclusion": {
+                "type": "string",
+                "description": "One of passed, failed, inconclusive, or not_required.",
+            },
+            "project_root": {
+                "type": "string",
+                "description": "Optional git repository root. Defaults to the current directory.",
+            },
+        },
+        "required": ["task_id", "questions"],
+    },
+}
+
 
 registry.register(
     name="complete_code_task",
@@ -394,4 +585,45 @@ registry.register(
     ),
     check_fn=check_code_modification_requirements,
     emoji="📋",
+)
+
+registry.register(
+    name="plan_code_task_verification",
+    toolset="code_modification",
+    schema=PLAN_CODE_TASK_VERIFICATION_SCHEMA,
+    handler=lambda args, **kw: plan_code_task_verification(
+        task_id=args.get("task_id", ""),
+        project_root=args.get("project_root"),
+        include_full_suite=args.get("include_full_suite", False),
+    ),
+    check_fn=check_code_modification_requirements,
+    emoji="🧪",
+)
+
+registry.register(
+    name="run_code_task_verification",
+    toolset="code_modification",
+    schema=RUN_CODE_TASK_VERIFICATION_SCHEMA,
+    handler=lambda args, **kw: run_code_task_verification(
+        task_id=args.get("task_id", ""),
+        commands=args.get("commands"),
+        project_root=args.get("project_root"),
+    ),
+    check_fn=check_code_modification_requirements,
+    emoji="🔬",
+)
+
+registry.register(
+    name="record_code_task_safety_review",
+    toolset="code_modification",
+    schema=RECORD_CODE_TASK_SAFETY_REVIEW_SCHEMA,
+    handler=lambda args, **kw: record_code_task_safety_review(
+        task_id=args.get("task_id", ""),
+        questions=args.get("questions"),
+        answers=args.get("answers"),
+        conclusion=args.get("conclusion", ""),
+        project_root=args.get("project_root"),
+    ),
+    check_fn=check_code_modification_requirements,
+    emoji="🛡️",
 )

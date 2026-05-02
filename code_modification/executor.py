@@ -175,6 +175,7 @@ def finalize_task_branch(
     require_open_state(state)
     if not state.commits:
         raise CodeTaskExecutionError("at least one task commit is required before finalizing")
+    require_passed_verification(layout.verification_path)
     try:
         merge_development_branch(
             root,
@@ -209,13 +210,17 @@ def describe_task_execution(task_id: str, *, project_root: str | Path) -> dict:
     layout = build_task_record_layout(root, task_id)
     state_path = layout.task_dir / STATE_FILE_NAME
     state = read_state(state_path) if state_path.exists() else None
+    verification_status = read_latest_verification_status(layout.verification_path)
     return {
         "task_id": layout.task_id,
         "has_plan": layout.plan_path.exists(),
         "has_approval": layout.approval_path.exists(),
         "has_change_log": layout.change_log_path.exists(),
+        "has_verification": layout.verification_path.exists(),
         "state_path": str(state_path),
         "change_log_path": str(layout.change_log_path),
+        "verification_path": str(layout.verification_path),
+        "verification_status": verification_status,
         "state": asdict(state) if state else None,
     }
 
@@ -361,6 +366,8 @@ def completed_step_text(steps: tuple[PlanStepRecord, ...], commit_hash: str) -> 
 
 
 def write_final_report(path: Path, state: ExecutionState) -> None:
+    verification_path = path.parent / "verification.md"
+    verification_status = read_latest_verification_status(verification_path)
     lines = [
         "# Final Report",
         "",
@@ -368,6 +375,7 @@ def write_final_report(path: Path, state: ExecutionState) -> None:
         f"- Status: `{state.status}`",
         f"- Development branch: `{state.development_branch}`",
         f"- Integration branch: `{state.integration_branch}`",
+        f"- Verification: `{verification_status or 'not recorded'}`",
         "",
         "## Commits",
         "",
@@ -384,6 +392,12 @@ def write_final_report(path: Path, state: ExecutionState) -> None:
             lines.append(f"- `{step.status}` {step.description}{suffix}")
     else:
         lines.append("- None recorded.")
+    lines.extend(["", "## Verification", ""])
+    if verification_path.exists():
+        lines.append(f"- Verification record: `{verification_path}`")
+        lines.append(f"- Latest status: `{verification_status or 'unknown'}`")
+    else:
+        lines.append("- No stage 4 verification record exists.")
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
@@ -399,3 +413,39 @@ def append_change_log(path: Path, status: str, lines: list[str]) -> None:
     with path.open("a", encoding="utf-8") as handle:
         handle.write("\n".join(rendered_lines))
         handle.write("\n")
+
+
+def read_latest_verification_status(path: Path) -> str | None:
+    state_path = path.parent / "verification-state.json"
+    if state_path.exists():
+        try:
+            return json.loads(state_path.read_text(encoding="utf-8")).get("status")
+        except (OSError, json.JSONDecodeError):
+            return "unreadable"
+    if not path.exists():
+        return None
+    statuses = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if line.startswith("## ") and " - " in line:
+            statuses.append(line.rsplit(" - ", 1)[-1].strip())
+    return statuses[-1] if statuses else "recorded"
+
+
+def require_passed_verification(path: Path) -> None:
+    state_path = path.parent / "verification-state.json"
+    if not state_path.exists():
+        raise CodeTaskExecutionError("stage 4 verification must pass before finalizing")
+    try:
+        data = json.loads(state_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise CodeTaskExecutionError("stage 4 verification state is unreadable") from exc
+    results = data.get("command_results") or []
+    if not results:
+        raise CodeTaskExecutionError("stage 4 verification must pass before finalizing")
+    failed_required = [
+        result
+        for result in results
+        if result.get("required", True) and result.get("status") != "passed"
+    ]
+    if failed_required:
+        raise CodeTaskExecutionError("stage 4 verification must pass before finalizing")

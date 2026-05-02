@@ -307,6 +307,9 @@ class TestBackwardCompat:
         assert "commit_code_task_step" in names
         assert "finalize_code_task_branch" in names
         assert "get_code_task_status" in names
+        assert "plan_code_task_verification" in names
+        assert "run_code_task_verification" in names
+        assert "record_code_task_safety_review" in names
 
     def test_get_toolset_for_tool(self):
         result = get_toolset_for_tool("web_search")
@@ -319,6 +322,9 @@ class TestBackwardCompat:
         assert get_toolset_for_tool("commit_code_task_step") == "code_modification"
         assert get_toolset_for_tool("finalize_code_task_branch") == "code_modification"
         assert get_toolset_for_tool("get_code_task_status") == "code_modification"
+        assert get_toolset_for_tool("plan_code_task_verification") == "code_modification"
+        assert get_toolset_for_tool("run_code_task_verification") == "code_modification"
+        assert get_toolset_for_tool("record_code_task_safety_review") == "code_modification"
 
     def test_get_toolset_for_unknown_tool(self):
         result = get_toolset_for_tool("totally_nonexistent_tool")
