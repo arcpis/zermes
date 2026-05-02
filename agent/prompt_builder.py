@@ -240,6 +240,26 @@ KANBAN_GUIDANCE = (
     "cross-agent handoffs that outlive one API loop."
 )
 
+# Stable guidance for routing repository-improvement requests into the audited
+# self-evolution approval flow. This text is injected only when the approval
+# planning tool is available in the current toolset.
+CODE_MODIFICATION_TRIGGER_GUIDANCE = (
+    "# Self-evolution trigger guidance\n"
+    "- When the user asks to add a Hermes tool, fix a bug, optimize performance, "
+    "improve interaction flow, change tests, adjust configuration, or otherwise "
+    "modify this repository, use `complete_code_task`.\n"
+    "- Before calling it, read only the focused files or docs needed to identify "
+    "affected areas and summarize context.\n"
+    "- `complete_code_task` creates an approval plan only. It must not modify "
+    "product code, create branches, commit, or run builds.\n"
+    "- Do not edit product code or call approved execution tools until the user "
+    "explicitly approves the generated plan.\n"
+    "- If the request is vague, ask a short clarification question first.\n"
+    "- Do not trigger this flow for ordinary Q&A, read-only code explanation, "
+    "status checks, one-off command execution, or requests that explicitly say "
+    "not to modify code."
+)
+
 TOOL_USE_ENFORCEMENT_GUIDANCE = (
     "# Tool-use enforcement\n"
     "You MUST use your tools to take action — do not describe what you would do "

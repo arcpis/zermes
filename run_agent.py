@@ -147,6 +147,7 @@ from agent.prompt_builder import (
     MEMORY_GUIDANCE, SESSION_SEARCH_GUIDANCE, SKILLS_GUIDANCE,
     HERMES_AGENT_HELP_GUIDANCE,
     KANBAN_GUIDANCE,
+    CODE_MODIFICATION_TRIGGER_GUIDANCE,
     build_nous_subscription_prompt,
 )
 from agent.model_metadata import (
@@ -5322,6 +5323,10 @@ class AIAgent:
             tool_guidance.append(KANBAN_GUIDANCE)
         if tool_guidance:
             prompt_parts.append(" ".join(tool_guidance))
+        if "complete_code_task" in self.valid_tool_names:
+            # The approval planner is optional by toolset, so only teach the
+            # model this routing rule when the tool can actually be called.
+            prompt_parts.append(CODE_MODIFICATION_TRIGGER_GUIDANCE)
 
         # Computer-use (macOS) — goes in as its own block rather than being
         # merged into tool_guidance because the content is multi-paragraph.
