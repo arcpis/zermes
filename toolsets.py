@@ -54,8 +54,9 @@ _HERMES_CORE_TOOLS = [
     "clarify",
     # Code execution + delegation
     "execute_code", "delegate_task",
-    # Self-evolution approval planning
-    "complete_code_task",
+    # Self-evolution code modification workflow
+    "complete_code_task", "start_approved_code_task",
+    "commit_code_task_step", "finalize_code_task_branch", "get_code_task_status",
     # Cronjob management
     "cronjob",
     # Cross-platform messaging (gated on gateway running via check_fn)
@@ -219,8 +220,14 @@ TOOLSETS = {
     },
 
     "code_modification": {
-        "description": "Self-evolution pre-change approval planning",
-        "tools": ["complete_code_task"],
+        "description": "Self-evolution code modification workflow",
+        "tools": [
+            "complete_code_task",
+            "start_approved_code_task",
+            "commit_code_task_step",
+            "finalize_code_task_branch",
+            "get_code_task_status",
+        ],
         "includes": []
     },
 
@@ -336,6 +343,8 @@ TOOLSETS = {
             "todo", "memory",
             "session_search",
             "execute_code", "delegate_task", "complete_code_task",
+            "start_approved_code_task", "commit_code_task_step",
+            "finalize_code_task_branch", "get_code_task_status",
         ],
         "includes": []
     },
@@ -364,6 +373,8 @@ TOOLSETS = {
             "session_search",
             # Code execution + delegation
             "execute_code", "delegate_task", "complete_code_task",
+            "start_approved_code_task", "commit_code_task_step",
+            "finalize_code_task_branch", "get_code_task_status",
             # Cronjob management
             "cronjob",
             # Home Assistant smart home control (gated on HASS_TOKEN via check_fn)

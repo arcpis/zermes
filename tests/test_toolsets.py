@@ -57,7 +57,13 @@ class TestResolveToolset:
         assert set(tools) == {"web_search", "web_extract"}
 
     def test_code_modification_toolset(self):
-        assert resolve_toolset("code_modification") == ["complete_code_task"]
+        assert resolve_toolset("code_modification") == [
+            "commit_code_task_step",
+            "complete_code_task",
+            "finalize_code_task_branch",
+            "get_code_task_status",
+            "start_approved_code_task",
+        ]
 
     def test_composite_toolset(self):
         tools = resolve_toolset("debugging")
@@ -235,6 +241,10 @@ class TestToolsetConsistency:
 
     def test_hermes_cli_includes_code_modification_tool(self):
         assert "complete_code_task" in resolve_toolset("hermes-cli")
+        assert "start_approved_code_task" in resolve_toolset("hermes-cli")
+        assert "commit_code_task_step" in resolve_toolset("hermes-cli")
+        assert "finalize_code_task_branch" in resolve_toolset("hermes-cli")
+        assert "get_code_task_status" in resolve_toolset("hermes-cli")
 
 
 class TestPluginToolsets:
