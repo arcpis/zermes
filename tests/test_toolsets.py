@@ -56,6 +56,9 @@ class TestResolveToolset:
         tools = resolve_toolset("web")
         assert set(tools) == {"web_search", "web_extract"}
 
+    def test_code_modification_toolset(self):
+        assert resolve_toolset("code_modification") == ["complete_code_task"]
+
     def test_composite_toolset(self):
         tools = resolve_toolset("debugging")
         assert "terminal" in tools
@@ -229,6 +232,9 @@ class TestToolsetConsistency:
         # Sanity: the shared core must be non-trivial (i.e. we didn't
         # silently let a platform diverge so far that nothing is shared).
         assert len(core) > 20, f"Suspiciously small shared core: {len(core)} tools"
+
+    def test_hermes_cli_includes_code_modification_tool(self):
+        assert "complete_code_task" in resolve_toolset("hermes-cli")
 
 
 class TestPluginToolsets:

@@ -302,11 +302,15 @@ class TestBackwardCompat:
         # Should contain well-known tools
         assert "web_search" in names
         assert "terminal" in names
+        assert "complete_code_task" in names
 
     def test_get_toolset_for_tool(self):
         result = get_toolset_for_tool("web_search")
         assert result is not None
         assert isinstance(result, str)
+
+    def test_get_toolset_for_complete_code_task(self):
+        assert get_toolset_for_tool("complete_code_task") == "code_modification"
 
     def test_get_toolset_for_unknown_tool(self):
         result = get_toolset_for_tool("totally_nonexistent_tool")
