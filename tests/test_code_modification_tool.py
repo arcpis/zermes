@@ -7,6 +7,7 @@ from tools.code_modification_tool import (
     plan_code_task_verification,
     record_code_task_safety_review,
     run_code_task_verification,
+    self_evolution_thinking,
 )
 
 
@@ -127,6 +128,18 @@ def test_verification_tools_return_structured_results(tmp_path):
     )
     assert reviewed["success"] is True
     assert reviewed["status"] == "safety_reviewed"
+
+
+def test_self_evolution_thinking_tool_rejects_unknown_action(tmp_path):
+    project_root = tmp_path / "hermes-agent"
+    project_root.mkdir()
+
+    result = json.loads(
+        self_evolution_thinking("unknown", project_root=str(project_root))
+    )
+
+    assert result["success"] is False
+    assert "status, enable, disable, or run_once" in result["error"]
 
 
 def _init_git_repo(repo):

@@ -1292,6 +1292,20 @@ DEFAULT_CONFIG = {
         "mode": "project",
     },
 
+    # Self-evolution automation is disabled by default. When enabled, the
+    # thinking job only writes local candidate reports and never edits code.
+    "self_evolution": {
+        "thinking": {
+            "enabled": False,
+            "schedule": "every 7d",
+            "max_candidates": 5,
+            "include_recent_sessions": False,
+            "include_test_failures": True,
+            "include_git_history": True,
+            "delivery": "local",
+        },
+    },
+
     # Logging — controls file logging to ~/.hermes/logs/.
     # agent.log captures INFO+ (all agent activity); errors.log captures WARNING+.
     "logging": {
@@ -1382,7 +1396,7 @@ DEFAULT_CONFIG = {
     },
 
     # Config schema version - bump this when adding new required fields
-    "_config_version": 23,
+    "_config_version": 24,
 }
 
 # =============================================================================
@@ -2911,7 +2925,7 @@ _KNOWN_ROOT_KEYS = {
     "fallback_providers", "credential_pool_strategies", "toolsets",
     "agent", "terminal", "display", "compression", "delegation",
     "auxiliary", "custom_providers", "context", "memory", "gateway",
-    "sessions",
+    "sessions", "self_evolution",
 }
 
 # Valid fields inside a custom_providers list entry

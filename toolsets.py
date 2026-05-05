@@ -58,7 +58,7 @@ _HERMES_CORE_TOOLS = [
     "complete_code_task", "start_approved_code_task",
     "commit_code_task_step", "finalize_code_task_branch", "get_code_task_status",
     "plan_code_task_verification", "run_code_task_verification",
-    "record_code_task_safety_review",
+    "record_code_task_safety_review", "self_evolution_thinking",
     # Cronjob management
     "cronjob",
     # Cross-platform messaging (gated on gateway running via check_fn)
@@ -232,6 +232,7 @@ TOOLSETS = {
             "plan_code_task_verification",
             "record_code_task_safety_review",
             "run_code_task_verification",
+            "self_evolution_thinking",
         ],
         "includes": []
     },

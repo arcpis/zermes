@@ -15,6 +15,13 @@ from code_modification.executor import (
     start_approved_task,
 )
 from code_modification.git_workflow import GitWorkflowError
+from code_modification.thinking import (
+    SelfEvolutionThinkingError,
+    describe_self_evolution_thinking,
+    disable_self_evolution_thinking,
+    enable_self_evolution_thinking,
+    run_self_evolution_thinking,
+)
 from code_modification.verifier import (
     CodeTaskVerificationError,
     describe_task_verification,
@@ -201,6 +208,59 @@ def record_code_task_safety_review(
     except (CodeTaskExecutionError, CodeTaskVerificationError, GitWorkflowError) as exc:
         return tool_error(str(exc), success=False)
     return _verification_state_result(state)
+
+
+def self_evolution_thinking(
+    action: str,
+    *,
+    schedule: str | None = None,
+    max_candidates: int | None = None,
+    project_root: str | None = None,
+) -> str:
+    """Manage read-only self-evolution thinking and candidate reports."""
+    root = Path(project_root).expanduser() if project_root else Path(os.getcwd())
+    normalized = str(action or "").strip().lower()
+    try:
+        if normalized == "status":
+            return tool_result(
+                success=True,
+                action=normalized,
+                **describe_self_evolution_thinking(root),
+            )
+        if normalized == "enable":
+            return tool_result(
+                success=True,
+                action=normalized,
+                **enable_self_evolution_thinking(
+                    root,
+                    schedule=schedule,
+                    max_candidates=max_candidates,
+                ),
+            )
+        if normalized == "disable":
+            return tool_result(
+                success=True,
+                action=normalized,
+                **disable_self_evolution_thinking(),
+            )
+        if normalized == "run_once":
+            report = run_self_evolution_thinking(root, trigger="manual")
+            return tool_result(
+                success=True,
+                action=normalized,
+                status=report.state.status,
+                run_id=report.state.run_id,
+                candidate_count=report.state.candidate_count,
+                report_path=str(report.report_path),
+                candidates_path=str(report.candidates_path),
+                state_path=str(report.state_path),
+            )
+    except SelfEvolutionThinkingError as exc:
+        return tool_error(str(exc), success=False)
+    return tool_error(
+        "action must be one of status, enable, disable, or run_once.",
+        success=False,
+    )
 
 
 def _execution_state_result(state, **extra) -> str:
@@ -518,6 +578,40 @@ RECORD_CODE_TASK_SAFETY_REVIEW_SCHEMA = {
     },
 }
 
+SELF_EVOLUTION_THINKING_SCHEMA = {
+    "name": "self_evolution_thinking",
+    "description": (
+        "Manage read-only self-evolution thinking. Use action='status' to inspect "
+        "configuration and the dedicated schedule, action='enable' or 'disable' "
+        "to manage the scheduled thinking job, and action='run_once' to generate "
+        "a local candidate report. This tool only writes self-evolution candidate "
+        "reports and config or cron metadata; it must not modify product code, "
+        "create branches, commit, merge, or run verification commands."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "action": {
+                "type": "string",
+                "description": "One of status, enable, disable, or run_once.",
+            },
+            "schedule": {
+                "type": "string",
+                "description": "Optional schedule for enable, such as 'every 7d'.",
+            },
+            "max_candidates": {
+                "type": "integer",
+                "description": "Optional maximum candidate count for enable.",
+            },
+            "project_root": {
+                "type": "string",
+                "description": "Optional git repository root. Defaults to the current directory.",
+            },
+        },
+        "required": ["action"],
+    },
+}
+
 
 registry.register(
     name="complete_code_task",
@@ -626,4 +720,18 @@ registry.register(
     ),
     check_fn=check_code_modification_requirements,
     emoji="🛡️",
+)
+
+registry.register(
+    name="self_evolution_thinking",
+    toolset="code_modification",
+    schema=SELF_EVOLUTION_THINKING_SCHEMA,
+    handler=lambda args, **kw: self_evolution_thinking(
+        action=args.get("action", ""),
+        schedule=args.get("schedule"),
+        max_candidates=args.get("max_candidates"),
+        project_root=args.get("project_root"),
+    ),
+    check_fn=check_code_modification_requirements,
+    emoji="T",
 )
