@@ -164,6 +164,13 @@ hermes-agent/
 │       ├── base.py                   # BaseEnvironment ABC
 │       ├── local.py, docker.py, ssh.py, singularity.py, modal.py, daytona.py
 │
+├── code_modification/        # Governed self-evolution workflow
+│   ├── approval.py               # Pre-change approval plans and audit docs
+│   ├── executor.py               # Approved branch, commit, and final report state
+│   ├── verifier.py               # Allow-listed verification planning and results
+│   ├── thinking.py               # Read-only candidate generation and schedule control
+│   └── token_strategy.py         # Repository-local low-token analysis context
+│
 ├── gateway/                  # Messaging gateway
 │   ├── run.py                    # GatewayRunner — platform lifecycle, message routing, cron
 │   ├── config.py                 # Platform configuration resolution
@@ -199,6 +206,52 @@ hermes-agent/
 | `~/.hermes/sessions/` | JSON session logs |
 | `~/.hermes/cron/` | Scheduled job data |
 | `~/.hermes/whatsapp/session/` | WhatsApp bridge credentials |
+
+---
+
+## Self-Evolution Development Workflow
+
+Hermes can plan and execute governed improvements to this repository through the `code_modification` toolset. Treat it as an audited code-change workflow, not an autonomous rewrite loop.
+
+### Implemented stages
+
+1. **Workspace and governance** — task ids, audit layout, branch naming, and approval-before-code rules.
+2. **Approval planning** — `complete_code_task` writes a pre-change plan and approval request without touching product code.
+3. **Approved execution** — `start_approved_code_task` creates or switches to the task branch; `commit_code_task_step` commits explicit file lists only.
+4. **Verification** — verification plans, allow-listed command execution, and safety review records gate finalization.
+5. **Prompt routing** — clear repository-improvement requests route to approval planning instead of direct edits.
+6. **Read-only thinking** — `self_evolution_thinking` can generate advisory candidates and manage its schedule.
+7. **Low-token analysis** — `token_strategy.py` summarizes repository-local documents and files into `.hermes-analysis-cache/`.
+
+### Safety rules
+
+- Do not modify product code before explicit user approval.
+- Do not turn `verifier.py` into a general command runner.
+- Do not turn `thinking.py` into an executor; candidates must go back through `complete_code_task`.
+- Do not read sibling workspaces or parent directories for stage 7 context. Analysis input must stay inside `project_root`.
+- Keep `.hermes-analysis-cache/` out of commits; it is generated analysis state.
+- If a change affects user-visible behavior, tool schemas, configuration, test commands, or self-evolution flow, update the relevant repository documentation and let the final report record documentation sync status.
+
+### Focused self-evolution tests
+
+When changing this workflow, run the focused regression set:
+
+```bash
+python -m pytest \
+  tests/test_code_modification_governance.py \
+  tests/test_code_modification_approval.py \
+  tests/test_code_modification_git_workflow.py \
+  tests/test_code_modification_executor.py \
+  tests/test_code_modification_verifier.py \
+  tests/test_code_modification_tool.py \
+  tests/test_code_modification_token_strategy.py \
+  tests/test_self_evolution_thinking.py \
+  tests/test_model_tools.py \
+  tests/test_toolsets.py \
+  -q
+```
+
+Use the canonical test wrapper when the local environment supports it; this focused command is useful for fast validation of the self-evolution surface.
 
 ---
 

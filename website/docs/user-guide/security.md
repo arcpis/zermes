@@ -10,7 +10,7 @@ Hermes Agent is designed with a defense-in-depth security model. This page cover
 
 ## Overview
 
-The security model has seven layers:
+The security model has eight layers:
 
 1. **User authorization** — who can talk to the agent (allowlists, DM pairing)
 2. **Dangerous command approval** — human-in-the-loop for destructive operations
@@ -19,6 +19,7 @@ The security model has seven layers:
 5. **Context file scanning** — prompt injection detection in project files
 6. **Cross-session isolation** — sessions cannot access each other's data or state; cron job storage paths are hardened against path traversal attacks
 7. **Input sanitization** — working directory parameters in terminal tool backends are validated against an allowlist to prevent shell injection
+8. **Governed self-evolution** — repository improvement tools require approval plans, dedicated branches, explicit-file commits, verification records, and repository-local analysis context
 
 ## Dangerous Command Approval
 
@@ -593,3 +594,16 @@ terminal:
 ```
 
 This keeps the gateway's messaging connections separate from the agent's command execution.
+
+## Self-Evolution Safety
+
+The `code_modification` toolset is designed for governed repository changes:
+
+- `complete_code_task` creates an approval plan and audit record before any product-code edit.
+- Approved execution uses a dedicated task branch and explicit file lists for commits.
+- Verification plans and results must be recorded before finalization.
+- `self_evolution_thinking` writes advisory candidate reports and schedule/config metadata only.
+- Low-token analysis context is built from repository-local files and cached under `.hermes-analysis-cache/`.
+- Final reports include documentation sync status for user-visible behavior, tool schema, configuration, and workflow changes.
+
+The generated `.hermes-analysis-cache/` directory is local analysis state. It should be ignored by git and should not be treated as a security boundary or permanent audit record.

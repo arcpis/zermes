@@ -22,6 +22,7 @@ Use any model you want — [Nous Portal](https://portal.nousresearch.com), [Open
 <tr><td><b>A closed learning loop</b></td><td>Agent-curated memory with periodic nudges. Autonomous skill creation after complex tasks. Skills self-improve during use. FTS5 session search with LLM summarization for cross-session recall. <a href="https://github.com/plastic-labs/honcho">Honcho</a> dialectic user modeling. Compatible with the <a href="https://agentskills.io">agentskills.io</a> open standard.</td></tr>
 <tr><td><b>Scheduled automations</b></td><td>Built-in cron scheduler with delivery to any platform. Daily reports, nightly backups, weekly audits — all in natural language, running unattended.</td></tr>
 <tr><td><b>Delegates and parallelizes</b></td><td>Spawn isolated subagents for parallel workstreams. Write Python scripts that call tools via RPC, collapsing multi-step pipelines into zero-context-cost turns.</td></tr>
+<tr><td><b>Governed self-evolution</b></td><td>Code improvement requests go through an approval-first workflow with audit files, dedicated branches, explicit-file commits, verification records, advisory thinking reports, and repository-local low-token analysis context.</td></tr>
 <tr><td><b>Runs anywhere, not just your laptop</b></td><td>Seven terminal backends — local, Docker, SSH, Singularity, Modal, Daytona, and Vercel Sandbox. Daytona and Modal offer serverless persistence — your agent's environment hibernates when idle and wakes on demand, costing nearly nothing between sessions. Run it on a $5 VPS or a GPU cluster.</td></tr>
 <tr><td><b>Research-ready</b></td><td>Batch trajectory generation, Atropos RL environments, trajectory compression for training the next generation of tool-calling models.</td></tr>
 </table>
@@ -149,6 +150,22 @@ What gets imported:
 - **Workspace instructions** — AGENTS.md (with `--workspace-target`)
 
 See `hermes claw migrate --help` for all options, or use the `openclaw-migration` skill for an interactive agent-guided migration with dry-run previews.
+
+---
+
+## Self-Evolution Workflow
+
+Hermes includes a governed self-evolution workflow for improving its own codebase. The workflow is intentionally conservative:
+
+- `complete_code_task` creates a pre-change approval plan and audit record; it does not modify product code.
+- Approved work starts on a dedicated `self-evolution/dev/<task_id>` branch.
+- Commits must stage explicit file lists, not broad working-tree changes.
+- Verification plans and results are recorded before final integration.
+- `self_evolution_thinking` can create advisory candidate reports, but it never executes code changes.
+- Low-token analysis context is built from files inside this repository only and cached under `.hermes-analysis-cache/`.
+- Approval plans and final reports track documentation sync candidates so user-visible changes can be reflected in repository docs.
+
+Generated `.hermes-analysis-cache/` content is local analysis state and is ignored by git.
 
 ---
 

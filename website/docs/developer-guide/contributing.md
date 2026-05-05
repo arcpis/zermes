@@ -26,6 +26,7 @@ We value contributions in this order:
 - Building a new built-in core tool for Hermes itself? Start with [Adding Tools](./adding-tools.md)
 - Building a new skill? Start with [Creating Skills](./creating-skills.md)
 - Building a new inference provider? Start with [Adding Providers](./adding-providers.md)
+- Working on self-evolution? Use the governed `code_modification` workflow: approval planning first, approved task branches, explicit-file commits, verification records, and repository-local analysis summaries.
 
 ## Development Setup
 
@@ -92,6 +93,34 @@ pytest tests/ -v
 - **Error handling**: Catch specific exceptions. Use `logger.warning()`/`logger.error()` with `exc_info=True` for unexpected errors
 - **Cross-platform**: Never assume Unix (see below)
 - **Profile-safe paths**: Never hardcode `~/.hermes` — use `get_hermes_home()` from `hermes_constants` for code paths and `display_hermes_home()` for user-facing messages. See [AGENTS.md](https://github.com/NousResearch/hermes-agent/blob/main/AGENTS.md#profiles-multi-instance-support) for full rules.
+
+## Self-Evolution Workflow
+
+The `code_modification` toolset is for audited repository improvements, not unattended self-modification.
+
+- `complete_code_task` writes a pre-change approval plan and analysis context without product-code edits.
+- Approved work starts on a dedicated task branch and commits explicit file lists only.
+- Verification and safety review records gate finalization.
+- `self_evolution_thinking` creates advisory candidates but does not execute changes.
+- `token_strategy.py` summarizes files inside the repository root only and writes generated context under `.hermes-analysis-cache/`.
+- If a change affects user-visible behavior, tool schemas, configuration, testing instructions, or the self-evolution flow, update the relevant repository documentation and let the final report record documentation sync status.
+
+Focused regression command:
+
+```bash
+python -m pytest \
+  tests/test_code_modification_governance.py \
+  tests/test_code_modification_approval.py \
+  tests/test_code_modification_git_workflow.py \
+  tests/test_code_modification_executor.py \
+  tests/test_code_modification_verifier.py \
+  tests/test_code_modification_tool.py \
+  tests/test_code_modification_token_strategy.py \
+  tests/test_self_evolution_thinking.py \
+  tests/test_model_tools.py \
+  tests/test_toolsets.py \
+  -q
+```
 
 ## Cross-Platform Compatibility
 

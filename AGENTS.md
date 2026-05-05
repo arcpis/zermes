@@ -67,6 +67,34 @@ hermes-agent/
 `gateway.log` when running the gateway. Profile-aware via `get_hermes_home()`.
 Browse with `hermes logs [--follow] [--level ...] [--session ...]`.
 
+## Self-Evolution Workflow
+
+The `code_modification` toolset implements a governed self-evolution workflow:
+
+- `approval.py` builds pre-change plans and approval requests.
+- `executor.py` starts approved branches, records explicit-file commits, and writes final reports.
+- `verifier.py` plans and runs allow-listed verification commands.
+- `thinking.py` manages read-only candidate generation and schedule control.
+- `token_strategy.py` builds low-token analysis context from files inside this repository only.
+
+Stage summary:
+
+1. Workspace and governance: task ids, branch names, audit layout, and approval policy.
+2. Approval planning: `complete_code_task` writes plans without product-code edits.
+3. Approved execution: implementation starts only after explicit approval.
+4. Verification: tests, compile checks, and safety review records gate finalization.
+5. Prompt routing: clear improvement requests route to approval planning.
+6. Read-only thinking: scheduled or manual candidate reports remain advisory.
+7. Low-token analysis: repository-local summaries are reused across a task.
+
+`token_strategy.py` writes reusable summaries under `.hermes-analysis-cache/`:
+
+- `runs/<context_run_id>/task-context-summary.md` for later steps in the same task.
+- `runs/<context_run_id>/docs-summary.json` for cached documentation summaries.
+- `runs/<context_run_id>/context-state.json` for selected sources, skipped sources, and budget state.
+
+Do not use sibling workspaces, parent directories, or external files as stage 7 analysis input. Prefer repository documents such as `AGENTS.md`, `README.md`, `CONTRIBUTING.md`, `SECURITY.md`, `pyproject.toml`, and recent `RELEASE_v*.md` summaries before expanding code. When implementation changes user-visible behavior, tool schemas, configuration, testing instructions, or self-evolution workflow, update the relevant repository documentation and refresh the task summary.
+
 ## File Dependency Chain
 
 ```

@@ -6,9 +6,9 @@ description: "Authoritative reference for Hermes built-in tools, grouped by tool
 
 # Built-in Tools Reference
 
-This page documents all 68 built-in tools in the Hermes tool registry, grouped by toolset. Availability varies by platform, credentials, and enabled toolsets.
+This page documents the built-in tools in the Hermes tool registry, grouped by toolset. Availability varies by platform, credentials, and enabled toolsets.
 
-**Quick counts:** 10 browser tools (core) + 2 browser-cdp tools, 4 file tools, 10 RL tools, 4 Home Assistant tools, 2 terminal tools, 2 web tools, 5 Feishu tools, 7 Spotify tools, 5 Yuanbao tools, 2 Discord tools, and 15 standalone tools across other toolsets.
+**Quick categories:** browser automation, file operations, terminal execution, self-evolution, RL tools, Home Assistant tools, web tools, media tools, and orchestration tools across multiple toolsets.
 
 :::tip MCP Tools
 In addition to built-in tools, Hermes can load tools dynamically from MCP servers. MCP tools appear with a server-name prefix (e.g., `github_create_issue` for the `github` MCP server). See [MCP Integration](/docs/user-guide/features/mcp) for configuration.
@@ -49,6 +49,20 @@ Registered only when a Chrome DevTools Protocol endpoint is reachable at session
 | Tool | Description | Requires environment |
 |------|-------------|----------------------|
 | `execute_code` | Run a Python script that can call Hermes tools programmatically. Use this when you need 3+ tool calls with processing logic between them, need to filter/reduce large tool outputs before they enter your context, need conditional branching (… | — |
+
+## `code_modification` toolset
+
+| Tool | Description | Requires environment |
+|------|-------------|----------------------|
+| `complete_code_task` | Create a pre-change approval plan, audit record, repository-local analysis context, and documentation sync candidates for a requested code change. Does not modify product code. | — |
+| `start_approved_code_task` | Start an explicitly approved task by creating or switching to the task development branch. | — |
+| `commit_code_task_step` | Commit one approved implementation step using an explicit file list. Broad staging is forbidden. | — |
+| `plan_code_task_verification` | Record a verification plan for an approved task branch without running commands. | — |
+| `run_code_task_verification` | Run allow-listed verification commands and record results for an approved task. | — |
+| `record_code_task_safety_review` | Record isolated safety review questions, answers, and conclusion. | — |
+| `finalize_code_task_branch` | Merge the task branch into the self-evolution integration branch after verification passes. Does not merge into the normal project main branch. | — |
+| `get_code_task_status` | Return approval, execution, verification, and audit state for a self-evolution task. | — |
+| `self_evolution_thinking` | Manage read-only thinking status, schedule, enable/disable, and manual candidate report generation. Does not execute code changes. | — |
 
 ## `cronjob` toolset
 
@@ -236,5 +250,3 @@ Registered only on the `hermes-yuanbao` platform toolset. Yuanbao is Tencent's c
 | `yb_send_dm` | Send a private/direct message to a user in a group, with optional media files. | Yuanbao credentials |
 | `yb_search_sticker` | Search the built-in Yuanbao sticker (TIM face) catalogue by keyword. | Yuanbao credentials |
 | `yb_send_sticker` | Send a built-in sticker to the current Yuanbao chat. | Yuanbao credentials |
-
-

@@ -108,6 +108,13 @@ hermes-agent/
 │   ├── ansi_strip.py         # ANSI escape stripping
 │   └── environments/         # Terminal backends (local, docker, ssh, modal, daytona, singularity)
 │
+├── code_modification/        # Governed self-evolution workflow
+│   ├── approval.py           # Pre-change approval plans and approval requests
+│   ├── executor.py           # Approved branch, commit, and final report state
+│   ├── verifier.py           # Allow-listed verification planning and results
+│   ├── thinking.py           # Read-only candidate generation and schedule control
+│   └── token_strategy.py     # Repository-local low-token analysis context
+│
 ├── gateway/                  # Messaging platform gateway
 │   ├── run.py                # GatewayRunner — message dispatch (~12,200 lines)
 │   ├── session.py            # SessionStore — conversation persistence
@@ -216,6 +223,18 @@ A shared runtime resolver used by CLI, gateway, cron, ACP, and auxiliary calls. 
 Central tool registry (`tools/registry.py`) with 61 registered tools across 52 toolsets. Each tool file self-registers at import time. The registry handles schema collection, dispatch, availability checking, and error wrapping. Terminal tools support 7 backends (local, Docker, SSH, Daytona, Modal, Singularity, Vercel Sandbox).
 
 → [Tools Runtime](./tools-runtime.md)
+
+### Governed Self-Evolution
+
+The `code_modification` package supports approval-first repository improvements:
+
+- `complete_code_task` writes a pre-change plan, approval request, and repository-local analysis context.
+- Approved execution uses dedicated task branches and explicit-file commits.
+- Verification plans and command results are recorded before finalization.
+- `self_evolution_thinking` creates advisory candidates and never executes code changes.
+- `.hermes-analysis-cache/` stores generated task summaries, documentation summaries, and context state inside the repository root.
+
+Final reports include documentation sync status so user-visible changes can be reflected in repository docs.
 
 ### Session Persistence
 

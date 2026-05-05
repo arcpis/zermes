@@ -45,6 +45,17 @@ The `execute_code` tool (`tools/code_execution_tool.py`) runs LLM-generated Pyth
 - **Depth limit:** `MAX_DEPTH = 2` — parent (depth 0) can spawn a child (depth 1); grandchildren are rejected.
 - **Memory isolation:** Subagents run with `skip_memory=True` and do not have access to the parent's persistent memory provider. The parent receives only the task prompt and final response as an observation.
 
+### Self-Evolution Workflow
+The `code_modification` toolset is designed for governed repository changes, not unsupervised self-modification.
+
+- **Approval first:** `complete_code_task` writes a pre-change plan and approval request. Product code changes, branch creation, commits, builds, and restarts are forbidden before explicit approval.
+- **Dedicated branches:** Approved implementation happens on a task branch and never auto-merges into the normal project main branch.
+- **Explicit-file commits:** `commit_code_task_step` requires explicit file paths; broad staging is not allowed.
+- **Allow-listed verification:** `verifier.py` runs only supported verification commands and records results before finalization.
+- **Read-only thinking:** `self_evolution_thinking` writes advisory candidate reports and schedule/config metadata only.
+- **Repository-local analysis:** `token_strategy.py` builds low-token context from files inside the repository root only and writes generated summaries under `.hermes-analysis-cache/`.
+- **Generated cache:** `.hermes-analysis-cache/` is analysis state, not a trust boundary or audit record, and should not be committed.
+
 ---
 
 ## 3. Out of Scope (Non-Vulnerabilities)
