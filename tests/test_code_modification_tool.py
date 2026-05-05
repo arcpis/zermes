@@ -33,8 +33,29 @@ def test_complete_code_task_writes_plan_and_approval_for_clear_requirement(tmp_p
     approval_path = project_root.parent / "self-evolution" / "tasks" / result["task_id"] / "approval.md"
     assert result["plan_path"] == str(plan_path)
     assert result["approval_path"] == str(approval_path)
+    assert result["context_state_path"].endswith("context-state.json")
+    assert result["task_context_summary_path"].endswith("task-context-summary.md")
+    assert result["docs_summary_path"].endswith("docs-summary.json")
     assert "tools/terminal_tool.py" in plan_path.read_text(encoding="utf-8")
+    assert "## Analysis Context" in plan_path.read_text(encoding="utf-8")
     assert "Approval Request" in approval_path.read_text(encoding="utf-8")
+
+
+def test_complete_code_task_reports_documentation_update_candidates(tmp_path):
+    project_root = tmp_path / "hermes-agent"
+    project_root.mkdir()
+    (project_root / "AGENTS.md").write_text("# Rules\n", encoding="utf-8")
+    (project_root / "README.md").write_text("# Hermes\n", encoding="utf-8")
+
+    result = json.loads(
+        complete_code_task(
+            "Update the tool schema and document the user-facing command",
+            project_root=str(project_root),
+        )
+    )
+
+    assert "AGENTS.md" in result["documentation_updates"]
+    assert "README.md" in result["documentation_updates"]
 
 
 def test_complete_code_task_for_vague_requirement_requests_clarification(tmp_path):

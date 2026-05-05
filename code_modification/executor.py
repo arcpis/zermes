@@ -56,6 +56,7 @@ class ExecutionState:
     commits: tuple[CommitRecord, ...] = ()
     approved_areas: tuple[str, ...] = ()
     plan_steps: tuple[PlanStepRecord, ...] = ()
+    documentation_updates: tuple[str, ...] = ()
 
 
 def start_approved_task(
@@ -78,6 +79,7 @@ def start_approved_task(
     base_commit = current_commit(root)
     development_branch = read_development_branch(layout.plan_path)
     approved_areas = read_markdown_bullets(layout.plan_path, "Affected Areas")
+    documentation_updates = read_documentation_updates(layout.plan_path)
     plan_steps = tuple(
         PlanStepRecord(description=description)
         for description in read_markdown_bullets(layout.plan_path, "Tasks")
@@ -94,6 +96,7 @@ def start_approved_task(
         development_branch=development_branch,
         approved_areas=approved_areas,
         plan_steps=plan_steps,
+        documentation_updates=documentation_updates,
     )
     write_state(layout.task_dir / STATE_FILE_NAME, state)
     append_change_log(
@@ -105,6 +108,7 @@ def start_approved_task(
             f"Development branch: `{development_branch}`",
             f"Approved areas: {', '.join(approved_areas) or 'not specified'}",
             f"Planned steps: {len(plan_steps)}",
+            f"Documentation update candidates: {', '.join(documentation_updates) or 'none'}",
         ],
     )
     return state
@@ -271,11 +275,13 @@ def read_state(path: Path) -> ExecutionState:
     commits = tuple(CommitRecord(**item) for item in data.pop("commits", []))
     plan_steps = tuple(PlanStepRecord(**item) for item in data.pop("plan_steps", []))
     approved_areas = tuple(data.pop("approved_areas", []))
+    documentation_updates = tuple(data.pop("documentation_updates", []))
     return ExecutionState(
         **data,
         commits=commits,
         approved_areas=approved_areas,
         plan_steps=plan_steps,
+        documentation_updates=documentation_updates,
     )
 
 
@@ -302,6 +308,7 @@ def replace_state_status(
         commits=state.commits if commits is None else commits,
         approved_areas=state.approved_areas,
         plan_steps=state.plan_steps if plan_steps is None else plan_steps,
+        documentation_updates=state.documentation_updates,
     )
 
 
@@ -398,7 +405,55 @@ def write_final_report(path: Path, state: ExecutionState) -> None:
         lines.append(f"- Latest status: `{verification_status or 'unknown'}`")
     else:
         lines.append("- No stage 4 verification record exists.")
+    lines.extend(["", "## Documentation Sync", ""])
+    lines.extend(documentation_sync_lines(state))
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def read_documentation_updates(plan_path: Path) -> tuple[str, ...]:
+    """Return documentation update candidates recorded in the approval plan."""
+    text = plan_path.read_text(encoding="utf-8")
+    match = re.search(
+        r"^- Documentation updates:\n(?P<body>(?:  - .+\n?)*)",
+        text,
+        re.M,
+    )
+    if not match:
+        return ()
+    updates = []
+    for line in match.group("body").splitlines():
+        stripped = line.strip()
+        if stripped.startswith("- "):
+            value = stripped[2:].strip()
+            if value and value.lower() != "none identified.":
+                updates.append(value)
+    return tuple(updates)
+
+
+def documentation_sync_lines(state: ExecutionState) -> list[str]:
+    """Render documentation candidates and which of them were committed."""
+    if not state.documentation_updates:
+        return ["- No documentation updates were identified in the approval plan."]
+    committed_files = {
+        file_name
+        for commit in state.commits
+        for file_name in commit.files
+    }
+    updated = tuple(
+        path for path in state.documentation_updates if path in committed_files
+    )
+    pending = tuple(
+        path for path in state.documentation_updates if path not in committed_files
+    )
+    lines = [
+        "- Candidates from approval plan:",
+        *[f"  - {path}" for path in state.documentation_updates],
+        "- Updated in task commits:",
+    ]
+    lines.extend(f"  - {path}" for path in updated) if updated else lines.append("  - None.")
+    lines.append("- Pending or intentionally unchanged:")
+    lines.extend(f"  - {path}" for path in pending) if pending else lines.append("  - None.")
+    return lines
 
 
 def append_change_log(path: Path, status: str, lines: list[str]) -> None:

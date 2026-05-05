@@ -16,6 +16,7 @@ import subprocess
 from typing import Any
 
 from code_modification.governance import get_evolution_workspace
+from code_modification.token_strategy import AnalysisHints, build_analysis_context
 from hermes_cli.config import load_config, save_config
 
 
@@ -72,6 +73,12 @@ class ThinkingRunState:
     sources_read: list[str]
     sources_skipped: list[str]
     dirty_worktree: bool
+    context_state_path: str
+    task_context_summary_path: str
+    docs_summary_path: str
+    analysis_cache_dir: str
+    cache_hits: int
+    budget_exhausted: bool
 
 
 @dataclass(frozen=True)
@@ -126,6 +133,13 @@ def run_self_evolution_thinking(
     sources_read: list[str] = []
     sources_skipped: list[str] = []
     dirty_worktree = _is_git_worktree_dirty(root)
+    analysis_context = build_analysis_context(
+        root,
+        purpose="thinking",
+        hints=AnalysisHints(include_git_history=thinking_config.include_git_history),
+    )
+    sources_read.extend(source.relative_path for source in analysis_context.selected_sources)
+    sources_skipped.extend(analysis_context.skipped_sources)
     candidates = _discover_candidates(
         root,
         thinking_config,
@@ -145,6 +159,12 @@ def run_self_evolution_thinking(
         sources_read=sources_read,
         sources_skipped=sources_skipped,
         dirty_worktree=dirty_worktree,
+        context_state_path=analysis_context.context_state_path,
+        task_context_summary_path=analysis_context.task_context_summary_path,
+        docs_summary_path=analysis_context.docs_summary_path,
+        analysis_cache_dir=analysis_context.cache_dir,
+        cache_hits=analysis_context.cache_hits,
+        budget_exhausted=analysis_context.budget_exhausted,
     )
 
     report = ThinkingReport(
@@ -383,6 +403,11 @@ def _format_report_markdown(report: ThinkingReport) -> str:
         f"- Started at: {report.state.started_at}",
         f"- Completed at: {report.state.completed_at}",
         f"- Dirty worktree: {str(report.state.dirty_worktree).lower()}",
+        f"- Context state: {report.state.context_state_path}",
+        f"- Task context summary: {report.state.task_context_summary_path}",
+        f"- Documentation summary: {report.state.docs_summary_path}",
+        f"- Cache hits: {report.state.cache_hits}",
+        f"- Budget exhausted: {str(report.state.budget_exhausted).lower()}",
         "",
         "## Candidates",
         "",

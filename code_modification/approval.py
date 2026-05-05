@@ -36,6 +36,10 @@ class ApprovalPlan:
     open_questions: tuple[str, ...]
     recommend_execution: bool
     development_branch: str
+    context_state_path: str = ""
+    task_context_summary_path: str = ""
+    docs_summary_path: str = ""
+    documentation_updates: tuple[str, ...] = ()
 
 
 def build_approval_plan(
@@ -44,6 +48,10 @@ def build_approval_plan(
     *,
     context: str = "",
     affected_areas: tuple[str, ...] = (),
+    context_state_path: str = "",
+    task_context_summary_path: str = "",
+    docs_summary_path: str = "",
+    documentation_updates: tuple[str, ...] = (),
     now: datetime | None = None,
 ) -> tuple[ApprovalPlan, TaskRecordLayout]:
     """Build a review plan and audit layout for a change request."""
@@ -77,6 +85,10 @@ def build_approval_plan(
         open_questions=open_questions,
         recommend_execution=recommend_execution,
         development_branch=build_development_branch_name(task_id),
+        context_state_path=str(context_state_path or ""),
+        task_context_summary_path=str(task_context_summary_path or ""),
+        docs_summary_path=str(docs_summary_path or ""),
+        documentation_updates=documentation_updates,
     )
     return plan, layout
 
@@ -110,6 +122,10 @@ def render_plan_markdown(plan: ApprovalPlan) -> str:
             "## Proposed Approach",
             "",
             plan.proposed_approach,
+            "",
+            "## Analysis Context",
+            "",
+            *_analysis_context_lines(plan),
             "",
             "## Tasks",
             "",
@@ -187,3 +203,17 @@ def _build_tasks(recommend_execution: bool) -> tuple[str, ...]:
 
 def _bullet_lines(items: tuple[str, ...]) -> list[str]:
     return [f"- {item}" for item in items]
+
+
+def _analysis_context_lines(plan: ApprovalPlan) -> list[str]:
+    """Render reusable context files and documentation sync candidates."""
+    lines = [
+        f"- Context state: {plan.context_state_path or 'Not generated.'}",
+        f"- Task context summary: {plan.task_context_summary_path or 'Not generated.'}",
+        f"- Documentation summary: {plan.docs_summary_path or 'Not generated.'}",
+        "- Documentation updates:",
+    ]
+    lines.extend(
+        f"  - {path}" for path in (plan.documentation_updates or ("None identified.",))
+    )
+    return lines

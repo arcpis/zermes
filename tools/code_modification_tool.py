@@ -15,6 +15,7 @@ from code_modification.executor import (
     start_approved_task,
 )
 from code_modification.git_workflow import GitWorkflowError
+from code_modification.token_strategy import AnalysisHints, build_analysis_context
 from code_modification.thinking import (
     SelfEvolutionThinkingError,
     describe_self_evolution_thinking,
@@ -46,12 +47,28 @@ def complete_code_task(
 
     clean_affected_areas = _clean_affected_areas(affected_areas)
     root = Path(project_root).expanduser() if project_root else Path(os.getcwd())
+    analysis_context = build_analysis_context(
+        root,
+        purpose="approval",
+        hints=AnalysisHints(
+            requirement=clean_requirement,
+            explicit_paths=tuple(clean_affected_areas),
+        ),
+    )
+    enriched_context = _merge_context_summary(
+        str(context or ""),
+        analysis_context.task_context_summary_path,
+    )
 
     plan, layout = build_approval_plan(
         clean_requirement,
         root,
-        context=str(context or ""),
+        context=enriched_context,
         affected_areas=tuple(clean_affected_areas),
+        context_state_path=analysis_context.context_state_path,
+        task_context_summary_path=analysis_context.task_context_summary_path,
+        docs_summary_path=analysis_context.docs_summary_path,
+        documentation_updates=analysis_context.documentation_updates,
     )
     write_approval_documents(plan, layout)
 
@@ -63,6 +80,10 @@ def complete_code_task(
         development_branch=plan.development_branch,
         plan_path=str(layout.plan_path),
         approval_path=str(layout.approval_path),
+        context_state_path=analysis_context.context_state_path,
+        task_context_summary_path=analysis_context.task_context_summary_path,
+        docs_summary_path=analysis_context.docs_summary_path,
+        documentation_updates=list(analysis_context.documentation_updates),
     )
 
 
@@ -72,6 +93,13 @@ def _clean_affected_areas(affected_areas: list[str] | None) -> list[str]:
     if not isinstance(affected_areas, list):
         raise TypeError("affected_areas must be a list of strings.")
     return [str(area).strip() for area in affected_areas if str(area).strip()]
+
+
+def _merge_context_summary(context: str, task_context_summary_path: str) -> str:
+    """Attach the reusable context path without copying large summaries."""
+    clean_context = context.strip()
+    summary_note = f"Reusable analysis context: {task_context_summary_path}"
+    return f"{clean_context}\n{summary_note}".strip() if clean_context else summary_note
 
 
 def start_approved_code_task(

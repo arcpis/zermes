@@ -37,7 +37,10 @@ def test_run_once_writes_no_candidate_report(tmp_path):
     assert report.report_path.exists()
     assert report.candidates_path.exists()
     assert report.state_path.exists()
+    assert report.state.context_state_path.endswith("context-state.json")
+    assert report.state.task_context_summary_path.endswith("task-context-summary.md")
     assert "advisory only" in report.report_path.read_text(encoding="utf-8")
+    assert "Context state:" in report.report_path.read_text(encoding="utf-8")
 
 
 def test_run_once_finds_failed_verification_candidate(tmp_path):

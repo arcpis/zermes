@@ -41,8 +41,14 @@ def create_approval_record(
     repo,
     requirement="Add approved workflow support",
     affected_areas=(),
+    documentation_updates=(),
 ):
-    plan, layout = build_approval_plan(requirement, repo, affected_areas=affected_areas)
+    plan, layout = build_approval_plan(
+        requirement,
+        repo,
+        affected_areas=affected_areas,
+        documentation_updates=documentation_updates,
+    )
     write_approval_documents(plan, layout)
     return plan, layout
 
@@ -79,6 +85,7 @@ def test_start_commit_and_finalize_approved_task(tmp_path):
     assert state.status == "branch_created"
     assert current_branch(repo) == plan.development_branch
     assert state.plan_steps
+    assert state.documentation_updates == ()
     assert layout.change_log_path.exists()
 
     (repo / "workflow.txt").write_text("workflow\n", encoding="utf-8")
@@ -111,6 +118,43 @@ def test_start_commit_and_finalize_approved_task(tmp_path):
     assert run_git(repo, "rev-parse", "--verify", "main")
     assert "integrated" in layout.change_log_path.read_text(encoding="utf-8")
     assert "Final Report" in layout.final_report_path.read_text(encoding="utf-8")
+    assert "## Documentation Sync" in layout.final_report_path.read_text(encoding="utf-8")
+
+
+def test_final_report_records_documentation_sync_status(tmp_path):
+    repo = init_repo(tmp_path)
+    plan, layout = create_approval_record(
+        repo,
+        requirement="Update command behavior and document it",
+        documentation_updates=("README.md", "AGENTS.md"),
+    )
+    state = start_approved_task(plan.task_id, approval_text="approved", project_root=repo)
+
+    assert state.documentation_updates == ("README.md", "AGENTS.md")
+
+    (repo / "README.md").write_text("updated\n", encoding="utf-8")
+    committed, _commit_hash = commit_task_step(
+        plan.task_id,
+        summary="Update README documentation",
+        files=["README.md"],
+        verification_summary="not run",
+        project_root=repo,
+    )
+
+    assert committed.documentation_updates == ("README.md", "AGENTS.md")
+
+    run_task_verification(
+        plan.task_id,
+        commands=["python -m compileall README.md"],
+        project_root=repo,
+    )
+    finalize_task_branch(plan.task_id, project_root=repo)
+
+    report = layout.final_report_path.read_text(encoding="utf-8")
+    assert "## Documentation Sync" in report
+    assert "  - README.md" in report
+    assert "  - AGENTS.md" in report
+    assert "- Pending or intentionally unchanged:" in report
 
 
 def test_describe_task_execution_returns_state_and_audit_paths(tmp_path):
