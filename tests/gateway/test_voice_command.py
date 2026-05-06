@@ -827,7 +827,7 @@ class TestVoiceChannelCommands:
         result = await runner._handle_voice_channel_join(event)
 
         assert "voice dependencies are missing" in result.lower()
-        assert "PyNaCl" in result
+        assert "zermes-agent[messaging]" in result
 
     # -- _handle_voice_channel_leave --
 

@@ -1,4 +1,4 @@
-"""Shared constants for Hermes Agent.
+"""Shared constants for Zermes.
 
 Import-safe module with no dependencies — can be imported from anywhere
 without risk of circular imports.
@@ -8,56 +8,57 @@ import os
 from pathlib import Path
 
 
+APP_NAME = "Zermes"
+APP_PACKAGE_NAME = "zermes-agent"
+APP_COMMAND = "zermes"
+APP_HOME_ENV = "ZERMES_HOME"
+APP_DEFAULT_HOME_DIR = ".zermes"
+
+LEGACY_APP_NAME = "Hermes"
+LEGACY_PACKAGE_NAME = "hermes-agent"
+LEGACY_COMMAND = "hermes"
+LEGACY_HOME_ENV = "HERMES_HOME"
+LEGACY_DEFAULT_HOME_DIR = ".hermes"
+
 _profile_fallback_warned: bool = False
 
 
+def _configured_home_env() -> str:
+    """Return the preferred app home override, accepting Hermes legacy env."""
+    return os.getenv(APP_HOME_ENV) or os.getenv(LEGACY_HOME_ENV, "")
+
+
 def get_hermes_home() -> Path:
-    """Return the Hermes home directory (default: ~/.hermes).
+    """Return the Zermes home directory (default: ~/.zermes).
 
-    Reads HERMES_HOME env var, falls back to ~/.hermes.
-    This is the single source of truth — all other copies should import this.
-
-    When ``HERMES_HOME`` is unset but an ``active_profile`` file indicates
-    a non-default profile is active, logs a loud one-shot warning to
-    ``errors.log`` so cross-profile data corruption is diagnosable instead
-    of silent.  Behavior is unchanged otherwise — we still return
-    ``~/.hermes`` — because raising here would brick 30+ module-level
-    callers that import this at load time.  Subprocess spawners are
-    expected to propagate ``HERMES_HOME`` explicitly (see the systemd
-    template in ``hermes_cli/gateway.py`` and the kanban dispatcher in
-    ``hermes_cli/kanban_db.py``).  See https://github.com/NousResearch/hermes-agent/issues/18594.
+    Reads ZERMES_HOME first, accepts HERMES_HOME for backward compatibility,
+    then falls back to ~/.zermes.  The function name is kept stable so the
+    fork can continue merging upstream Hermes code with minimal churn.
     """
-    val = os.environ.get("HERMES_HOME", "").strip()
+    val = _configured_home_env().strip()
     if val:
         return Path(val)
 
-    # Guard: if a non-default profile is sticky-active, warn once that
-    # the fallback to the default profile is almost certainly wrong.
     global _profile_fallback_warned
     if not _profile_fallback_warned:
         try:
-            # Inline the default-root resolution from get_default_hermes_root()
-            # to stay import-safe (this function is called from module scope
-            # in 30+ files; we cannot afford to trigger logging setup here).
-            active_path = (Path.home() / ".hermes" / "active_profile")
+            active_path = Path.home() / APP_DEFAULT_HOME_DIR / "active_profile"
+            if not active_path.exists():
+                active_path = Path.home() / LEGACY_DEFAULT_HOME_DIR / "active_profile"
             active = active_path.read_text().strip() if active_path.exists() else ""
         except (UnicodeDecodeError, OSError):
             active = ""
         if active and active != "default":
             _profile_fallback_warned = True
-            # Write directly to stderr.  We intentionally do NOT route this
-            # through ``logging`` because (a) this function is called at
-            # module-import time from 30+ sites, often before logging is
-            # configured, and (b) root-logger propagation would double-emit
-            # on consoles where a StreamHandler is already attached.
             import sys
+
             msg = (
-                f"[HERMES_HOME fallback] HERMES_HOME is unset but active "
-                f"profile is {active!r}. Falling back to ~/.hermes, which "
-                f"is the DEFAULT profile — not {active!r}. Any data this "
-                f"process writes will land in the wrong profile. The "
-                f"subprocess spawner should pass HERMES_HOME explicitly "
-                f"(see issue #18594)."
+                f"[{APP_HOME_ENV} fallback] {APP_HOME_ENV}/{LEGACY_HOME_ENV} "
+                f"is unset but active profile is {active!r}. Falling back to "
+                f"~/{APP_DEFAULT_HOME_DIR}, which is the DEFAULT profile, not "
+                f"{active!r}. Any data this process writes will land in the "
+                f"wrong profile. The subprocess spawner should pass "
+                f"{APP_HOME_ENV} explicitly (see issue #18594)."
             )
             try:
                 sys.stderr.write(msg + "\n")
@@ -65,36 +66,38 @@ def get_hermes_home() -> Path:
             except Exception:
                 pass
 
-    return Path.home() / ".hermes"
+    return Path.home() / APP_DEFAULT_HOME_DIR
 
 
 def get_default_hermes_root() -> Path:
-    """Return the root Hermes directory for profile-level operations.
+    """Return the root Zermes directory for profile-level operations.
 
-    In standard deployments this is ``~/.hermes``.
+    In standard deployments this is ``~/.zermes``.
 
-    In Docker or custom deployments where ``HERMES_HOME`` points outside
-    ``~/.hermes`` (e.g. ``/opt/data``), returns ``HERMES_HOME`` directly
+    In Docker or custom deployments where ``ZERMES_HOME``/``HERMES_HOME``
+    points outside ``~/.zermes`` or ``~/.hermes`` (e.g. ``/opt/data``),
+    returns that configured directory directly
     — that IS the root.
 
-    In profile mode where ``HERMES_HOME`` is ``<root>/profiles/<name>``,
+    In profile mode where app home is ``<root>/profiles/<name>``,
     returns ``<root>`` so that ``profile list`` can see all profiles.
-    Works both for standard (``~/.hermes/profiles/coder``) and Docker
+    Works both for standard (``~/.zermes/profiles/coder``) and Docker
     (``/opt/data/profiles/coder``) layouts.
 
     Import-safe — no dependencies beyond stdlib.
     """
-    native_home = Path.home() / ".hermes"
-    env_home = os.environ.get("HERMES_HOME", "")
+    native_home = Path.home() / APP_DEFAULT_HOME_DIR
+    legacy_native_home = Path.home() / LEGACY_DEFAULT_HOME_DIR
+    env_home = _configured_home_env()
     if not env_home:
         return native_home
     env_path = Path(env_home)
-    try:
-        env_path.resolve().relative_to(native_home.resolve())
-        # HERMES_HOME is under ~/.hermes (normal or profile mode)
-        return native_home
-    except ValueError:
-        pass
+    for candidate in (native_home, legacy_native_home):
+        try:
+            env_path.resolve().relative_to(candidate.resolve())
+            return candidate
+        except ValueError:
+            pass
 
     # Docker / custom deployment.
     # Check if this is a profile path: <root>/profiles/<name>
@@ -143,13 +146,13 @@ def get_hermes_dir(new_subpath: str, old_name: str) -> Path:
 
 
 def display_hermes_home() -> str:
-    """Return a user-friendly display string for the current HERMES_HOME.
+    """Return a user-friendly display string for the current app home.
 
     Uses ``~/`` shorthand for readability::
 
-        default:  ``~/.hermes``
-        profile:  ``~/.hermes/profiles/coder``
-        custom:   ``/opt/hermes-custom``
+        default:  ``~/.zermes``
+        profile:  ``~/.zermes/profiles/coder``
+        custom:   ``/opt/zermes-custom``
 
     Use this in **user-facing** print/log messages instead of hardcoding
     ``~/.hermes``.  For code that needs a real ``Path``, use
@@ -165,9 +168,9 @@ def display_hermes_home() -> str:
 def get_subprocess_home() -> str | None:
     """Return a per-profile HOME directory for subprocesses, or None.
 
-    When ``{HERMES_HOME}/home/`` exists on disk, subprocesses should use it
+    When ``{ZERMES_HOME}/home/`` exists on disk, subprocesses should use it
     as ``HOME`` so system tools (git, ssh, gh, npm …) write their configs
-    inside the Hermes data directory instead of the OS-level ``/root`` or
+    inside the Zermes data directory instead of the OS-level ``/root`` or
     ``~/``.  This provides:
 
     * **Docker persistence** — tool configs land inside the persistent volume.
@@ -179,7 +182,7 @@ def get_subprocess_home() -> str | None:
     Activation is directory-based: if the ``home/`` subdirectory doesn't
     exist, returns ``None`` and behavior is unchanged.
     """
-    hermes_home = os.getenv("HERMES_HOME")
+    hermes_home = _configured_home_env()
     if not hermes_home:
         return None
     profile_home = os.path.join(hermes_home, "home")
@@ -233,7 +236,7 @@ def is_wsl() -> bool:
     if _wsl_detected is not None:
         return _wsl_detected
     try:
-        with open("/proc/version", "r", encoding="utf-8") as f:
+        with open("/proc/version", "r") as f:
             _wsl_detected = "microsoft" in f.read().lower()
     except Exception:
         _wsl_detected = False
@@ -260,7 +263,7 @@ def is_container() -> bool:
         _container_detected = True
         return True
     try:
-        with open("/proc/1/cgroup", "r", encoding="utf-8") as f:
+        with open("/proc/1/cgroup", "r") as f:
             cgroup = f.read()
             if "docker" in cgroup or "podman" in cgroup or "/lxc/" in cgroup:
                 _container_detected = True

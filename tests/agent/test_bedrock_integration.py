@@ -260,13 +260,13 @@ class TestPackaging:
         from pathlib import Path
         # Read pyproject.toml to verify [bedrock] extra
         toml_path = Path(__file__).parent.parent.parent / "pyproject.toml"
-        content = toml_path.read_text()
+        content = toml_path.read_text(encoding="utf-8")
         assert 'bedrock = ["boto3' in content
 
     def test_bedrock_in_all_extra(self):
         from pathlib import Path
-        content = (Path(__file__).parent.parent.parent / "pyproject.toml").read_text()
-        assert '"hermes-agent[bedrock]"' in content
+        content = (Path(__file__).parent.parent.parent / "pyproject.toml").read_text(encoding="utf-8")
+        assert '"zermes-agent[bedrock]"' in content
 
 
 # ---------------------------------------------------------------------------

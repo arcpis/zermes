@@ -4649,7 +4649,7 @@ class GatewayRunner:
         elif platform == Platform.SLACK:
             from gateway.platforms.slack import SlackAdapter, check_slack_requirements
             if not check_slack_requirements():
-                logger.warning("Slack: slack-bolt not installed. Run: pip install 'hermes-agent[slack]'")
+                logger.warning("Slack: slack-bolt not installed. Run: pip install 'zermes-agent[slack]'")
                 return None
             return SlackAdapter(config)
 
@@ -8994,7 +8994,8 @@ class GatewayRunner:
             if "pynacl" in err_lower or "nacl" in err_lower or "davey" in err_lower:
                 return (
                     "Voice dependencies are missing (PyNaCl / davey). "
-                    f"Install with: `{sys.executable} -m pip install PyNaCl`"
+                    "Install or reinstall Zermes with the messaging extra, e.g. "
+                    "`pip install zermes-agent[messaging]`."
                 )
             return f"Failed to join voice channel: {e}"
 

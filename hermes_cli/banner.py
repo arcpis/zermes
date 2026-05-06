@@ -11,7 +11,7 @@ import subprocess
 import threading
 import time
 from pathlib import Path
-from hermes_constants import get_hermes_home
+from hermes_constants import APP_NAME, get_hermes_home
 from typing import Dict, List, Optional
 
 from rich.console import Console
@@ -324,7 +324,7 @@ def get_latest_release_tag(repo_dir: Optional[Path] = None) -> Optional[tuple]:
 
 def format_banner_version_label() -> str:
     """Return the version label shown in the startup banner title."""
-    base = f"Hermes Agent v{VERSION} ({RELEASE_DATE})"
+    base = f"{APP_NAME} v{VERSION} ({RELEASE_DATE})"
     state = get_git_banner_state()
     if not state:
         return base

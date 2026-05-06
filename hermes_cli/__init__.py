@@ -1,14 +1,14 @@
 """
-Hermes CLI - Unified command-line interface for Hermes Agent.
+Zermes CLI - Unified command-line interface for Zermes.
 
 Provides subcommands for:
-- hermes chat          - Interactive chat (same as ./hermes)
-- hermes gateway       - Run gateway in foreground
-- hermes gateway start - Start gateway service
-- hermes gateway stop  - Stop gateway service
-- hermes setup         - Interactive setup wizard
-- hermes status        - Show status of all components
-- hermes cron          - Manage cron jobs
+- zermes chat          - Interactive chat
+- zermes gateway       - Run gateway in foreground
+- zermes gateway start - Start gateway service
+- zermes gateway stop  - Stop gateway service
+- zermes setup         - Interactive setup wizard
+- zermes status        - Show status of all components
+- zermes cron          - Manage cron jobs
 """
 
 import os

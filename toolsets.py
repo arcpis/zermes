@@ -548,6 +548,12 @@ TOOLSETS = {
     }
 }
 
+_ZERMES_TOOLSET_ALIASES = {
+    name.replace("hermes-", "zermes-", 1): name
+    for name in TOOLSETS
+    if name.startswith("hermes-")
+}
+
 
 
 def get_toolset(name: str) -> Optional[Dict[str, Any]]:
@@ -562,6 +568,8 @@ def get_toolset(name: str) -> Optional[Dict[str, Any]]:
         None: If toolset not found
     """
     toolset = TOOLSETS.get(name)
+    if toolset is None and name in _ZERMES_TOOLSET_ALIASES:
+        toolset = TOOLSETS.get(_ZERMES_TOOLSET_ALIASES[name])
 
     try:
         from tools.registry import registry
@@ -754,7 +762,7 @@ def get_toolset_names() -> List[str]:
     Returns:
         List[str]: List of toolset names
     """
-    names = set(TOOLSETS.keys())
+    names = set(TOOLSETS.keys()) | set(_ZERMES_TOOLSET_ALIASES.keys())
     aliases = _get_registry_toolset_aliases()
     for ts_name in _get_plugin_toolset_names():
         for alias, canonical in aliases.items():
@@ -781,7 +789,7 @@ def validate_toolset(name: str) -> bool:
     # Accept special alias names for convenience
     if name in {"all", "*"}:
         return True
-    if name in TOOLSETS:
+    if name in TOOLSETS or name in _ZERMES_TOOLSET_ALIASES:
         return True
     if name in _get_plugin_toolset_names():
         return True

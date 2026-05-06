@@ -106,6 +106,10 @@ def _require_tty(command_name: str) -> None:
 PROJECT_ROOT = Path(__file__).parent.parent.resolve()
 sys.path.insert(0, str(PROJECT_ROOT))
 
+if os.environ.get("ZERMES_HOME") and not os.environ.get("HERMES_HOME"):
+    os.environ["HERMES_HOME"] = os.environ["ZERMES_HOME"]
+elif os.environ.get("HERMES_HOME") and not os.environ.get("ZERMES_HOME"):
+    os.environ["ZERMES_HOME"] = os.environ["HERMES_HOME"]
 
 # ---------------------------------------------------------------------------
 # Profile override — MUST happen before any hermes module import.
@@ -180,6 +184,7 @@ def _apply_profile_override() -> None:
                 file=sys.stderr,
             )
             return
+        os.environ["ZERMES_HOME"] = hermes_home
         os.environ["HERMES_HOME"] = hermes_home
         # Strip the flag from argv so argparse doesn't choke
         if consume > 0:
@@ -253,7 +258,7 @@ import time as _time
 from datetime import datetime
 
 from hermes_cli import __version__, __release_date__
-from hermes_constants import AI_GATEWAY_BASE_URL, OPENROUTER_BASE_URL
+from hermes_constants import AI_GATEWAY_BASE_URL, APP_PACKAGE_NAME, OPENROUTER_BASE_URL
 
 logger = logging.getLogger(__name__)
 
@@ -5357,7 +5362,8 @@ def cmd_import(args):
 
 def cmd_version(args):
     """Show version."""
-    print(f"Hermes Agent v{__version__} ({__release_date__})")
+    print(f"{APP_NAME} v{__version__} ({__release_date__})")
+    print(f"Compatible CLI alias: {LEGACY_COMMAND}")
     print(f"Project: {PROJECT_ROOT}")
 
     # Show Python version
@@ -6458,7 +6464,7 @@ def _load_installable_optional_extras() -> list[str]:
         return []
 
     # Parse the [all] group to find which extras it references.
-    # Entries look like "hermes-agent[matrix]" or "package-name[extra]".
+    # Entries look like "zermes-agent[matrix]" or "package-name[extra]".
     all_refs = optional_deps.get("all", [])
     referenced: list[str] = []
     for ref in all_refs:
@@ -8795,6 +8801,7 @@ def cmd_dashboard(args):
             f"Re-install the package into this interpreter so metadata updates apply:\n"
             f"  cd {PROJECT_ROOT}\n"
             f"  {sys.executable} -m pip install -e .\n"
+            f"  # or install the packaged extra: {sys.executable} -m pip install {APP_PACKAGE_NAME}[web]\n"
             "If `pip` is missing in this venv, use:  uv pip install -e ."
         )
         print(f"Import error: {e}")
@@ -8974,7 +8981,7 @@ def _plugin_cli_discovery_needed() -> bool:
 
 
 def main():
-    """Main entry point for hermes CLI."""
+    """Main entry point for the Zermes CLI."""
     # Force UTF-8 stdio on Windows before anything prints.  No-op elsewhere.
     try:
         from hermes_cli.stdio import configure_windows_stdio

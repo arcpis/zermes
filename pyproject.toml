@@ -3,15 +3,15 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "hermes-agent"
+name = "zermes-agent"
 version = "0.13.0"
-description = "The self-improving AI agent — creates skills from experience, improves them during use, and runs anywhere"
+description = "Zermes, a Hermes Agent fork for governed self-improving AI workflows"
 readme = "README.md"
 requires-python = ">=3.11"
 authors = [{ name = "Nous Research" }]
 license = { text = "MIT" }
 dependencies = [
-  # Core — pinned to known-good ranges to limit supply chain attack surface
+  # Core 鈥?pinned to known-good ranges to limit supply chain attack surface
   "openai>=2.21.0,<3",
   "anthropic>=0.39.0,<1",
   "python-dotenv>=1.2.1,<2",
@@ -30,11 +30,11 @@ dependencies = [
   "firecrawl-py>=4.16.0,<5",
   "parallel-web>=0.4.2,<1",
   "fal-client>=0.13.1,<1",
-  # Cron scheduler (built-in feature — scheduled cron/interval jobs use croniter).
+  # Cron scheduler (built-in feature 鈥?scheduled cron/interval jobs use croniter).
   "croniter>=6.0.0,<7",
   # Text-to-speech (Edge TTS is free, no API key needed)
   "edge-tts>=7.2.7,<8",
-  # Skills Hub (GitHub App JWT auth — optional, only needed for bot identity)
+  # Skills Hub (GitHub App JWT auth 鈥?optional, only needed for bot identity)
   "PyJWT[crypto]>=2.12.0,<3",  # CVE-2026-32597
   # Windows has no IANA tzdata shipped with the OS, so Python's ``zoneinfo``
   # (PEP 615) raises ``ZoneInfoNotFoundError`` for every non-UTC timezone
@@ -45,7 +45,7 @@ dependencies = [
   # Cross-platform process / PID management.  `psutil` is the canonical
   # answer for "is this PID alive" and process-tree walking across Linux,
   # macOS and Windows.  It replaces POSIX-only idioms like `os.kill(pid, 0)`
-  # (which is a silent killer on Windows — see CONTRIBUTING.md) and
+  # (which is a silent killer on Windows 鈥?see CONTRIBUTING.md) and
   # `os.killpg` (which doesn't exist on Windows).
   "psutil>=5.9.0,<8",
 ]
@@ -76,7 +76,7 @@ honcho = ["honcho-ai>=2.0.1,<3"]
 mcp = ["mcp>=1.2.0,<2"]
 homeassistant = ["aiohttp>=3.9.0,<4"]
 sms = ["aiohttp>=3.9.0,<4"]
-# Computer use — macOS background desktop control via cua-driver (MCP stdio).
+# Computer use 鈥?macOS background desktop control via cua-driver (MCP stdio).
 # The cua-driver binary itself is installed via `hermes tools` post-setup
 # (curl install script); this extra just pins the MCP client used to talk
 # to it, which is already provided by the `mcp` extra.
@@ -87,12 +87,12 @@ bedrock = ["boto3>=1.35.0,<2"]
 termux = [
   # Baseline Android / Termux path for reliable fresh installs.
   "python-telegram-bot[webhooks]>=22.6,<23",
-  "hermes-agent[cron]",
-  "hermes-agent[cli]",
-  "hermes-agent[pty]",
-  "hermes-agent[mcp]",
-  "hermes-agent[honcho]",
-  "hermes-agent[acp]",
+  "zermes-agent[cron]",
+  "zermes-agent[cli]",
+  "zermes-agent[pty]",
+  "zermes-agent[mcp]",
+  "zermes-agent[honcho]",
+  "zermes-agent[acp]",
 ]
 termux-all = [
   # Best-effort "install all" profile for Termux: include broad extras that
@@ -102,18 +102,18 @@ termux-all = [
   # Excluded for now:
   # - matrix (mautrix[encryption] -> python-olm build failures on Termux)
   # - voice  (faster-whisper chain requires ctranslate2/av builds not packaged)
-  "hermes-agent[termux]",
-  "hermes-agent[messaging]",
-  "hermes-agent[slack]",
-  "hermes-agent[tts-premium]",
-  "hermes-agent[dingtalk]",
-  "hermes-agent[feishu]",
-  "hermes-agent[google]",
-  "hermes-agent[mistral]",
-  "hermes-agent[bedrock]",
-  "hermes-agent[homeassistant]",
-  "hermes-agent[sms]",
-  "hermes-agent[web]",
+  "zermes-agent[termux]",
+  "zermes-agent[messaging]",
+  "zermes-agent[slack]",
+  "zermes-agent[tts-premium]",
+  "zermes-agent[dingtalk]",
+  "zermes-agent[feishu]",
+  "zermes-agent[google]",
+  "zermes-agent[mistral]",
+  "zermes-agent[bedrock]",
+  "zermes-agent[homeassistant]",
+  "zermes-agent[sms]",
+  "zermes-agent[web]",
 ]
 dingtalk = ["dingtalk-stream>=0.20,<1", "alibabacloud-dingtalk>=2.0.0", "qrcode>=7.0,<8"]
 feishu = ["lark-oapi>=1.5.3,<2", "qrcode>=7.0,<8"]
@@ -137,35 +137,37 @@ rl = [
 ]
 yc-bench = ["yc-bench @ git+https://github.com/collinear-ai/yc-bench.git@bfb0c88062450f46341bd9a5298903fc2e952a5c ; python_version >= '3.12'"]
 all = [
-  "hermes-agent[modal]",
-  "hermes-agent[daytona]",
-  "hermes-agent[vercel]",
-  "hermes-agent[messaging]",
+  "zermes-agent[modal]",
+  "zermes-agent[daytona]",
+  "zermes-agent[vercel]",
+  "zermes-agent[messaging]",
   # matrix: python-olm (required by matrix-nio[e2e]) is upstream-broken on
   # modern macOS (archived libolm, C++ errors with Clang 21+).  On Linux the
   # [matrix] extra's own marker pulls in the [e2e] variant automatically.
-  "hermes-agent[matrix]; sys_platform == 'linux'",
-  "hermes-agent[cron]",
-  "hermes-agent[cli]",
-  "hermes-agent[dev]",
-  "hermes-agent[tts-premium]",
-  "hermes-agent[slack]",
-  "hermes-agent[pty]",
-  "hermes-agent[honcho]",
-  "hermes-agent[mcp]",
-  "hermes-agent[homeassistant]",
-  "hermes-agent[sms]",
-  "hermes-agent[acp]",
-  "hermes-agent[voice]",
-  "hermes-agent[dingtalk]",
-  "hermes-agent[feishu]",
-  "hermes-agent[google]",
-  "hermes-agent[mistral]",
-  "hermes-agent[bedrock]",
-  "hermes-agent[web]",
+  "zermes-agent[matrix]; sys_platform == 'linux'",
+  "zermes-agent[cron]",
+  "zermes-agent[cli]",
+  "zermes-agent[dev]",
+  "zermes-agent[tts-premium]",
+  "zermes-agent[slack]",
+  "zermes-agent[pty]",
+  "zermes-agent[honcho]",
+  "zermes-agent[mcp]",
+  "zermes-agent[homeassistant]",
+  "zermes-agent[sms]",
+  "zermes-agent[acp]",
+  "zermes-agent[voice]",
+  "zermes-agent[dingtalk]",
+  "zermes-agent[feishu]",
+  "zermes-agent[google]",
+  "zermes-agent[mistral]",
+  "zermes-agent[bedrock]",
+  "zermes-agent[web]",
 ]
 
 [project.scripts]
+zermes = "hermes_cli.main:main"
+zermes-agent = "run_agent:main"
 hermes = "hermes_cli.main:main"
 hermes-agent = "run_agent:main"
 hermes-acp = "acp_adapter.entry:main"
@@ -199,11 +201,11 @@ exclude = ["tinker-atropos"]
 
 [tool.ruff]
 exclude = ["tinker-atropos"]
-preview = true  # required for PLW1514 (unspecified-encoding) — preview rule
+preview = true  # required for PLW1514 (unspecified-encoding) 鈥?preview rule
 
 [tool.ruff.lint]
 # All other lints are intentionally disabled (see comment history on this
-# file) while we wrangle typechecks — but PLW1514 is too load-bearing to
+# file) while we wrangle typechecks 鈥?but PLW1514 is too load-bearing to
 # keep off.  Bare open()/read_text()/write_text() in text mode defaults to
 # the system locale encoding on Windows (cp1252 on US-locale installs),
 # which silently corrupts any non-ASCII file content.  We had three
@@ -214,7 +216,7 @@ select = ["PLW1514"]
 [tool.ruff.lint.per-file-ignores]
 # Tests can intentionally exercise locale-encoding edge cases.
 "tests/**" = ["PLW1514"]
-# Skills and plugins are partially user-authored — their own conventions.
+# Skills and plugins are partially user-authored 鈥?their own conventions.
 "skills/**" = ["PLW1514"]
 "optional-skills/**" = ["PLW1514"]
 "plugins/**" = ["PLW1514"]
