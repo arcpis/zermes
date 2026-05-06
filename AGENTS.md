@@ -67,6 +67,25 @@ hermes-agent/
 `gateway.log` when running the gateway. Profile-aware via `get_hermes_home()`.
 Browse with `hermes logs [--follow] [--level ...] [--session ...]`.
 
+## Zermes Fork Branching
+
+Zermes is maintained as a Hermes Agent fork with selective upstream
+compatibility. Keep branch responsibilities separate:
+
+- `main` tracks the clean Hermes upstream baseline in this checkout.
+- `zermes/main` is the Zermes product line.
+- `zermes/self-evolution` carries the governed self-evolution capability.
+- `self-evolution/dev/<task_id>` branches are task-scoped implementation
+  branches created by the self-evolution workflow.
+
+Prefer small, topical commits over broad mixed commits. Keep internal module
+names such as `hermes_cli` stable unless there is a deliberate fork-wide rename
+plan; this reduces upstream merge conflicts. Use short-lived topic branches
+such as `zermes/branding-*` for focused integration work, then merge or
+cherry-pick those commits into `zermes/main`. If a Zermes remote is added,
+use `upstream` for `https://github.com/NousResearch/hermes-agent.git` and
+`origin` for the Zermes repository.
+
 ## Self-Evolution Workflow
 
 The `code_modification` toolset implements a governed self-evolution workflow:
