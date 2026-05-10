@@ -17,7 +17,7 @@ install prefix from user data and prepares the runtime layout needed by governed
 self-evolution:
 
 ```bash
-python install.py --dry-run --non-interactive
+python install.py install
 ```
 
 The target layout keeps running source under
@@ -26,6 +26,23 @@ The target layout keeps running source under
 or a custom `--data-dir`. The legacy one-line installers below still work, but
 they use the older source-checkout/in-tree-venv model and should be treated as
 compatibility or developer paths as the Zermes installer matures.
+
+To update a source runtime, build from a specific checkout:
+
+```bash
+python install.py update --prefix <prefix> --source <source-dir>
+python install.py update --prefix <prefix> --current-source
+```
+
+`--source` names the checkout to apply. `--current-source` uses the checkout
+that contains `install.py`. Non-interactive updates must provide one of these
+sources. Updates are staged under `runtime/candidates/<candidate-id>/` and
+recorded in `update-state.json`; after verification, activation updates
+`active.json`. Use `--no-activate` to build and verify only. Roll back with
+`python install.py rollback --prefix <prefix>`, which points `active.json` back
+to `previous.json` without deleting any release. Source-runtime update does not
+force-restart running processes yet. The `installer_language` choice only
+changes installer prompts and help text; it does not change runtime language.
 
 ### Linux / macOS / WSL2
 

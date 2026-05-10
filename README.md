@@ -40,7 +40,7 @@ directory from user data and prepares a stable runtime layout for governed
 self-evolution:
 
 ```bash
-python install.py --dry-run --non-interactive
+python install.py install
 ```
 
 The installer model uses `<prefix>/runtime/releases/source-install/` for the
@@ -49,6 +49,22 @@ or a custom `--data-dir` for user config, sessions, skills, and logs. The
 legacy installers below still work, but they run from a source checkout with an
 in-tree virtual environment and are now best treated as compatibility or
 developer paths while the new runtime installer is completed.
+
+Update an installed source runtime only from an explicit checkout:
+
+```bash
+python install.py update --prefix <prefix> --source <source-dir>
+python install.py update --prefix <prefix> --current-source
+```
+
+`--source` points at a chosen checkout; `--current-source` uses the checkout
+that contains `install.py`. Non-interactive updates must provide one of them.
+Updates first build `runtime/candidates/<candidate-id>/` and write
+`update-state.json`; after verification, `--activate` switches `active.json`.
+Use `--no-activate` to keep the candidate only. `python install.py rollback
+--prefix <prefix>` points `active.json` back to `previous.json` without deleting
+releases. The installer does not force-restart running processes yet; restart
+manually after update or rollback.
 
 ### Linux, macOS, WSL2, Termux
 

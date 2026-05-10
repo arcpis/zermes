@@ -14,6 +14,24 @@ Hermes also ships a modern TUI with modal overlays, mouse selection, and non-blo
 
 ## Running the CLI
 
+### Source runtime installer commands
+
+Source-runtime installs use the repository installer, not the interactive
+`hermes` runtime command:
+
+```bash
+python install.py install
+python install.py update --prefix <prefix> --source <source-dir>
+python install.py update --prefix <prefix> --current-source
+python install.py rollback --prefix <prefix>
+```
+
+Updates are staged under `runtime/candidates/<candidate-id>/` and recorded in
+`update-state.json` before activation changes `active.json`. `--source` names a
+checkout explicitly; `--current-source` uses the checkout containing
+`install.py`. `rollback` points `active.json` back to `previous.json` without
+deleting releases.
+
 ```bash
 # Start an interactive session (default)
 hermes

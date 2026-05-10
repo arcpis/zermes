@@ -99,6 +99,9 @@ The target runtime layout is:
   runtime/
     active.json
     previous.json
+    update-state.json
+    candidates/<candidate-id>/
+      update-state.json
     releases/source-install/
       source/
       venv/
@@ -109,6 +112,13 @@ The target runtime layout is:
 ```
 
 User config and state stay in `~/.hermes` or the chosen `--data-dir`.
+Update from an explicit source with `python install.py update --prefix <prefix>
+--source <source-dir>` or `python install.py update --prefix <prefix>
+--current-source`; non-interactive update must name a source. `--no-activate`
+builds and verifies only. Rollback is pointer-only:
+`python install.py rollback --prefix <prefix>` points `active.json` back to
+`previous.json` and does not delete releases. Restart running processes
+manually after source-runtime update or rollback.
 `setup-hermes.sh` and the existing `scripts/install.*` paths are legacy or
 developer/compatibility paths until they are wrapped by the new installer.
 When changing installer behavior, update README, README.zh-CN, website
