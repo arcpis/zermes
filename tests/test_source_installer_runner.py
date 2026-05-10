@@ -37,6 +37,7 @@ def test_run_command_uses_argv_form(monkeypatch, tmp_path):
             ["python", "--version"],
             {
                 "cwd": tmp_path,
+                "env": None,
                 "text": True,
                 "capture_output": True,
                 "check": False,
@@ -44,6 +45,23 @@ def test_run_command_uses_argv_form(monkeypatch, tmp_path):
             },
         )
     ]
+
+
+def test_run_command_merges_extra_environment(monkeypatch, tmp_path):
+    calls = []
+
+    def fake_run(command, **kwargs):
+        calls.append((command, kwargs))
+        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+    monkeypatch.setenv("EXISTING_ENV", "kept")
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    install_zermes.run_command(["uv", "sync"], cwd=tmp_path, env={"UV_PROJECT_ENVIRONMENT": "venv"})
+
+    env = calls[0][1]["env"]
+    assert env["EXISTING_ENV"] == "kept"
+    assert env["UV_PROJECT_ENVIRONMENT"] == "venv"
 
 
 def test_run_command_failure_raises_install_error(monkeypatch):

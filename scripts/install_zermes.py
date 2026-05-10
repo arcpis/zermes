@@ -133,6 +133,20 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Skip virtual environment creation and use the selected Python directly.",
     )
+    deps_group = parser.add_mutually_exclusive_group()
+    deps_group.add_argument(
+        "--install-deps",
+        dest="install_deps",
+        action="store_true",
+        default=True,
+        help="Install Python dependencies into the release environment.",
+    )
+    deps_group.add_argument(
+        "--no-install-deps",
+        dest="install_deps",
+        action="store_false",
+        help="Skip Python dependency installation.",
+    )
     return parser
 
 
@@ -177,6 +191,7 @@ def run_command(
     command: list[str] | tuple[str, ...],
     *,
     cwd: Path | None = None,
+    env: dict[str, str] | None = None,
     dry_run: bool = False,
 ) -> CommandResult:
     command_tuple = tuple(str(part) for part in command)
@@ -185,6 +200,7 @@ def run_command(
     completed = subprocess.run(
         list(command_tuple),
         cwd=cwd,
+        env={**os.environ, **env} if env else None,
         text=True,
         capture_output=True,
         check=False,
@@ -221,6 +237,55 @@ def create_virtual_environment(
         [selected_python, "-m", "venv", plan.venv_dir],
         dry_run=dry_run,
     )
+
+
+def dependency_install_commands(plan: InstallerPlan) -> tuple[list[str], ...]:
+    source_dir = Path(plan.source_dir)
+    if (source_dir / "uv.lock").exists():
+        return (
+            ["uv", "sync", "--all-extras", "--locked"],
+            ["uv", "pip", "install", "-e", ".[all]"],
+            ["uv", "pip", "install", "-e", "."],
+        )
+    return (
+        ["uv", "pip", "install", "-e", ".[all]"],
+        ["uv", "pip", "install", "-e", "."],
+    )
+
+
+def install_python_dependencies(
+    plan: InstallerPlan,
+    *,
+    install_deps: bool = True,
+    dry_run: bool = False,
+) -> CommandResult:
+    if not install_deps:
+        return CommandResult(command=(), returncode=0, dry_run=dry_run)
+    commands = dependency_install_commands(plan)
+    last_error: InstallerCommandError | None = None
+    for index, command in enumerate(commands):
+        try:
+            if command[:2] == ["uv", "sync"]:
+                result = run_command(
+                    command,
+                    cwd=Path(plan.source_dir),
+                    env={"UV_PROJECT_ENVIRONMENT": plan.venv_dir},
+                    dry_run=dry_run,
+                )
+            else:
+                result = run_command(
+                    command,
+                    cwd=Path(plan.source_dir),
+                    dry_run=dry_run,
+                )
+            return result
+        except InstallerCommandError as exc:
+            last_error = exc
+            if index == len(commands) - 1:
+                raise
+    if last_error is not None:
+        raise last_error
+    raise RuntimeError("no dependency installation commands were planned")
 
 
 def install_directories(plan: InstallerPlan) -> tuple[Path, ...]:
