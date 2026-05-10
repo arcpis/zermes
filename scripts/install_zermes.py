@@ -175,6 +175,27 @@ def run_command(
     return result
 
 
+def install_directories(plan: InstallerPlan) -> tuple[Path, ...]:
+    return (
+        Path(plan.prefix) / "launcher",
+        Path(plan.runtime_dir),
+        Path(plan.release_dir),
+        Path(plan.source_dir),
+        Path(plan.build_dir),
+        Path(plan.bin_dir),
+        Path(plan.prefix) / "logs",
+    )
+
+
+def create_install_directories(plan: InstallerPlan, *, dry_run: bool = False) -> tuple[Path, ...]:
+    directories = install_directories(plan)
+    if dry_run:
+        return directories
+    for directory in directories:
+        directory.mkdir(parents=True, exist_ok=True)
+    return directories
+
+
 def build_plan(args: argparse.Namespace, *, repo_root: Path) -> InstallerPlan:
     prefix = (args.prefix or default_prefix()).expanduser()
     data_dir = (args.data_dir or default_data_dir()).expanduser()
