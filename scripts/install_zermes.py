@@ -27,6 +27,14 @@ class InstallerPlan:
     prefix: str
     data_dir: str
     release_id: str
+    runtime_dir: str
+    release_dir: str
+    source_dir: str
+    venv_dir: str
+    build_dir: str
+    bin_dir: str
+    active_path: str
+    previous_path: str
     dry_run: bool
 
 
@@ -71,28 +79,44 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def default_prefix() -> Path:
-    if sys.platform == "win32":
-        base = Path.home() / "AppData" / "Local"
+def default_prefix(*, platform: str | None = None, home: Path | None = None) -> Path:
+    platform_name = platform or sys.platform
+    home_dir = home or Path.home()
+    if platform_name == "win32":
+        base = home_dir / "AppData" / "Local"
         return base / "Zermes"
-    if sys.platform == "darwin":
-        return Path.home() / "Applications" / "Zermes"
-    return Path.home() / ".local" / "share" / "zermes"
+    if platform_name == "darwin":
+        return home_dir / "Applications" / "Zermes"
+    return home_dir / ".local" / "share" / "zermes"
 
 
-def default_data_dir() -> Path:
-    return Path.home() / ".hermes"
+def default_data_dir(*, home: Path | None = None) -> Path:
+    return (home or Path.home()) / ".hermes"
 
 
 def build_plan(args: argparse.Namespace, *, repo_root: Path) -> InstallerPlan:
     prefix = (args.prefix or default_prefix()).expanduser()
     data_dir = (args.data_dir or default_data_dir()).expanduser()
+    runtime_dir = prefix / "runtime"
+    release_dir = runtime_dir / "releases" / str(args.release_id)
+    source_dir = release_dir / "source"
+    venv_dir = release_dir / "venv"
+    build_dir = release_dir / "build"
+    bin_dir = prefix / "bin"
     return InstallerPlan(
         repo_root=str(repo_root.resolve()),
         language=args.language,
         prefix=str(prefix.resolve()),
         data_dir=str(data_dir.resolve()),
         release_id=str(args.release_id),
+        runtime_dir=str(runtime_dir.resolve()),
+        release_dir=str(release_dir.resolve()),
+        source_dir=str(source_dir.resolve()),
+        venv_dir=str(venv_dir.resolve()),
+        build_dir=str(build_dir.resolve()),
+        bin_dir=str(bin_dir.resolve()),
+        active_path=str((runtime_dir / "active.json").resolve()),
+        previous_path=str((runtime_dir / "previous.json").resolve()),
         dry_run=bool(args.dry_run),
     )
 
