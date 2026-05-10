@@ -86,6 +86,34 @@ cherry-pick those commits into `zermes/main`. If a Zermes remote is added,
 use `upstream` for `https://github.com/NousResearch/hermes-agent.git` and
 `origin` for the Zermes repository.
 
+## Zermes Source Installer
+
+Zermes is moving from the legacy "source checkout + in-tree venv + editable
+install" runtime model to a source runtime installer. The new installer entry
+points are `install.py` and `scripts/install_zermes.py`.
+
+The target runtime layout is:
+
+```text
+<prefix>/
+  runtime/
+    active.json
+    previous.json
+    releases/source-install/
+      source/
+      venv/
+      build/
+      metadata.json
+  bin/zermes
+  bin/zermes.bat
+```
+
+User config and state stay in `~/.hermes` or the chosen `--data-dir`.
+`setup-hermes.sh` and the existing `scripts/install.*` paths are legacy or
+developer/compatibility paths until they are wrapped by the new installer.
+When changing installer behavior, update README, README.zh-CN, website
+installation docs, and the evolution plan.
+
 ## Self-Evolution Workflow
 
 The `code_modification` toolset implements a governed self-evolution workflow:

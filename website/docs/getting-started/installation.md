@@ -10,6 +10,23 @@ Get Hermes Agent up and running in under two minutes with the one-line installer
 
 ## Quick Install
 
+### Zermes source runtime installer
+
+Zermes is moving toward a source runtime installer that separates the software
+install prefix from user data and prepares the runtime layout needed by governed
+self-evolution:
+
+```bash
+python install.py --dry-run --non-interactive
+```
+
+The target layout keeps running source under
+`<prefix>/runtime/releases/source-install/`, writes launchers under
+`<prefix>/bin/`, and keeps config, sessions, skills, and logs under `~/.hermes`
+or a custom `--data-dir`. The legacy one-line installers below still work, but
+they use the older source-checkout/in-tree-venv model and should be treated as
+compatibility or developer paths as the Zermes installer matures.
+
 ### Linux / macOS / WSL2
 
 ```bash

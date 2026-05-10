@@ -142,6 +142,19 @@ hermes claw migrate --overwrite  # 覆盖已有冲突
 
 欢迎贡献！请参阅 [贡献指南](https://hermes-agent.nousresearch.com/docs/developer-guide/contributing) 了解开发设置、代码风格和 PR 流程。
 
+源码运行安装器：
+
+```bash
+python install.py --dry-run --non-interactive
+```
+
+Zermes 正在迁移到新的源码运行安装器：软件安装目录、运行源码 release
+和用户数据目录会分开管理。目标结构是 `<prefix>/runtime/releases/source-install/`
+保存当前运行源码，`<prefix>/bin/zermes` 作为启动入口，`~/.hermes`
+或自定义 `--data-dir` 保存配置、会话、技能和日志。旧安装脚本仍可使用，
+但它们更适合作为兼容或开发者路径，因为旧模型会在源码目录内创建 venv 并
+直接从可变源码 checkout 运行。
+
 贡献者快速开始——克隆并使用 `setup-hermes.sh`：
 
 ```bash
@@ -150,6 +163,10 @@ cd hermes-agent
 ./setup-hermes.sh     # 安装 uv、创建 venv、安装 .[all]、创建符号链接 ~/.local/bin/hermes
 ./hermes              # 自动检测 venv，无需先 source
 ```
+
+`setup-hermes.sh` 保留为贡献者/开发者 bootstrap。长期运行的 Zermes
+安装应优先迁移到源码运行安装器模型，以便后续自我迭代可以在独立 release
+目录中验证和激活代码。
 
 手动安装（等效于上述命令）：
 
