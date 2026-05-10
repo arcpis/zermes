@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 from dataclasses import asdict, dataclass
+from datetime import UTC, datetime
 import json
 import os
 from pathlib import Path
@@ -286,6 +287,43 @@ def install_python_dependencies(
     if last_error is not None:
         raise last_error
     raise RuntimeError("no dependency installation commands were planned")
+
+
+def atomic_write_json(path: Path, payload: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temp_path = path.with_name(f".{path.name}.tmp")
+    temp_path.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    temp_path.replace(path)
+
+
+def release_metadata(plan: InstallerPlan, *, now: datetime | None = None) -> dict:
+    timestamp = (now or datetime.now(UTC)).isoformat()
+    return {
+        "release_id": plan.release_id,
+        "install_prefix": plan.prefix,
+        "data_dir": plan.data_dir,
+        "source_path": plan.source_dir,
+        "venv_path": plan.venv_dir,
+        "python_path": plan.python_path,
+        "created_at": timestamp,
+        "installer_version": "source-installer-v1",
+    }
+
+
+def write_release_metadata(plan: InstallerPlan, *, now: datetime | None = None) -> dict:
+    metadata = release_metadata(plan, now=now)
+    metadata_path = Path(plan.release_dir) / "metadata.json"
+    active_path = Path(plan.active_path)
+    previous_path = Path(plan.previous_path)
+    if active_path.exists():
+        previous_payload = json.loads(active_path.read_text(encoding="utf-8"))
+        atomic_write_json(previous_path, previous_payload)
+    atomic_write_json(metadata_path, metadata)
+    atomic_write_json(active_path, metadata)
+    return metadata
 
 
 def install_directories(plan: InstallerPlan) -> tuple[Path, ...]:
