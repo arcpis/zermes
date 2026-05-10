@@ -778,15 +778,21 @@ def create_virtual_environment(
 
 def dependency_install_commands(plan: InstallerPlan) -> tuple[list[str], ...]:
     source_dir = Path(plan.source_dir)
+    pip_install_all = [plan.python_path, "-m", "pip", "install", "-e", ".[all]"]
+    pip_install_base = [plan.python_path, "-m", "pip", "install", "-e", "."]
     if (source_dir / "uv.lock").exists():
         return (
             ["uv", "sync", "--all-extras", "--locked"],
             ["uv", "pip", "install", "-e", ".[all]"],
             ["uv", "pip", "install", "-e", "."],
+            pip_install_all,
+            pip_install_base,
         )
     return (
         ["uv", "pip", "install", "-e", ".[all]"],
         ["uv", "pip", "install", "-e", "."],
+        pip_install_all,
+        pip_install_base,
     )
 
 
@@ -807,6 +813,12 @@ def install_python_dependencies(
                     command,
                     cwd=Path(plan.source_dir),
                     env={"UV_PROJECT_ENVIRONMENT": plan.venv_dir},
+                    dry_run=dry_run,
+                )
+            elif len(command) >= 4 and command[1:4] == ["-m", "pip", "install"]:
+                result = run_command(
+                    command,
+                    cwd=Path(plan.source_dir),
                     dry_run=dry_run,
                 )
             else:
@@ -945,6 +957,15 @@ def start_zermes(
     return run_command([str(launcher)], dry_run=dry_run)
 
 
+def create_data_directory(plan: InstallerPlan, *, dry_run: bool = False) -> Path:
+    """Create the user data directory recorded in launcher environment."""
+
+    data_dir = Path(plan.data_dir)
+    if not dry_run:
+        data_dir.mkdir(parents=True, exist_ok=True)
+    return data_dir
+
+
 def install_directories(plan: InstallerPlan) -> tuple[Path, ...]:
     return (
         Path(plan.prefix) / "launcher",
@@ -1036,6 +1057,65 @@ def emit_plan(plan: InstallerPlan) -> None:
     print(json.dumps(asdict(plan), ensure_ascii=False, indent=2))
 
 
+def run_install_workflow(
+    args: argparse.Namespace,
+    *,
+    repo_root: Path,
+    input_fn=input,
+    now: datetime | None = None,
+) -> dict:
+    """Run the source install workflow from directory creation to optional start."""
+
+    plan = build_plan(args, repo_root=repo_root)
+    if plan.dry_run:
+        return asdict(plan)
+
+    steps: list[dict[str, object]] = []
+
+    def mark(step: str, detail: object | None = None) -> None:
+        payload: dict[str, object] = {"step": step, "status": "done"}
+        if detail is not None:
+            payload["detail"] = detail
+        steps.append(payload)
+
+    create_install_directories(plan)
+    mark("create-install-directories")
+    create_data_directory(plan)
+    mark("create-data-directory", plan.data_dir)
+    copied_files = sync_source_to_release(plan)
+    mark("sync-source", {"files": len(copied_files)})
+    create_virtual_environment(plan, python_executable=getattr(args, "python", None))
+    mark("create-virtual-environment", {"enabled": plan.use_venv})
+    install_python_dependencies(
+        plan,
+        install_deps=getattr(args, "install_deps", True),
+    )
+    mark("install-python-dependencies", {"enabled": getattr(args, "install_deps", True)})
+    metadata = write_release_metadata(plan, now=now)
+    mark("write-release-metadata", {"release_id": plan.release_id})
+    launchers = create_launcher_scripts(
+        plan,
+        create_launchers=getattr(args, "create_launchers", True),
+    )
+    mark("create-launchers", [str(path) for path in launchers])
+    verification_results = verify_installed_runtime(
+        plan,
+        skip_verify=getattr(args, "skip_verify", False),
+    )
+    mark("verify-runtime", {"commands": len(verification_results)})
+    should_start = should_start_after_install(args, input_fn=input_fn)
+    start_result = start_zermes(plan, start=should_start)
+    mark("start-zermes", {"started": bool(start_result.command)})
+    return {
+        "status": "installed",
+        "plan": asdict(plan),
+        "steps": steps,
+        "metadata": metadata,
+        "launchers": [str(path) for path in launchers],
+        "started": bool(start_result.command),
+    }
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
@@ -1067,9 +1147,9 @@ def main(argv: list[str] | None = None) -> int:
             parser.error(str(exc))
         print(json.dumps(rollback_state, ensure_ascii=False, indent=2))
         return 0
-    plan = build_plan(args, repo_root=repo_root)
-    emit_plan(plan)
-    if args.dry_run:
-        return 0
-    parser.error("real installation is not implemented yet; use --dry-run")
-    return 2
+    try:
+        install_result = run_install_workflow(args, repo_root=repo_root)
+    except (ValueError, InstallerCommandError) as exc:
+        parser.error(str(exc))
+    print(json.dumps(install_result, ensure_ascii=False, indent=2))
+    return 0
