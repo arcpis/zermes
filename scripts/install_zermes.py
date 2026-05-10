@@ -167,6 +167,20 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Skip post-install runtime verification.",
     )
+    start_group = parser.add_mutually_exclusive_group()
+    start_group.add_argument(
+        "--start",
+        dest="start",
+        action="store_true",
+        default=None,
+        help="Start Zermes after installation completes.",
+    )
+    start_group.add_argument(
+        "--no-start",
+        dest="start",
+        action="store_false",
+        help="Do not start Zermes after installation completes.",
+    )
     return parser
 
 
@@ -201,6 +215,13 @@ def normalize_language(value: str | None) -> str:
 def prompt_language(input_fn=input) -> str:
     answer = input_fn(MESSAGES[DEFAULT_LANGUAGE]["language_prompt"])
     return normalize_language(answer)
+
+
+def prompt_yes_no(prompt: str, *, default: bool = False, input_fn=input) -> bool:
+    answer = input_fn(prompt).strip().lower()
+    if not answer:
+        return default
+    return answer in {"y", "yes", "1", "true", "是", "好"}
 
 
 def has_command(name: str) -> bool:
@@ -406,6 +427,26 @@ def verify_installed_runtime(
             )
         )
     return tuple(results)
+
+
+def should_start_after_install(args: argparse.Namespace, *, input_fn=input) -> bool:
+    if args.start is not None:
+        return bool(args.start)
+    if getattr(args, "non_interactive", False):
+        return False
+    return prompt_yes_no("Start Zermes now? [y/N] ", default=False, input_fn=input_fn)
+
+
+def start_zermes(
+    plan: InstallerPlan,
+    *,
+    start: bool = False,
+    dry_run: bool = False,
+) -> CommandResult:
+    if not start:
+        return CommandResult(command=(), returncode=0, dry_run=dry_run)
+    launcher = Path(plan.bin_dir) / ("zermes.bat" if sys.platform == "win32" else "zermes")
+    return run_command([str(launcher)], dry_run=dry_run)
 
 
 def install_directories(plan: InstallerPlan) -> tuple[Path, ...]:
