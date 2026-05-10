@@ -419,6 +419,35 @@ def build_update_candidate_plan(
     )
 
 
+def release_plan_from_candidate(plan: InstallerPlan) -> InstallerPlan:
+    """Return the final release plan for an already-built candidate."""
+
+    prefix = Path(plan.prefix)
+    runtime_dir = Path(plan.runtime_dir)
+    release_dir = runtime_dir / "releases" / plan.release_id
+    source_dir = release_dir / "source"
+    venv_dir = release_dir / "venv"
+    build_dir = release_dir / "build"
+    return InstallerPlan(
+        repo_root=plan.repo_root,
+        language=plan.language,
+        prefix=plan.prefix,
+        data_dir=plan.data_dir,
+        release_id=plan.release_id,
+        runtime_dir=plan.runtime_dir,
+        release_dir=str(release_dir.resolve()),
+        source_dir=str(source_dir.resolve()),
+        venv_dir=str(venv_dir.resolve()),
+        build_dir=str(build_dir.resolve()),
+        bin_dir=str((prefix / "bin").resolve()),
+        python_path=str(venv_python_path(venv_dir).expanduser().resolve()),
+        use_venv=plan.use_venv,
+        active_path=plan.active_path,
+        previous_path=plan.previous_path,
+        dry_run=plan.dry_run,
+    )
+
+
 def candidate_directories(plan: InstallerPlan) -> tuple[Path, ...]:
     """Return the directories owned by an update candidate."""
 
@@ -495,6 +524,32 @@ def write_candidate_metadata(plan: InstallerPlan, *, now: datetime | None = None
     return metadata
 
 
+def activate_update_candidate(
+    plan: InstallerPlan,
+    update_source: UpdateSource,
+    *,
+    candidate_id: str,
+    restart_requested: bool = False,
+    dry_run: bool = False,
+    now: datetime | None = None,
+) -> dict:
+    """Promote a verified candidate to a release and point active.json at it."""
+
+    release_plan = release_plan_from_candidate(plan)
+    if not dry_run:
+        shutil.copytree(Path(plan.release_dir), Path(release_plan.release_dir), dirs_exist_ok=True)
+        write_release_metadata(release_plan, now=now)
+    activated_state = build_update_state(
+        plan,
+        update_source,
+        candidate_id=candidate_id,
+        status="activated",
+        activated=True,
+        restart_requested=restart_requested,
+    )
+    return write_update_state(plan, activated_state, dry_run=dry_run)
+
+
 def build_update_candidate(
     args: argparse.Namespace,
     *,
@@ -537,7 +592,17 @@ def build_update_candidate(
             status="ready",
             restart_requested=bool(getattr(args, "restart", False)),
         )
-        return write_update_state(plan, ready_state, dry_run=dry_run)
+        write_update_state(plan, ready_state, dry_run=dry_run)
+        if getattr(args, "activate", False):
+            return activate_update_candidate(
+                plan,
+                update_source,
+                candidate_id=selected_candidate_id,
+                restart_requested=bool(getattr(args, "restart", False)),
+                dry_run=dry_run,
+                now=now,
+            )
+        return asdict(ready_state)
     except Exception as exc:
         blocked_state = build_update_state(
             plan,
