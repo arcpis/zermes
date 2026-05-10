@@ -284,6 +284,25 @@ def _add_update_options(parser: argparse.ArgumentParser) -> None:
         default=None,
         help="Release identifier for the update candidate.",
     )
+    deps_group = parser.add_mutually_exclusive_group()
+    deps_group.add_argument(
+        "--install-deps",
+        dest="install_deps",
+        action="store_true",
+        default=True,
+        help="Install Python dependencies into the candidate environment.",
+    )
+    deps_group.add_argument(
+        "--no-install-deps",
+        dest="install_deps",
+        action="store_false",
+        help="Skip Python dependency installation for the candidate.",
+    )
+    parser.add_argument(
+        "--skip-verify",
+        action="store_true",
+        help="Skip candidate runtime verification.",
+    )
     parser.add_argument(
         "--force",
         action="store_true",
@@ -466,6 +485,70 @@ def write_update_state(
     atomic_write_json(Path(plan.release_dir) / "update-state.json", payload)
     atomic_write_json(runtime_update_state_path(Path(plan.prefix)), payload)
     return payload
+
+
+def write_candidate_metadata(plan: InstallerPlan, *, now: datetime | None = None) -> dict:
+    """Write candidate metadata without changing active or previous pointers."""
+
+    metadata = release_metadata(plan, now=now)
+    atomic_write_json(Path(plan.release_dir) / "metadata.json", metadata)
+    return metadata
+
+
+def build_update_candidate(
+    args: argparse.Namespace,
+    *,
+    repo_root: Path,
+    candidate_id: str | None = None,
+    now: datetime | None = None,
+) -> dict:
+    """Build and verify an update candidate without activating it."""
+
+    update_source = resolve_update_source(args, repo_root=repo_root)
+    selected_candidate_id = candidate_id or default_candidate_id(now=now)
+    plan = build_update_candidate_plan(
+        args,
+        update_source,
+        candidate_id=selected_candidate_id,
+    )
+    dry_run = bool(getattr(args, "dry_run", False))
+
+    # The state file is the user's first place to inspect a failed candidate.
+    try:
+        create_candidate_directories(plan, dry_run=dry_run)
+        sync_source_to_release(plan, dry_run=dry_run)
+        create_virtual_environment(plan, dry_run=dry_run)
+        install_python_dependencies(
+            plan,
+            install_deps=getattr(args, "install_deps", True),
+            dry_run=dry_run,
+        )
+        verify_installed_runtime(
+            plan,
+            skip_verify=getattr(args, "skip_verify", False),
+            dry_run=dry_run,
+        )
+        if not dry_run:
+            write_candidate_metadata(plan, now=now)
+        ready_state = build_update_state(
+            plan,
+            update_source,
+            candidate_id=selected_candidate_id,
+            status="ready",
+            restart_requested=bool(getattr(args, "restart", False)),
+        )
+        return write_update_state(plan, ready_state, dry_run=dry_run)
+    except Exception as exc:
+        blocked_state = build_update_state(
+            plan,
+            update_source,
+            candidate_id=selected_candidate_id,
+            status="blocked",
+            restart_requested=bool(getattr(args, "restart", False)),
+            error=str(exc),
+        )
+        write_update_state(plan, blocked_state, dry_run=dry_run)
+        raise
 
 
 def resolve_update_source(
@@ -870,23 +953,11 @@ def main(argv: list[str] | None = None) -> int:
     repo_root = Path(__file__).resolve().parents[1]
     if args.command == "update":
         try:
-            update_source = resolve_update_source(args, repo_root=repo_root)
-        except ValueError as exc:
+            update_state = build_update_candidate(args, repo_root=repo_root)
+        except (ValueError, InstallerCommandError) as exc:
             parser.error(str(exc))
-        print(
-            json.dumps(
-                {
-                    "command": "update",
-                    "dry_run": bool(args.dry_run),
-                    "source_kind": update_source.kind,
-                    "source_path": update_source.path,
-                },
-                indent=2,
-            )
-        )
-        if args.dry_run:
-            return 0
-        parser.error("update execution is not implemented yet")
+        print(json.dumps(update_state, ensure_ascii=False, indent=2))
+        return 0
     if args.command == "rollback":
         print(json.dumps({"command": "rollback", "dry_run": bool(args.dry_run)}, indent=2))
         if args.dry_run:
