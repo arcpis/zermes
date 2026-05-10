@@ -11,6 +11,8 @@ import argparse
 from dataclasses import asdict, dataclass
 import json
 from pathlib import Path
+import shutil
+import subprocess
 import sys
 
 
@@ -45,6 +47,26 @@ class InstallerPlan:
     active_path: str
     previous_path: str
     dry_run: bool
+
+
+@dataclass(frozen=True)
+class CommandResult:
+    """Result from an installer-managed command."""
+
+    command: tuple[str, ...]
+    returncode: int
+    stdout: str = ""
+    stderr: str = ""
+    dry_run: bool = False
+
+
+class InstallerCommandError(RuntimeError):
+    """Raised when an installer command fails."""
+
+    def __init__(self, result: CommandResult):
+        command_text = " ".join(result.command)
+        super().__init__(f"installer command failed ({result.returncode}): {command_text}")
+        self.result = result
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -119,6 +141,38 @@ def normalize_language(value: str | None) -> str:
 def prompt_language(input_fn=input) -> str:
     answer = input_fn(MESSAGES[DEFAULT_LANGUAGE]["language_prompt"])
     return normalize_language(answer)
+
+
+def has_command(name: str) -> bool:
+    return shutil.which(name) is not None
+
+
+def run_command(
+    command: list[str] | tuple[str, ...],
+    *,
+    cwd: Path | None = None,
+    dry_run: bool = False,
+) -> CommandResult:
+    command_tuple = tuple(str(part) for part in command)
+    if dry_run:
+        return CommandResult(command=command_tuple, returncode=0, dry_run=True)
+    completed = subprocess.run(
+        list(command_tuple),
+        cwd=cwd,
+        text=True,
+        capture_output=True,
+        check=False,
+        shell=False,
+    )
+    result = CommandResult(
+        command=command_tuple,
+        returncode=completed.returncode,
+        stdout=completed.stdout,
+        stderr=completed.stderr,
+    )
+    if completed.returncode != 0:
+        raise InstallerCommandError(result)
+    return result
 
 
 def build_plan(args: argparse.Namespace, *, repo_root: Path) -> InstallerPlan:
