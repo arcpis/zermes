@@ -162,6 +162,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_false",
         help="Skip command-line launcher script creation.",
     )
+    parser.add_argument(
+        "--skip-verify",
+        action="store_true",
+        help="Skip post-install runtime verification.",
+    )
     return parser
 
 
@@ -373,6 +378,34 @@ def create_launcher_scripts(
     windows_path.write_text(windows_launcher_text(plan), encoding="utf-8")
     posix_path.chmod(0o755)
     return (posix_path, windows_path)
+
+
+def verification_commands(plan: InstallerPlan) -> tuple[list[str], ...]:
+    return (
+        [plan.python_path, "-c", "import sys; print(sys.version)"],
+        [plan.python_path, "-m", "pip", "--version"],
+        [plan.python_path, "-m", "hermes_cli.main", "--help"],
+    )
+
+
+def verify_installed_runtime(
+    plan: InstallerPlan,
+    *,
+    skip_verify: bool = False,
+    dry_run: bool = False,
+) -> tuple[CommandResult, ...]:
+    if skip_verify:
+        return ()
+    results: list[CommandResult] = []
+    for command in verification_commands(plan):
+        results.append(
+            run_command(
+                command,
+                cwd=Path(plan.source_dir),
+                dry_run=dry_run,
+            )
+        )
+    return tuple(results)
 
 
 def install_directories(plan: InstallerPlan) -> tuple[Path, ...]:
