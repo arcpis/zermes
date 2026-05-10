@@ -76,6 +76,16 @@ class CommandResult:
     dry_run: bool = False
 
 
+@dataclass(frozen=True)
+class UpdateSource:
+    """Resolved source checkout for an update candidate."""
+
+    kind: str
+    path: str
+    active_release_id: str | None = None
+    active_source_path: str | None = None
+
+
 class InstallerCommandError(RuntimeError):
     """Raised when an installer command fails."""
 
@@ -241,13 +251,14 @@ def _add_update_options(parser: argparse.ArgumentParser) -> None:
         default=None,
         help="Software installation directory.",
     )
-    parser.add_argument(
+    source_group = parser.add_mutually_exclusive_group()
+    source_group.add_argument(
         "--source",
         type=Path,
         default=None,
         help="Source checkout to build as an update candidate.",
     )
-    parser.add_argument(
+    source_group.add_argument(
         "--current-source",
         action="store_true",
         help="Use the source checkout containing this installer.",
@@ -305,6 +316,66 @@ def default_prefix(*, platform: str | None = None, home: Path | None = None) -> 
 
 def default_data_dir(*, home: Path | None = None) -> Path:
     return (home or Path.home()) / ".hermes"
+
+
+def active_metadata_path(prefix: Path) -> Path:
+    """Return the active release pointer for a software prefix."""
+
+    return prefix.expanduser().resolve() / "runtime" / "active.json"
+
+
+def read_active_metadata(prefix: Path) -> dict | None:
+    """Read active release metadata when an installed runtime exists."""
+
+    path = active_metadata_path(prefix)
+    if not path.exists():
+        return None
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def resolve_update_source(
+    args: argparse.Namespace,
+    *,
+    repo_root: Path,
+    input_fn=input,
+) -> UpdateSource:
+    """Resolve the explicit checkout used to build an update candidate."""
+
+    prefix = args.prefix or default_prefix()
+    active_metadata = read_active_metadata(prefix)
+    active_release_id = active_metadata.get("release_id") if active_metadata else None
+    active_source_path = active_metadata.get("source_path") if active_metadata else None
+
+    source_kind: str
+    source_path: Path | None = None
+    if getattr(args, "source", None) is not None:
+        source_kind = "explicit"
+        source_path = args.source
+    elif getattr(args, "current_source", False):
+        source_kind = "current-source"
+        source_path = repo_root
+    elif getattr(args, "non_interactive", False):
+        raise ValueError("non-interactive update requires --source or --current-source")
+    elif active_source_path and prompt_yes_no(
+        f"Use active release source at {active_source_path}? [y/N] ",
+        default=False,
+        input_fn=input_fn,
+    ):
+        source_kind = "active-metadata"
+        source_path = Path(active_source_path)
+    else:
+        raise ValueError("update source is required")
+
+    resolved_source = source_path.expanduser().resolve()
+    if active_source_path and resolved_source == Path(active_source_path).expanduser().resolve():
+        if not getattr(args, "force", False):
+            raise ValueError("refusing to update from the active release source without --force")
+    return UpdateSource(
+        kind=source_kind,
+        path=str(resolved_source),
+        active_release_id=active_release_id,
+        active_source_path=active_source_path,
+    )
 
 
 def normalize_language(value: str | None) -> str:
@@ -663,7 +734,21 @@ def main(argv: list[str] | None = None) -> int:
             parser.error(str(exc))
     repo_root = Path(__file__).resolve().parents[1]
     if args.command == "update":
-        print(json.dumps({"command": "update", "dry_run": bool(args.dry_run)}, indent=2))
+        try:
+            update_source = resolve_update_source(args, repo_root=repo_root)
+        except ValueError as exc:
+            parser.error(str(exc))
+        print(
+            json.dumps(
+                {
+                    "command": "update",
+                    "dry_run": bool(args.dry_run),
+                    "source_kind": update_source.kind,
+                    "source_path": update_source.path,
+                },
+                indent=2,
+            )
+        )
         if args.dry_run:
             return 0
         parser.error("update execution is not implemented yet")
