@@ -1,8 +1,8 @@
 """Source installer implementation for Zermes.
 
-This first slice intentionally supports only planning and dry-run output. Later
-installer steps will reuse this entry point for real directory creation,
-environment setup, dependency installation, and launcher generation.
+The installer owns the stable runtime directory model for source-based Zermes
+installs. It keeps install, update, and rollback concerns explicit so a random
+checkout is never silently applied to a long-running runtime.
 """
 
 from __future__ import annotations
@@ -88,8 +88,47 @@ class InstallerCommandError(RuntimeError):
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="install.py",
+        description=(
+            "Install, update, or roll back Zermes from a source checkout. "
+            "Installer language only affects installer messages, not runtime language."
+        ),
+    )
+    _add_install_options(parser)
+    subparsers = parser.add_subparsers(dest="command")
+    install_parser = subparsers.add_parser(
+        "install",
+        help="Install Zermes from this source checkout.",
         description="Install Zermes from this source checkout.",
     )
+    _add_install_options(install_parser)
+    update_parser = subparsers.add_parser(
+        "update",
+        help="Build an update candidate from an explicit source checkout.",
+        description="Build an update candidate from an explicit source checkout.",
+    )
+    _add_update_options(update_parser)
+    rollback_parser = subparsers.add_parser(
+        "rollback",
+        help="Point active.json back to the previous release.",
+        description="Point active.json back to the previous release.",
+    )
+    rollback_parser.add_argument(
+        "--prefix",
+        type=Path,
+        default=None,
+        help="Software installation directory.",
+    )
+    rollback_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Print rollback intent without writing files.",
+    )
+    return parser
+
+
+def _add_install_options(parser: argparse.ArgumentParser) -> None:
+    """Add options shared by the install command and the legacy root form."""
+
     parser.add_argument(
         "--dry-run",
         action="store_true",
@@ -181,7 +220,76 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_false",
         help="Do not start Zermes after installation completes.",
     )
-    return parser
+
+
+def _add_update_options(parser: argparse.ArgumentParser) -> None:
+    """Add update command options before the update executor exists."""
+
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Print the update plan without writing files.",
+    )
+    parser.add_argument(
+        "--non-interactive",
+        action="store_true",
+        help="Fail instead of prompting when update source details are missing.",
+    )
+    parser.add_argument(
+        "--prefix",
+        type=Path,
+        default=None,
+        help="Software installation directory.",
+    )
+    parser.add_argument(
+        "--source",
+        type=Path,
+        default=None,
+        help="Source checkout to build as an update candidate.",
+    )
+    parser.add_argument(
+        "--current-source",
+        action="store_true",
+        help="Use the source checkout containing this installer.",
+    )
+    parser.add_argument(
+        "--release-id",
+        default=None,
+        help="Release identifier for the update candidate.",
+    )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Allow explicitly guarded update operations.",
+    )
+    activate_group = parser.add_mutually_exclusive_group()
+    activate_group.add_argument(
+        "--activate",
+        dest="activate",
+        action="store_true",
+        default=True,
+        help="Activate the candidate after verification.",
+    )
+    activate_group.add_argument(
+        "--no-activate",
+        dest="activate",
+        action="store_false",
+        help="Build and verify the candidate without changing active.json.",
+    )
+    restart_group = parser.add_mutually_exclusive_group()
+    restart_group.add_argument(
+        "--restart",
+        dest="restart",
+        action="store_true",
+        default=False,
+        help="Request a controlled restart after activation.",
+    )
+    restart_group.add_argument(
+        "--no-restart",
+        dest="restart",
+        action="store_false",
+        help="Do not request a restart after activation.",
+    )
 
 
 def default_prefix(*, platform: str | None = None, home: Path | None = None) -> Path:
@@ -543,12 +651,27 @@ def emit_plan(plan: InstallerPlan) -> None:
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+    command = getattr(args, "command", None)
+    if command is None and getattr(args, "non_interactive", False):
+        parser.error("non-interactive mode requires install, update, or rollback")
+    if command is None:
+        args.command = "install"
     if args.language is None and not args.non_interactive:
         try:
             args.language = prompt_language()
         except ValueError as exc:
             parser.error(str(exc))
     repo_root = Path(__file__).resolve().parents[1]
+    if args.command == "update":
+        print(json.dumps({"command": "update", "dry_run": bool(args.dry_run)}, indent=2))
+        if args.dry_run:
+            return 0
+        parser.error("update execution is not implemented yet")
+    if args.command == "rollback":
+        print(json.dumps({"command": "rollback", "dry_run": bool(args.dry_run)}, indent=2))
+        if args.dry_run:
+            return 0
+        parser.error("rollback execution is not implemented yet")
     plan = build_plan(args, repo_root=repo_root)
     emit_plan(plan)
     if args.dry_run:
