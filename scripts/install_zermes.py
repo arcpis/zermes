@@ -57,6 +57,8 @@ class InstallerPlan:
     venv_dir: str
     build_dir: str
     bin_dir: str
+    python_path: str
+    use_venv: bool
     active_path: str
     previous_path: str
     dry_run: bool
@@ -119,6 +121,17 @@ def build_parser() -> argparse.ArgumentParser:
         "--release-id",
         default="source-install",
         help="Initial release identifier.",
+    )
+    parser.add_argument(
+        "--python",
+        type=Path,
+        default=None,
+        help="Python executable to use for creating the release virtual environment.",
+    )
+    parser.add_argument(
+        "--no-venv",
+        action="store_true",
+        help="Skip virtual environment creation and use the selected Python directly.",
     )
     return parser
 
@@ -188,6 +201,28 @@ def run_command(
     return result
 
 
+def venv_python_path(venv_dir: Path, *, platform: str | None = None) -> Path:
+    platform_name = platform or sys.platform
+    if platform_name == "win32":
+        return venv_dir / "Scripts" / "python.exe"
+    return venv_dir / "bin" / "python"
+
+
+def create_virtual_environment(
+    plan: InstallerPlan,
+    *,
+    python_executable: Path | str | None = None,
+    dry_run: bool = False,
+) -> CommandResult:
+    if not plan.use_venv:
+        return CommandResult(command=(), returncode=0, dry_run=dry_run)
+    selected_python = str(python_executable or sys.executable)
+    return run_command(
+        [selected_python, "-m", "venv", plan.venv_dir],
+        dry_run=dry_run,
+    )
+
+
 def install_directories(plan: InstallerPlan) -> tuple[Path, ...]:
     return (
         Path(plan.prefix) / "launcher",
@@ -246,12 +281,15 @@ def build_plan(args: argparse.Namespace, *, repo_root: Path) -> InstallerPlan:
     prefix = (args.prefix or default_prefix()).expanduser()
     data_dir = (args.data_dir or default_data_dir()).expanduser()
     language = normalize_language(args.language)
+    use_venv = not bool(getattr(args, "no_venv", False))
     runtime_dir = prefix / "runtime"
     release_dir = runtime_dir / "releases" / str(args.release_id)
     source_dir = release_dir / "source"
     venv_dir = release_dir / "venv"
     build_dir = release_dir / "build"
     bin_dir = prefix / "bin"
+    selected_python = getattr(args, "python", None)
+    python_path = venv_python_path(venv_dir) if use_venv else Path(selected_python or sys.executable)
     return InstallerPlan(
         repo_root=str(repo_root.resolve()),
         language=language,
@@ -264,6 +302,8 @@ def build_plan(args: argparse.Namespace, *, repo_root: Path) -> InstallerPlan:
         venv_dir=str(venv_dir.resolve()),
         build_dir=str(build_dir.resolve()),
         bin_dir=str(bin_dir.resolve()),
+        python_path=str(python_path.expanduser().resolve()),
+        use_venv=use_venv,
         active_path=str((runtime_dir / "active.json").resolve()),
         previous_path=str((runtime_dir / "previous.json").resolve()),
         dry_run=bool(args.dry_run),
