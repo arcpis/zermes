@@ -86,6 +86,22 @@ class UpdateSource:
     active_source_path: str | None = None
 
 
+@dataclass(frozen=True)
+class UpdateCandidateState:
+    """Durable status record for a single update candidate."""
+
+    mode: str
+    candidate_id: str
+    source_kind: str
+    source_path: str
+    old_release_id: str | None
+    new_release_id: str
+    status: str
+    activated: bool
+    restart_requested: bool
+    error: str | None
+
+
 class InstallerCommandError(RuntimeError):
     """Raised when an installer command fails."""
 
@@ -324,6 +340,12 @@ def active_metadata_path(prefix: Path) -> Path:
     return prefix.expanduser().resolve() / "runtime" / "active.json"
 
 
+def runtime_update_state_path(prefix: Path) -> Path:
+    """Return the runtime-level update status file for a software prefix."""
+
+    return prefix.expanduser().resolve() / "runtime" / "update-state.json"
+
+
 def read_active_metadata(prefix: Path) -> dict | None:
     """Read active release metadata when an installed runtime exists."""
 
@@ -331,6 +353,119 @@ def read_active_metadata(prefix: Path) -> dict | None:
     if not path.exists():
         return None
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def default_candidate_id(*, now: datetime | None = None) -> str:
+    """Build a sortable candidate id from a UTC timestamp."""
+
+    timestamp = (now or datetime.now(UTC)).strftime("%Y%m%d-%H%M%S")
+    return f"update-{timestamp}"
+
+
+def build_update_candidate_plan(
+    args: argparse.Namespace,
+    update_source: UpdateSource,
+    *,
+    candidate_id: str | None = None,
+    now: datetime | None = None,
+) -> InstallerPlan:
+    """Create an installer plan rooted under runtime/candidates/<candidate_id>."""
+
+    prefix = (args.prefix or default_prefix()).expanduser()
+    data_dir = (getattr(args, "data_dir", None) or default_data_dir()).expanduser()
+    selected_candidate_id = candidate_id or default_candidate_id(now=now)
+    release_id = args.release_id or selected_candidate_id
+    runtime_dir = prefix / "runtime"
+    candidate_dir = runtime_dir / "candidates" / selected_candidate_id
+    source_dir = candidate_dir / "source"
+    venv_dir = candidate_dir / "venv"
+    build_dir = candidate_dir / "build"
+    return InstallerPlan(
+        repo_root=str(Path(update_source.path).resolve()),
+        language=DEFAULT_LANGUAGE,
+        prefix=str(prefix.resolve()),
+        data_dir=str(data_dir.resolve()),
+        release_id=str(release_id),
+        runtime_dir=str(runtime_dir.resolve()),
+        release_dir=str(candidate_dir.resolve()),
+        source_dir=str(source_dir.resolve()),
+        venv_dir=str(venv_dir.resolve()),
+        build_dir=str(build_dir.resolve()),
+        bin_dir=str((prefix / "bin").resolve()),
+        python_path=str(venv_python_path(venv_dir).expanduser().resolve()),
+        use_venv=True,
+        active_path=str((runtime_dir / "active.json").resolve()),
+        previous_path=str((runtime_dir / "previous.json").resolve()),
+        dry_run=bool(getattr(args, "dry_run", False)),
+    )
+
+
+def candidate_directories(plan: InstallerPlan) -> tuple[Path, ...]:
+    """Return the directories owned by an update candidate."""
+
+    return (
+        Path(plan.release_dir),
+        Path(plan.source_dir),
+        Path(plan.venv_dir),
+        Path(plan.build_dir),
+    )
+
+
+def create_candidate_directories(
+    plan: InstallerPlan,
+    *,
+    dry_run: bool = False,
+) -> tuple[Path, ...]:
+    """Create runtime/candidates/<candidate_id> without touching active release files."""
+
+    directories = candidate_directories(plan)
+    if dry_run:
+        return directories
+    for directory in directories:
+        directory.mkdir(parents=True, exist_ok=True)
+    return directories
+
+
+def build_update_state(
+    plan: InstallerPlan,
+    update_source: UpdateSource,
+    *,
+    candidate_id: str,
+    status: str = "planned",
+    activated: bool = False,
+    restart_requested: bool = False,
+    error: str | None = None,
+) -> UpdateCandidateState:
+    """Create the update state payload shared by candidate and runtime state files."""
+
+    return UpdateCandidateState(
+        mode="update",
+        candidate_id=candidate_id,
+        source_kind=update_source.kind,
+        source_path=update_source.path,
+        old_release_id=update_source.active_release_id,
+        new_release_id=plan.release_id,
+        status=status,
+        activated=activated,
+        restart_requested=restart_requested,
+        error=error,
+    )
+
+
+def write_update_state(
+    plan: InstallerPlan,
+    state: UpdateCandidateState,
+    *,
+    dry_run: bool = False,
+) -> dict:
+    """Atomically write candidate and runtime update state."""
+
+    payload = asdict(state)
+    if dry_run:
+        return payload
+    atomic_write_json(Path(plan.release_dir) / "update-state.json", payload)
+    atomic_write_json(runtime_update_state_path(Path(plan.prefix)), payload)
+    return payload
 
 
 def resolve_update_source(
