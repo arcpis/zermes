@@ -148,6 +148,20 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_false",
         help="Skip Python dependency installation.",
     )
+    launchers_group = parser.add_mutually_exclusive_group()
+    launchers_group.add_argument(
+        "--create-launchers",
+        dest="create_launchers",
+        action="store_true",
+        default=True,
+        help="Create command-line launcher scripts.",
+    )
+    launchers_group.add_argument(
+        "--no-create-launchers",
+        dest="create_launchers",
+        action="store_false",
+        help="Skip command-line launcher script creation.",
+    )
     return parser
 
 
@@ -324,6 +338,41 @@ def write_release_metadata(plan: InstallerPlan, *, now: datetime | None = None) 
     atomic_write_json(metadata_path, metadata)
     atomic_write_json(active_path, metadata)
     return metadata
+
+
+def posix_launcher_text(plan: InstallerPlan) -> str:
+    return (
+        "#!/usr/bin/env sh\n"
+        f"export HERMES_HOME=\"{plan.data_dir}\"\n"
+        f"exec \"{plan.python_path}\" -m hermes_cli.main \"$@\"\n"
+    )
+
+
+def windows_launcher_text(plan: InstallerPlan) -> str:
+    return (
+        "@echo off\r\n"
+        f"set HERMES_HOME={plan.data_dir}\r\n"
+        f"\"{plan.python_path}\" -m hermes_cli.main %*\r\n"
+    )
+
+
+def create_launcher_scripts(
+    plan: InstallerPlan,
+    *,
+    create_launchers: bool = True,
+    dry_run: bool = False,
+) -> tuple[Path, ...]:
+    if not create_launchers:
+        return ()
+    posix_path = Path(plan.bin_dir) / "zermes"
+    windows_path = Path(plan.bin_dir) / "zermes.bat"
+    if dry_run:
+        return (posix_path, windows_path)
+    posix_path.parent.mkdir(parents=True, exist_ok=True)
+    posix_path.write_text(posix_launcher_text(plan), encoding="utf-8")
+    windows_path.write_text(windows_launcher_text(plan), encoding="utf-8")
+    posix_path.chmod(0o755)
+    return (posix_path, windows_path)
 
 
 def install_directories(plan: InstallerPlan) -> tuple[Path, ...]:
