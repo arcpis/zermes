@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 from dataclasses import asdict, dataclass
 import json
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -18,6 +19,18 @@ import sys
 
 SUPPORTED_LANGUAGES = ("zh-CN", "en-US")
 DEFAULT_LANGUAGE = "zh-CN"
+EXCLUDED_SOURCE_DIR_NAMES = frozenset(
+    {
+        ".git",
+        ".hermes-analysis-cache",
+        ".pytest_cache",
+        ".venv",
+        "__pycache__",
+        "node_modules",
+        "temp_vision_images",
+        "venv",
+    }
+)
 
 MESSAGES = {
     "zh-CN": {
@@ -194,6 +207,39 @@ def create_install_directories(plan: InstallerPlan, *, dry_run: bool = False) ->
     for directory in directories:
         directory.mkdir(parents=True, exist_ok=True)
     return directories
+
+
+def sync_source_to_release(plan: InstallerPlan, *, dry_run: bool = False) -> list[Path]:
+    repo_root = Path(plan.repo_root).resolve()
+    target_root = Path(plan.source_dir).resolve()
+    if target_root == repo_root or target_root in repo_root.parents:
+        raise ValueError("source release directory must not be the repository root or its parent")
+    try:
+        target_root.relative_to(repo_root)
+    except ValueError:
+        pass
+    else:
+        raise ValueError("source release directory must not be inside the repository root")
+
+    copied: list[Path] = []
+    if dry_run:
+        return copied
+    target_root.mkdir(parents=True, exist_ok=True)
+    for current_root, dir_names, file_names in os.walk(repo_root):
+        current_path = Path(current_root)
+        dir_names[:] = [
+            name for name in dir_names
+            if name not in EXCLUDED_SOURCE_DIR_NAMES
+        ]
+        relative_root = current_path.relative_to(repo_root)
+        destination_root = target_root / relative_root
+        destination_root.mkdir(parents=True, exist_ok=True)
+        for file_name in file_names:
+            source_file = current_path / file_name
+            destination_file = destination_root / file_name
+            shutil.copy2(source_file, destination_file)
+            copied.append(destination_file)
+    return copied
 
 
 def build_plan(args: argparse.Namespace, *, repo_root: Path) -> InstallerPlan:
