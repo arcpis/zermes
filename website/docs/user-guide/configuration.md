@@ -8,6 +8,14 @@ description: "Configure Hermes Agent — config.yaml, providers, models, API key
 
 All settings are stored in the `~/.hermes/` directory for easy access.
 
+For source-runtime installs, `python install.py install --data-dir <path>` can
+choose a different data directory for configuration and state. The software
+prefix stays separate from that data directory: releases live under
+`<prefix>/runtime/releases/`, candidates under `runtime/candidates/`, and update
+status under `runtime/update-state.json`. The `installer_language` choice only
+changes installer prompts and help text; it does not change the runtime language
+or the contents of `config.yaml`.
+
 ## Directory Structure
 
 ```text

@@ -8,6 +8,45 @@ description: "How to update Hermes Agent to the latest version or uninstall it"
 
 ## Updating
 
+### Zermes source runtime update
+
+For source-runtime installs created by `install.py install`, update from an
+explicit source checkout:
+
+```bash
+python install.py update --prefix <prefix> --source <source-dir>
+python install.py update --prefix <prefix> --current-source
+```
+
+`--source` points to the checkout you want to apply. `--current-source` uses the
+checkout containing `install.py`. Non-interactive mode must provide one of
+these sources, so the installer never updates from a random working directory.
+
+The update flow first writes `runtime/candidates/<candidate-id>/` with its own
+`source/`, `venv/`, `build/`, `metadata.json`, and `update-state.json`. The
+runtime also writes `runtime/update-state.json` for quick inspection. After the
+candidate verifies, the default `--activate` copies it to
+`runtime/releases/<release-id>/`, writes `previous.json`, and points
+`active.json` at the new release. Use `--no-activate` to build and verify the
+candidate without changing `active.json`.
+
+Rollback is pointer-only:
+
+```bash
+python install.py rollback --prefix <prefix>
+```
+
+Rollback points `active.json` back to `previous.json`, records
+`runtime/rollback-state.json`, and does not delete any release. Source-runtime
+update and rollback do not force-kill or automatically restart running
+processes yet; restart manually or wait for a later controlled restart flow.
+If an update fails, inspect both `runtime/update-state.json` and the candidate's
+`update-state.json`. The legacy source checkout with an in-tree venv is not a
+good long-term target for this flow because running code changes whenever the
+checkout changes.
+
+### Legacy checkout update
+
 Update to the latest version with a single command:
 
 ```bash

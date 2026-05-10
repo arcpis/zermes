@@ -48,6 +48,19 @@ Pick the row that matches your goal:
 
 ## 1. Install Hermes Agent
 
+:::note Zermes source runtime installer
+Zermes is adding a source runtime installer for installs that need a stable
+runtime layout for governed self-evolution:
+
+```bash
+python install.py --dry-run --non-interactive
+```
+
+That model separates `<prefix>/runtime/releases/source-install/` from user data
+in `~/.hermes` or a custom `--data-dir`. The one-line installers below remain
+the current compatibility path while the new runtime installer is completed.
+:::
+
 Run the one-line installer:
 
 ```bash
