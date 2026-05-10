@@ -31,6 +31,8 @@ def test_dependency_install_commands_prefers_uv_lock(tmp_path):
         ["uv", "sync", "--all-extras", "--locked"],
         ["uv", "pip", "install", "-e", ".[all]"],
         ["uv", "pip", "install", "-e", "."],
+        [plan.python_path, "-m", "pip", "install", "-e", ".[all]"],
+        [plan.python_path, "-m", "pip", "install", "-e", "."],
     )
 
 
@@ -40,6 +42,8 @@ def test_dependency_install_commands_without_lock_uses_editable_fallbacks(tmp_pa
     assert install_zermes.dependency_install_commands(plan) == (
         ["uv", "pip", "install", "-e", ".[all]"],
         ["uv", "pip", "install", "-e", "."],
+        [plan.python_path, "-m", "pip", "install", "-e", ".[all]"],
+        [plan.python_path, "-m", "pip", "install", "-e", "."],
     )
 
 
@@ -116,6 +120,30 @@ def test_install_dependencies_falls_back_to_base_editable(monkeypatch, tmp_path)
     assert calls == [
         ["uv", "pip", "install", "-e", ".[all]"],
         ["uv", "pip", "install", "-e", "."],
+    ]
+
+
+def test_install_dependencies_falls_back_to_python_pip(monkeypatch, tmp_path):
+    plan = _plan(tmp_path)
+    calls = []
+
+    def fake_run(command, *, cwd=None, env=None, dry_run=False):
+        calls.append(command)
+        if command[0] == "uv":
+            raise install_zermes.InstallerCommandError(
+                install_zermes.CommandResult(command=tuple(command), returncode=1)
+            )
+        return install_zermes.CommandResult(command=tuple(command), returncode=0)
+
+    monkeypatch.setattr(install_zermes, "run_command", fake_run)
+
+    result = install_zermes.install_python_dependencies(plan)
+
+    assert result.command == (plan.python_path, "-m", "pip", "install", "-e", ".[all]")
+    assert calls == [
+        ["uv", "pip", "install", "-e", ".[all]"],
+        ["uv", "pip", "install", "-e", "."],
+        [plan.python_path, "-m", "pip", "install", "-e", ".[all]"],
     ]
 
 
