@@ -365,6 +365,12 @@ def runtime_update_state_path(prefix: Path) -> Path:
     return prefix.expanduser().resolve() / "runtime" / "update-state.json"
 
 
+def rollback_state_path(prefix: Path) -> Path:
+    """Return the rollback audit state path for a software prefix."""
+
+    return prefix.expanduser().resolve() / "runtime" / "rollback-state.json"
+
+
 def read_active_metadata(prefix: Path) -> dict | None:
     """Read active release metadata when an installed runtime exists."""
 
@@ -372,6 +378,34 @@ def read_active_metadata(prefix: Path) -> dict | None:
     if not path.exists():
         return None
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def rollback_release(prefix: Path, *, dry_run: bool = False) -> dict:
+    """Point active.json back to previous.json without deleting releases."""
+
+    resolved_prefix = prefix.expanduser().resolve()
+    active_path = active_metadata_path(resolved_prefix)
+    previous_path = resolved_prefix / "runtime" / "previous.json"
+    if not previous_path.exists():
+        raise ValueError("cannot rollback because previous.json does not exist")
+    previous_payload = json.loads(previous_path.read_text(encoding="utf-8"))
+    current_payload = (
+        json.loads(active_path.read_text(encoding="utf-8"))
+        if active_path.exists()
+        else None
+    )
+    state = {
+        "mode": "rollback",
+        "status": "rolled-back",
+        "rolled_back_from": current_payload,
+        "rolled_back_to": previous_payload,
+        "restart_required": True,
+    }
+    if dry_run:
+        return state
+    atomic_write_json(rollback_state_path(resolved_prefix), state)
+    atomic_write_json(active_path, previous_payload)
+    return state
 
 
 def default_candidate_id(*, now: datetime | None = None) -> str:
@@ -1024,10 +1058,15 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(update_state, ensure_ascii=False, indent=2))
         return 0
     if args.command == "rollback":
-        print(json.dumps({"command": "rollback", "dry_run": bool(args.dry_run)}, indent=2))
-        if args.dry_run:
-            return 0
-        parser.error("rollback execution is not implemented yet")
+        try:
+            rollback_state = rollback_release(
+                args.prefix or default_prefix(),
+                dry_run=bool(args.dry_run),
+            )
+        except ValueError as exc:
+            parser.error(str(exc))
+        print(json.dumps(rollback_state, ensure_ascii=False, indent=2))
+        return 0
     plan = build_plan(args, repo_root=repo_root)
     emit_plan(plan)
     if args.dry_run:
