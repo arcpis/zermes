@@ -17,7 +17,6 @@ def _plan_dependencies(tmp_path):
         prefix=tmp_path / "app",
         data_dir=tmp_path / "data",
         release_id="source-install",
-        language="zh-CN",
         dry_run=False,
         no_venv=False,
         python=None,
@@ -196,7 +195,6 @@ def _plan_directories(tmp_path):
         prefix=tmp_path / "app",
         data_dir=tmp_path / "data",
         release_id="source-install",
-        language="zh-CN",
         dry_run=False,
     )
     return install_zermes.build_plan(args, repo_root=tmp_path / "repo")
@@ -253,7 +251,6 @@ def _args_install_workflow(tmp_path, **overrides):
         "prefix": tmp_path / "app",
         "data_dir": tmp_path / "data",
         "release_id": "source-install",
-        "language": "zh-CN",
         "dry_run": False,
         "non_interactive": True,
         "no_venv": False,
@@ -406,7 +403,6 @@ def _plan_launchers(tmp_path):
         prefix=tmp_path / "app",
         data_dir=tmp_path / "data",
         release_id="source-install",
-        language="zh-CN",
         dry_run=False,
         no_venv=False,
         python=None,
@@ -483,7 +479,6 @@ def _plan_metadata(tmp_path):
         prefix=tmp_path / "app",
         data_dir=tmp_path / "data",
         release_id="source-install",
-        language="zh-CN",
         dry_run=False,
         no_venv=False,
         python=None,
@@ -559,7 +554,6 @@ def _plan_source_sync(tmp_path, repo_root):
         prefix=tmp_path / "app",
         data_dir=tmp_path / "data",
         release_id="source-install",
-        language="zh-CN",
         dry_run=False,
     )
     return install_zermes.build_plan(args, repo_root=repo_root)
@@ -624,7 +618,6 @@ def test_sync_source_to_release_rejects_target_inside_repo(tmp_path):
         prefix=repo / "install",
         data_dir=tmp_path / "data",
         release_id="source-install",
-        language="zh-CN",
         dry_run=False,
     )
     plan = install_zermes.build_plan(args, repo_root=repo)
@@ -647,7 +640,6 @@ def _plan_start(tmp_path):
         prefix=tmp_path / "app",
         data_dir=tmp_path / "data",
         release_id="source-install",
-        language="zh-CN",
         dry_run=False,
         no_venv=False,
         python=None,
@@ -724,7 +716,6 @@ def _plan_venv(tmp_path, *, no_venv=False, python_path=None):
         prefix=tmp_path / "app",
         data_dir=tmp_path / "data",
         release_id="source-install",
-        language="zh-CN",
         dry_run=False,
         no_venv=no_venv,
         python=python_path,
@@ -817,7 +808,6 @@ def _plan_verify(tmp_path):
         prefix=tmp_path / "app",
         data_dir=tmp_path / "data",
         release_id="source-install",
-        language="zh-CN",
         dry_run=False,
         no_venv=False,
         python=None,

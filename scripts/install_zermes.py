@@ -18,8 +18,6 @@ import subprocess
 import sys
 
 
-SUPPORTED_LANGUAGES = ("zh-CN", "en-US")
-DEFAULT_LANGUAGE = "zh-CN"
 EXCLUDED_SOURCE_DIR_NAMES = frozenset(
     {
         ".git",
@@ -33,22 +31,11 @@ EXCLUDED_SOURCE_DIR_NAMES = frozenset(
     }
 )
 
-MESSAGES = {
-    "zh-CN": {
-        "language_prompt": "请选择安装器语言 / Choose installer language [1=中文, 2=English] (默认 1): ",
-    },
-    "en-US": {
-        "language_prompt": "Choose installer language [1=Chinese, 2=English] (default 1): ",
-    },
-}
-
-
 @dataclass(frozen=True)
 class InstallerPlan:
     """Dry-run description of a future source installation."""
 
     repo_root: str
-    language: str
     prefix: str
     data_dir: str
     release_id: str
@@ -114,10 +101,7 @@ class InstallerCommandError(RuntimeError):
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="install.py",
-        description=(
-            "Install, update, or roll back Zermes from a source checkout. "
-            "Installer language only affects installer messages, not runtime language."
-        ),
+        description="Install, update, or roll back Zermes from a source checkout.",
     )
     _add_install_options(parser)
     subparsers = parser.add_subparsers(dest="command")
@@ -164,12 +148,6 @@ def _add_install_options(parser: argparse.ArgumentParser) -> None:
         "--non-interactive",
         action="store_true",
         help="Use defaults for missing options instead of prompting.",
-    )
-    parser.add_argument(
-        "--language",
-        choices=SUPPORTED_LANGUAGES,
-        default=None,
-        help="Installer language.",
     )
     parser.add_argument(
         "--prefix",
@@ -435,7 +413,6 @@ def build_update_candidate_plan(
     build_dir = candidate_dir / "build"
     return InstallerPlan(
         repo_root=str(Path(update_source.path).resolve()),
-        language=DEFAULT_LANGUAGE,
         prefix=str(prefix.resolve()),
         data_dir=str(data_dir.resolve()),
         release_id=str(release_id),
@@ -464,7 +441,6 @@ def release_plan_from_candidate(plan: InstallerPlan) -> InstallerPlan:
     build_dir = release_dir / "build"
     return InstallerPlan(
         repo_root=plan.repo_root,
-        language=plan.language,
         prefix=plan.prefix,
         data_dir=plan.data_dir,
         release_id=plan.release_id,
@@ -693,24 +669,6 @@ def resolve_update_source(
         active_release_id=active_release_id,
         active_source_path=active_source_path,
     )
-
-
-def normalize_language(value: str | None) -> str:
-    if value is None or not value.strip():
-        return DEFAULT_LANGUAGE
-    clean = value.strip()
-    if clean == "1":
-        return "zh-CN"
-    if clean == "2":
-        return "en-US"
-    if clean in SUPPORTED_LANGUAGES:
-        return clean
-    raise ValueError(f"unsupported language: {value}")
-
-
-def prompt_language(input_fn=input) -> str:
-    answer = input_fn(MESSAGES[DEFAULT_LANGUAGE]["language_prompt"])
-    return normalize_language(answer)
 
 
 def prompt_yes_no(prompt: str, *, default: bool = False, input_fn=input) -> bool:
@@ -1023,7 +981,6 @@ def sync_source_to_release(plan: InstallerPlan, *, dry_run: bool = False) -> lis
 def build_plan(args: argparse.Namespace, *, repo_root: Path) -> InstallerPlan:
     prefix = (args.prefix or default_prefix()).expanduser()
     data_dir = (args.data_dir or default_data_dir()).expanduser()
-    language = normalize_language(args.language)
     use_venv = not bool(getattr(args, "no_venv", False))
     runtime_dir = prefix / "runtime"
     release_dir = runtime_dir / "releases" / str(args.release_id)
@@ -1035,7 +992,6 @@ def build_plan(args: argparse.Namespace, *, repo_root: Path) -> InstallerPlan:
     python_path = venv_python_path(venv_dir) if use_venv else Path(selected_python or sys.executable)
     return InstallerPlan(
         repo_root=str(repo_root.resolve()),
-        language=language,
         prefix=str(prefix.resolve()),
         data_dir=str(data_dir.resolve()),
         release_id=str(args.release_id),
@@ -1124,11 +1080,6 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("non-interactive mode requires install, update, or rollback")
     if command is None:
         args.command = "install"
-    if args.language is None and not args.non_interactive:
-        try:
-            args.language = prompt_language()
-        except ValueError as exc:
-            parser.error(str(exc))
     repo_root = Path(__file__).resolve().parents[1]
     if args.command == "update":
         try:
