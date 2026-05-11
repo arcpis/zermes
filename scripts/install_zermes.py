@@ -10,12 +10,14 @@ from __future__ import annotations
 import argparse
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
+from io import BytesIO
 import json
 import os
 from pathlib import Path
 import shutil
 import subprocess
 import sys
+import tarfile
 
 
 EXCLUDED_SOURCE_DIR_NAMES = frozenset(
@@ -678,6 +680,57 @@ def prompt_yes_no(prompt: str, *, default: bool = False, input_fn=input) -> bool
     return answer in {"y", "yes", "1", "true", "是", "好"}
 
 
+def prompt_path(prompt: str, *, default: Path, input_fn=input) -> Path:
+    """Prompt for a path, returning the default when the user presses enter."""
+
+    answer = input_fn(f"{prompt} [{default}]: ").strip()
+    return Path(answer).expanduser() if answer else default
+
+
+def prepare_interactive_install_args(
+    args: argparse.Namespace,
+    *,
+    input_fn=input,
+) -> argparse.Namespace:
+    """Fill missing install options for an interactive install run."""
+
+    if getattr(args, "non_interactive", False) or getattr(args, "dry_run", False):
+        return args
+
+    if args.prefix is None:
+        args.prefix = prompt_path(
+            "Installation directory",
+            default=default_prefix(),
+            input_fn=input_fn,
+        )
+    if args.data_dir is None:
+        args.data_dir = prompt_path(
+            "User data directory",
+            default=default_data_dir(),
+            input_fn=input_fn,
+        )
+    if not getattr(args, "no_venv", False):
+        create_venv = prompt_yes_no(
+            "Create a Python virtual environment? [Y/n] ",
+            default=True,
+            input_fn=input_fn,
+        )
+        args.no_venv = not create_venv
+    if getattr(args, "install_deps", True):
+        args.install_deps = prompt_yes_no(
+            "Install Python dependencies now? [Y/n] ",
+            default=True,
+            input_fn=input_fn,
+        )
+    if getattr(args, "create_launchers", True):
+        args.create_launchers = prompt_yes_no(
+            "Create command-line launchers? [Y/n] ",
+            default=True,
+            input_fn=input_fn,
+        )
+    return args
+
+
 def has_command(name: str) -> bool:
     return shutil.which(name) is not None
 
@@ -736,19 +789,37 @@ def create_virtual_environment(
 
 def dependency_install_commands(plan: InstallerPlan) -> tuple[list[str], ...]:
     source_dir = Path(plan.source_dir)
+    uv_pip_install_all = [
+        "uv",
+        "pip",
+        "install",
+        "--python",
+        plan.python_path,
+        "-e",
+        ".[all]",
+    ]
+    uv_pip_install_base = [
+        "uv",
+        "pip",
+        "install",
+        "--python",
+        plan.python_path,
+        "-e",
+        ".",
+    ]
     pip_install_all = [plan.python_path, "-m", "pip", "install", "-e", ".[all]"]
     pip_install_base = [plan.python_path, "-m", "pip", "install", "-e", "."]
     if (source_dir / "uv.lock").exists():
         return (
             ["uv", "sync", "--all-extras", "--locked"],
-            ["uv", "pip", "install", "-e", ".[all]"],
-            ["uv", "pip", "install", "-e", "."],
+            uv_pip_install_all,
+            uv_pip_install_base,
             pip_install_all,
             pip_install_base,
         )
     return (
-        ["uv", "pip", "install", "-e", ".[all]"],
-        ["uv", "pip", "install", "-e", "."],
+        uv_pip_install_all,
+        uv_pip_install_base,
         pip_install_all,
         pip_install_base,
     )
@@ -867,24 +938,31 @@ def create_launcher_scripts(
     return (posix_path, windows_path)
 
 
-def verification_commands(plan: InstallerPlan) -> tuple[list[str], ...]:
-    return (
+def verification_commands(
+    plan: InstallerPlan,
+    *,
+    verify_cli: bool = True,
+) -> tuple[list[str], ...]:
+    commands = [
         [plan.python_path, "-c", "import sys; print(sys.version)"],
         [plan.python_path, "-m", "pip", "--version"],
-        [plan.python_path, "-m", "hermes_cli.main", "--help"],
-    )
+    ]
+    if verify_cli:
+        commands.append([plan.python_path, "-m", "hermes_cli.main", "--help"])
+    return tuple(commands)
 
 
 def verify_installed_runtime(
     plan: InstallerPlan,
     *,
     skip_verify: bool = False,
+    verify_cli: bool = True,
     dry_run: bool = False,
 ) -> tuple[CommandResult, ...]:
     if skip_verify:
         return ()
     results: list[CommandResult] = []
-    for command in verification_commands(plan):
+    for command in verification_commands(plan, verify_cli=verify_cli):
         results.append(
             run_command(
                 command,
@@ -960,6 +1038,9 @@ def sync_source_to_release(plan: InstallerPlan, *, dry_run: bool = False) -> lis
     copied: list[Path] = []
     if dry_run:
         return copied
+    archived = sync_git_archive_to_release(repo_root, target_root)
+    if archived is not None:
+        return archived
     target_root.mkdir(parents=True, exist_ok=True)
     for current_root, dir_names, file_names in os.walk(repo_root):
         current_path = Path(current_root)
@@ -976,6 +1057,36 @@ def sync_source_to_release(plan: InstallerPlan, *, dry_run: bool = False) -> lis
             shutil.copy2(source_file, destination_file)
             copied.append(destination_file)
     return copied
+
+
+def sync_git_archive_to_release(repo_root: Path, target_root: Path) -> list[Path] | None:
+    """Copy tracked source files with git archive when the source is a git checkout."""
+
+    if not (repo_root / ".git").exists():
+        return None
+    completed = subprocess.run(
+        ["git", "archive", "--format=tar", "HEAD"],
+        cwd=repo_root,
+        capture_output=True,
+        check=False,
+        shell=False,
+    )
+    if completed.returncode != 0:
+        return None
+
+    target_root.mkdir(parents=True, exist_ok=True)
+    extracted: list[Path] = []
+    with tarfile.open(fileobj=BytesIO(completed.stdout), mode="r:") as archive:
+        for member in archive.getmembers():
+            destination = (target_root / member.name).resolve()
+            try:
+                destination.relative_to(target_root)
+            except ValueError as exc:
+                raise ValueError(f"refusing to extract unsafe archive path: {member.name}") from exc
+            archive.extract(member, target_root)
+            if member.isfile():
+                extracted.append(destination)
+    return extracted
 
 
 def build_plan(args: argparse.Namespace, *, repo_root: Path) -> InstallerPlan:
@@ -1034,29 +1145,42 @@ def run_install_workflow(
             payload["detail"] = detail
         steps.append(payload)
 
+    def announce(message: str) -> None:
+        if not getattr(args, "non_interactive", False):
+            print(message, file=sys.stderr, flush=True)
+
+    announce(f"Creating install directories under {plan.prefix}...")
     create_install_directories(plan)
     mark("create-install-directories")
+    announce(f"Creating user data directory at {plan.data_dir}...")
     create_data_directory(plan)
     mark("create-data-directory", plan.data_dir)
+    announce("Copying source files into the release directory...")
     copied_files = sync_source_to_release(plan)
     mark("sync-source", {"files": len(copied_files)})
+    announce("Creating Python virtual environment...")
     create_virtual_environment(plan, python_executable=getattr(args, "python", None))
     mark("create-virtual-environment", {"enabled": plan.use_venv})
+    announce("Installing Python dependencies...")
     install_python_dependencies(
         plan,
         install_deps=getattr(args, "install_deps", True),
     )
     mark("install-python-dependencies", {"enabled": getattr(args, "install_deps", True)})
+    announce("Writing release metadata...")
     metadata = write_release_metadata(plan, now=now)
     mark("write-release-metadata", {"release_id": plan.release_id})
+    announce("Creating launcher scripts...")
     launchers = create_launcher_scripts(
         plan,
         create_launchers=getattr(args, "create_launchers", True),
     )
     mark("create-launchers", [str(path) for path in launchers])
+    announce("Verifying the installed runtime...")
     verification_results = verify_installed_runtime(
         plan,
         skip_verify=getattr(args, "skip_verify", False),
+        verify_cli=getattr(args, "install_deps", True),
     )
     mark("verify-runtime", {"commands": len(verification_results)})
     should_start = should_start_after_install(args, input_fn=input_fn)
@@ -1099,6 +1223,7 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(rollback_state, ensure_ascii=False, indent=2))
         return 0
     try:
+        args = prepare_interactive_install_args(args)
         install_result = run_install_workflow(args, repo_root=repo_root)
     except (ValueError, InstallerCommandError) as exc:
         parser.error(str(exc))

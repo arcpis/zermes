@@ -5,7 +5,10 @@ from __future__ import annotations
 # From test_dependencies.py
 
 import argparse
+from io import BytesIO
 from pathlib import Path
+import tarfile
+from types import SimpleNamespace
 
 import pytest
 
@@ -32,8 +35,8 @@ def test_dependency_install_commands_prefers_uv_lock(tmp_path):
 
     assert install_zermes.dependency_install_commands(plan) == (
         ["uv", "sync", "--all-extras", "--locked"],
-        ["uv", "pip", "install", "-e", ".[all]"],
-        ["uv", "pip", "install", "-e", "."],
+        ["uv", "pip", "install", "--python", plan.python_path, "-e", ".[all]"],
+        ["uv", "pip", "install", "--python", plan.python_path, "-e", "."],
         [plan.python_path, "-m", "pip", "install", "-e", ".[all]"],
         [plan.python_path, "-m", "pip", "install", "-e", "."],
     )
@@ -43,8 +46,8 @@ def test_dependency_install_commands_without_lock_uses_editable_fallbacks(tmp_pa
     plan = _plan_dependencies(tmp_path)
 
     assert install_zermes.dependency_install_commands(plan) == (
-        ["uv", "pip", "install", "-e", ".[all]"],
-        ["uv", "pip", "install", "-e", "."],
+        ["uv", "pip", "install", "--python", plan.python_path, "-e", ".[all]"],
+        ["uv", "pip", "install", "--python", plan.python_path, "-e", "."],
         [plan.python_path, "-m", "pip", "install", "-e", ".[all]"],
         [plan.python_path, "-m", "pip", "install", "-e", "."],
     )
@@ -96,10 +99,18 @@ def test_install_dependencies_falls_back_from_locked_sync(monkeypatch, tmp_path)
 
     result = install_zermes.install_python_dependencies(plan)
 
-    assert result.command == ("uv", "pip", "install", "-e", ".[all]")
+    assert result.command == (
+        "uv",
+        "pip",
+        "install",
+        "--python",
+        plan.python_path,
+        "-e",
+        ".[all]",
+    )
     assert calls == [
         ["uv", "sync", "--all-extras", "--locked"],
-        ["uv", "pip", "install", "-e", ".[all]"],
+        ["uv", "pip", "install", "--python", plan.python_path, "-e", ".[all]"],
     ]
 
 
@@ -109,7 +120,7 @@ def test_install_dependencies_falls_back_to_base_editable(monkeypatch, tmp_path)
 
     def fake_run(command, *, cwd=None, env=None, dry_run=False):
         calls.append(command)
-        if command == ["uv", "pip", "install", "-e", ".[all]"]:
+        if command == ["uv", "pip", "install", "--python", plan.python_path, "-e", ".[all]"]:
             raise install_zermes.InstallerCommandError(
                 install_zermes.CommandResult(command=tuple(command), returncode=1)
             )
@@ -119,10 +130,18 @@ def test_install_dependencies_falls_back_to_base_editable(monkeypatch, tmp_path)
 
     result = install_zermes.install_python_dependencies(plan)
 
-    assert result.command == ("uv", "pip", "install", "-e", ".")
+    assert result.command == (
+        "uv",
+        "pip",
+        "install",
+        "--python",
+        plan.python_path,
+        "-e",
+        ".",
+    )
     assert calls == [
-        ["uv", "pip", "install", "-e", ".[all]"],
-        ["uv", "pip", "install", "-e", "."],
+        ["uv", "pip", "install", "--python", plan.python_path, "-e", ".[all]"],
+        ["uv", "pip", "install", "--python", plan.python_path, "-e", "."],
     ]
 
 
@@ -144,8 +163,8 @@ def test_install_dependencies_falls_back_to_python_pip(monkeypatch, tmp_path):
 
     assert result.command == (plan.python_path, "-m", "pip", "install", "-e", ".[all]")
     assert calls == [
-        ["uv", "pip", "install", "-e", ".[all]"],
-        ["uv", "pip", "install", "-e", "."],
+        ["uv", "pip", "install", "--python", plan.python_path, "-e", ".[all]"],
+        ["uv", "pip", "install", "--python", plan.python_path, "-e", "."],
         [plan.python_path, "-m", "pip", "install", "-e", ".[all]"],
     ]
 
@@ -264,6 +283,38 @@ def _args_install_workflow(tmp_path, **overrides):
     return argparse.Namespace(**values)
 
 
+def test_prepare_interactive_install_args_prompts_for_missing_options(tmp_path):
+    args = argparse.Namespace(
+        prefix=None,
+        data_dir=None,
+        no_venv=False,
+        install_deps=True,
+        create_launchers=True,
+        non_interactive=False,
+        dry_run=False,
+    )
+    answers = iter(
+        [
+            str(tmp_path / "app"),
+            str(tmp_path / "data"),
+            "n",
+            "n",
+            "n",
+        ]
+    )
+
+    result = install_zermes.prepare_interactive_install_args(
+        args,
+        input_fn=lambda _prompt: next(answers),
+    )
+
+    assert result.prefix == tmp_path / "app"
+    assert result.data_dir == tmp_path / "data"
+    assert result.no_venv is True
+    assert result.install_deps is False
+    assert result.create_launchers is False
+
+
 def test_run_install_workflow_runs_steps_in_order(monkeypatch, tmp_path):
     args = _args_install_workflow(tmp_path)
     calls: list[str] = []
@@ -338,6 +389,18 @@ def test_run_install_workflow_dry_run_only_returns_plan(monkeypatch, tmp_path):
 
 
 def test_main_real_install_outputs_success_json(monkeypatch, tmp_path, capsys):
+    prepared_args = []
+
+    def fake_prepare(args, *, input_fn=input):
+        args.prefix = tmp_path / "app"
+        args.data_dir = tmp_path / "data"
+        args.no_venv = True
+        args.install_deps = False
+        args.create_launchers = False
+        args.start = False
+        prepared_args.append(args)
+        return args
+
     def fake_install(args, *, repo_root, input_fn=input, now=None):
         return {
             "status": "installed",
@@ -345,21 +408,14 @@ def test_main_real_install_outputs_success_json(monkeypatch, tmp_path, capsys):
             "steps": [],
         }
 
+    monkeypatch.setattr(install_zermes, "prepare_interactive_install_args", fake_prepare)
     monkeypatch.setattr(install_zermes, "run_install_workflow", fake_install)
 
-    exit_code = install_zermes.main(
-        [
-            "install",
-            "--prefix",
-            str(tmp_path / "app"),
-            "--data-dir",
-            str(tmp_path / "data"),
-            "--non-interactive",
-        ]
-    )
+    exit_code = install_zermes.main(["install"])
 
     payload = json.loads(capsys.readouterr().out)
     assert exit_code == 0
+    assert prepared_args
     assert payload["status"] == "installed"
     assert Path(payload["plan"]["prefix"]) == (tmp_path / "app").resolve()
 
@@ -582,6 +638,34 @@ def test_sync_source_to_release_copies_files_and_excludes_local_dirs(tmp_path):
     assert not (target / ".git").exists()
     assert not (target / "venv").exists()
     assert not (target / "node_modules").exists()
+
+
+def test_sync_source_to_release_uses_git_archive_for_git_checkout(monkeypatch, tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / ".git").mkdir()
+    archive_bytes = BytesIO()
+    with tarfile.open(fileobj=archive_bytes, mode="w") as archive:
+        payload = b"hello"
+        info = tarfile.TarInfo("README.md")
+        info.size = len(payload)
+        archive.addfile(info, BytesIO(payload))
+
+    def fake_run(command, *, cwd, capture_output, check, shell):
+        assert command == ["git", "archive", "--format=tar", "HEAD"]
+        assert cwd == repo
+        assert capture_output is True
+        assert check is False
+        assert shell is False
+        return SimpleNamespace(returncode=0, stdout=archive_bytes.getvalue())
+
+    monkeypatch.setattr(install_zermes.subprocess, "run", fake_run)
+    plan = _plan_source_sync(tmp_path, repo)
+
+    copied = install_zermes.sync_source_to_release(plan)
+
+    assert copied == [Path(plan.source_dir) / "README.md"]
+    assert (Path(plan.source_dir) / "README.md").read_text(encoding="utf-8") == "hello"
 
 
 def test_sync_source_to_release_preserves_unknown_target_files(tmp_path):
@@ -822,6 +906,15 @@ def test_verification_commands_use_release_python_and_existing_cli(tmp_path):
         [plan.python_path, "-c", "import sys; print(sys.version)"],
         [plan.python_path, "-m", "pip", "--version"],
         [plan.python_path, "-m", "hermes_cli.main", "--help"],
+    )
+
+
+def test_verification_commands_can_skip_cli_when_dependencies_are_skipped(tmp_path):
+    plan = _plan_verify(tmp_path)
+
+    assert install_zermes.verification_commands(plan, verify_cli=False) == (
+        [plan.python_path, "-c", "import sys; print(sys.version)"],
+        [plan.python_path, "-m", "pip", "--version"],
     )
 
 
