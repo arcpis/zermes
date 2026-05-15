@@ -43,14 +43,7 @@ Focused self-evolution regression passed:
 
 ```bash
 python -m pytest \
-  tests/test_code_modification_governance.py \
-  tests/test_code_modification_approval.py \
-  tests/test_code_modification_git_workflow.py \
-  tests/test_code_modification_executor.py \
-  tests/test_code_modification_verifier.py \
-  tests/test_code_modification_tool.py \
-  tests/test_code_modification_token_strategy.py \
-  tests/test_self_evolution_thinking.py \
+  tests/self_evolution \
   tests/test_model_tools.py \
   tests/test_toolsets.py \
   -q

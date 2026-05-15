@@ -95,7 +95,7 @@ def test_policy_reports_violations():
 
 
 def test_code_modification_package_is_included():
-    pyproject_path = Path(__file__).resolve().parents[1] / "pyproject.toml"
+    pyproject_path = Path(__file__).resolve().parents[2] / "pyproject.toml"
     data = tomllib.loads(pyproject_path.read_text(encoding="utf-8"))
 
     package_includes = data["tool"]["setuptools"]["packages"]["find"]["include"]

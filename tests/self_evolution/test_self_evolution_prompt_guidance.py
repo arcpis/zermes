@@ -14,6 +14,7 @@ def _build_agent_with_tools(tool_names):
     agent = AIAgent.__new__(AIAgent)
     agent.valid_tool_names = list(tool_names)
     agent.skip_context_files = True
+    agent.load_soul_identity = False
     agent._tool_use_enforcement = False
     agent._memory_store = None
     agent._memory_enabled = False

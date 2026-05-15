@@ -240,8 +240,8 @@ def collect_structure_sources(
     candidates.extend(_explicit_path_candidates(root, active_hints))
     candidates.extend(_core_source_candidates(root))
     candidates.extend(_glob_candidates(root, "code_modification/*.py", "core_module", 70))
-    candidates.extend(_glob_candidates(root, "tests/test_code_modification_*.py", "test_file", 60))
-    thinking_test = root / "tests" / "test_self_evolution_thinking.py"
+    candidates.extend(_glob_candidates(root, "tests/self_evolution/test_code_modification_*.py", "test_file", 60))
+    thinking_test = root / "tests" / "self_evolution" / "test_self_evolution_thinking.py"
     if thinking_test.exists():
         candidates.append(_source_candidate(root, thinking_test, "test_file", 60, "thinking test"))
     if active_hints.include_git_history:

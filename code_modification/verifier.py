@@ -272,11 +272,11 @@ def build_verification_commands(
     commands: list[VerificationCommand] = []
     if any(area.startswith("code_modification/") or area == "tools/code_modification_tool.py" for area in areas):
         test_files = [
-            "tests/test_code_modification_governance.py",
-            "tests/test_code_modification_approval.py",
-            "tests/test_code_modification_executor.py",
-            "tests/test_code_modification_git_workflow.py",
-            "tests/test_code_modification_tool.py",
+            "tests/self_evolution/test_code_modification_governance.py",
+            "tests/self_evolution/test_code_modification_approval.py",
+            "tests/self_evolution/test_code_modification_executor.py",
+            "tests/self_evolution/test_code_modification_git_workflow.py",
+            "tests/self_evolution/test_code_modification_tool.py",
             "tests/test_model_tools.py",
             "tests/test_toolsets.py",
         ]
@@ -298,7 +298,7 @@ def build_verification_commands(
     else:
         commands.append(
             VerificationCommand(
-                command=("scripts/run_tests.sh", "tests/test_code_modification_executor.py"),
+                command=("scripts/run_tests.sh", "tests/self_evolution/test_code_modification_executor.py"),
                 purpose="Run a focused self-evolution workflow smoke test.",
                 timeout_seconds=600,
             )
