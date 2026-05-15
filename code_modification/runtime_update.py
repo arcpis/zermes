@@ -134,6 +134,18 @@ def read_previous_release(prefix: str | Path) -> RuntimeRelease | None:
     return release
 
 
+def read_release(prefix: str | Path, release_id: str) -> RuntimeRelease:
+    """Read and validate a release by id from runtime/releases."""
+    paths = resolve_runtime_paths(prefix)
+    clean_release = _safe_id(release_id, "release")
+    release_root = _release_root(paths, clean_release)
+    release = _read_release(release_root / "metadata.json")
+    if release.release_id != clean_release:
+        raise RuntimeUpdateError("release metadata id does not match requested release")
+    validate_release_directory(paths, release)
+    return release
+
+
 def write_runtime_update_state(prefix: str | Path, state: RuntimeUpdateState) -> None:
     """Atomically write the latest runtime update state."""
     paths = resolve_runtime_paths(prefix)

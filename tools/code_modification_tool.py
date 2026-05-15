@@ -11,6 +11,7 @@ from code_modification.executor import (
     commit_task_step,
     describe_task_execution,
     finalize_task_branch,
+    require_explicit_approval,
     start_approved_task,
 )
 from code_modification.git_workflow import GitWorkflowError
@@ -27,6 +28,16 @@ from code_modification.self_update import (
     record_self_update_build,
     record_self_update_health_check,
     rollback_self_update,
+)
+from code_modification.runtime_update import (
+    RuntimeUpdateError,
+    activate_release as activate_runtime_release,
+    mark_candidate_blocked,
+    mark_candidate_verified,
+    prepare_candidate_source,
+    promote_candidate_to_release,
+    read_release as read_runtime_release,
+    rollback_active_release,
 )
 from code_modification.token_strategy import AnalysisHints, build_analysis_context
 from code_modification.thinking import (
@@ -347,6 +358,9 @@ def self_update_application(
     previous_active_ref: str | None = None,
     mode: str = "manual",
     worktree_path: str | None = None,
+    candidate_id: str = "",
+    release_id: str = "",
+    expected_old_release_id: str = "",
     build_summary: str = "",
     health_checks: list[str] | None = None,
     conclusion: str = "",
@@ -355,6 +369,20 @@ def self_update_application(
     """Manage audited self-update application state without restarting runtime."""
     normalized = str(action or "").strip().lower()
     try:
+        if normalized.startswith("runtime_"):
+            return _runtime_update_application_action(
+                normalized,
+                str(task_id or ""),
+                project_root=project_root,
+                install_prefix=install_prefix,
+                approval_text=approval_text,
+                candidate_ref=candidate_ref,
+                candidate_id=candidate_id,
+                release_id=release_id,
+                expected_old_release_id=expected_old_release_id,
+                health_checks=health_checks or [],
+                reason=reason,
+            )
         root = _resolve_tool_project_root(project_root, install_prefix)
         clean_task_id = str(task_id or "")
         if normalized == "status":
@@ -407,7 +435,9 @@ def self_update_application(
         else:
             return tool_error(
                 "action must be one of status, plan, prepare, record_build, "
-                "record_health, activate, or rollback.",
+                "record_health, activate, rollback, runtime_prepare, "
+                "runtime_verify, runtime_block, runtime_promote, "
+                "runtime_activate, or runtime_rollback.",
                 success=False,
             )
     except (
@@ -415,9 +445,94 @@ def self_update_application(
         GitWorkflowError,
         ProjectRootResolutionError,
         SelfUpdateApplicationError,
+        RuntimeUpdateError,
     ) as exc:
         return tool_error(str(exc), success=False)
     return _self_update_state_result(state, action=normalized)
+
+
+def _runtime_update_application_action(
+    action: str,
+    task_id: str,
+    *,
+    project_root: str | None,
+    install_prefix: str | None,
+    approval_text: str,
+    candidate_ref: str | None,
+    candidate_id: str,
+    release_id: str,
+    expected_old_release_id: str,
+    health_checks: list[str],
+    reason: str,
+) -> str:
+    if not install_prefix:
+        return tool_error("install_prefix is required for runtime update actions.", success=False)
+    if action in {"runtime_prepare", "runtime_verify", "runtime_block", "runtime_promote"} and not str(candidate_id or "").strip():
+        return tool_error("candidate_id is required for this runtime update action.", success=False)
+    if action in {"runtime_promote", "runtime_activate"} and not str(release_id or "").strip():
+        return tool_error("release_id is required for this runtime update action.", success=False)
+    if action == "runtime_prepare":
+        root = _resolve_tool_project_root(project_root, install_prefix)
+        candidate = prepare_candidate_source(
+            install_prefix,
+            candidate_id,
+            source_repo=root,
+            git_ref=candidate_ref or "HEAD",
+            task_id=task_id,
+            old_release_id=expected_old_release_id,
+        )
+        return tool_result(
+            success=True,
+            action=action,
+            task_id=task_id,
+            candidate_id=candidate.candidate_id,
+            candidate_commit=candidate.candidate_commit,
+            source_repo=candidate.source_repo,
+            candidate_source_path=candidate.source_path,
+            candidate_metadata_path=str(
+                Path(install_prefix).expanduser().resolve()
+                / "runtime"
+                / "candidates"
+                / candidate.candidate_id
+                / "metadata.json"
+            ),
+        )
+    if action == "runtime_verify":
+        state = mark_candidate_verified(
+            install_prefix,
+            candidate_id,
+            health_checks=health_checks,
+        )
+        return _runtime_state_result(state, action=action)
+    if action == "runtime_block":
+        state = mark_candidate_blocked(
+            install_prefix,
+            candidate_id,
+            reason=reason,
+            health_checks=health_checks,
+        )
+        return _runtime_state_result(state, action=action)
+    if action == "runtime_promote":
+        release = promote_candidate_to_release(install_prefix, candidate_id, release_id)
+        return _runtime_release_result(release, action=action, task_id=task_id)
+    if action == "runtime_activate":
+        require_explicit_approval(approval_text)
+        release = read_runtime_release(install_prefix, release_id)
+        activated = activate_runtime_release(
+            install_prefix,
+            release,
+            expected_old_release_id=expected_old_release_id or None,
+        )
+        return _runtime_release_result(activated, action=action, task_id=task_id)
+    if action == "runtime_rollback":
+        require_explicit_approval(approval_text)
+        release = rollback_active_release(install_prefix)
+        return _runtime_release_result(release, action=action, task_id=task_id)
+    return tool_error(
+        "runtime action must be one of runtime_prepare, runtime_verify, "
+        "runtime_block, runtime_promote, runtime_activate, or runtime_rollback.",
+        success=False,
+    )
 
 
 def _resolve_tool_project_root(
@@ -509,6 +624,36 @@ def _self_update_state_result(state, **extra) -> str:
         blocked_reason=state.blocked_reason,
         update_application_path=str(task_dir / "update-application.md"),
         update_state_path=str(task_dir / "update-state.json"),
+        **extra,
+    )
+
+
+def _runtime_state_result(state, **extra) -> str:
+    return tool_result(
+        success=True,
+        status=state.status,
+        task_id=state.task_id,
+        candidate_id=state.candidate_id,
+        release_id=state.release_id,
+        candidate_commit=state.candidate_commit,
+        old_release_id=state.old_release_id,
+        steps=list(state.steps),
+        health_checks=list(state.health_checks),
+        error=state.error,
+        **extra,
+    )
+
+
+def _runtime_release_result(release, **extra) -> str:
+    return tool_result(
+        success=True,
+        release_id=release.release_id,
+        candidate_commit=release.candidate_commit,
+        source_path=release.source_path,
+        venv_path=release.venv_path,
+        build_path=release.build_path,
+        source_repo=release.source_repo,
+        activated_at=release.activated_at,
         **extra,
     )
 
@@ -819,7 +964,9 @@ SELF_UPDATE_APPLICATION_SCHEMA = {
                 "type": "string",
                 "description": (
                     "One of status, plan, prepare, record_build, record_health, "
-                    "activate, or rollback."
+                    "activate, rollback, runtime_prepare, runtime_verify, "
+                    "runtime_block, runtime_promote, runtime_activate, or "
+                    "runtime_rollback."
                 ),
             },
             "task_id": {
@@ -845,6 +992,24 @@ SELF_UPDATE_APPLICATION_SCHEMA = {
             "worktree_path": {
                 "type": "string",
                 "description": "Optional candidate worktree path to record during prepare.",
+            },
+            "candidate_id": {
+                "type": "string",
+                "description": (
+                    "Runtime candidate id for runtime_prepare, runtime_verify, "
+                    "runtime_block, or runtime_promote."
+                ),
+            },
+            "release_id": {
+                "type": "string",
+                "description": "Runtime release id for runtime_promote or runtime_activate.",
+            },
+            "expected_old_release_id": {
+                "type": "string",
+                "description": (
+                    "Optional active release id guard for runtime_prepare or "
+                    "runtime_activate."
+                ),
             },
             "build_summary": {
                 "type": "string",
@@ -1053,6 +1218,9 @@ registry.register(
         previous_active_ref=args.get("previous_active_ref"),
         mode=args.get("mode", "manual"),
         worktree_path=args.get("worktree_path"),
+        candidate_id=args.get("candidate_id", ""),
+        release_id=args.get("release_id", ""),
+        expected_old_release_id=args.get("expected_old_release_id", ""),
         build_summary=args.get("build_summary", ""),
         health_checks=args.get("health_checks"),
         conclusion=args.get("conclusion", ""),

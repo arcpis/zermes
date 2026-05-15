@@ -173,6 +173,87 @@ def test_self_evolution_thinking_tool_rejects_unknown_action(tmp_path):
     assert "status, enable, disable, or run_once" in result["error"]
 
 
+def test_self_update_application_runtime_actions_manage_release_switch(tmp_path):
+    project_root = tmp_path / "hermes-agent"
+    _make_project_repo(project_root)
+    prefix = tmp_path / "zermes"
+    _make_runtime_release(prefix, "source-install", project_root)
+    candidate_id = "update-20260516-010000-abcdef0"
+    release_id = "release-abcdef0"
+
+    prepared = json.loads(
+        self_update_application(
+            "runtime_prepare",
+            "20260516-010000-update-flow",
+            project_root=str(project_root),
+            install_prefix=str(prefix),
+            candidate_id=candidate_id,
+            candidate_ref="HEAD",
+            expected_old_release_id="source-install",
+        )
+    )
+    verified = json.loads(
+        self_update_application(
+            "runtime_verify",
+            "20260516-010000-update-flow",
+            install_prefix=str(prefix),
+            candidate_id=candidate_id,
+            health_checks=["cli help passed"],
+        )
+    )
+    promoted = json.loads(
+        self_update_application(
+            "runtime_promote",
+            "20260516-010000-update-flow",
+            install_prefix=str(prefix),
+            candidate_id=candidate_id,
+            release_id=release_id,
+        )
+    )
+    activated = json.loads(
+        self_update_application(
+            "runtime_activate",
+            "20260516-010000-update-flow",
+            install_prefix=str(prefix),
+            release_id=release_id,
+            approval_text="approved",
+            expected_old_release_id="source-install",
+        )
+    )
+    rolled_back = json.loads(
+        self_update_application(
+            "runtime_rollback",
+            "20260516-010000-update-flow",
+            install_prefix=str(prefix),
+            approval_text="approved",
+        )
+    )
+
+    assert prepared["success"] is True
+    assert prepared["candidate_id"] == candidate_id
+    assert verified["status"] == "verified"
+    assert promoted["release_id"] == release_id
+    assert activated["release_id"] == release_id
+    assert rolled_back["release_id"] == "source-install"
+    assert json.loads((prefix / "runtime" / "active.json").read_text(encoding="utf-8"))[
+        "release_id"
+    ] == "source-install"
+
+
+def test_self_update_application_runtime_action_requires_install_prefix(tmp_path):
+    result = json.loads(
+        self_update_application(
+            "runtime_verify",
+            "20260516-010000-update-flow",
+            candidate_id="update-20260516-010000-abcdef0",
+            health_checks=["cli help passed"],
+        )
+    )
+
+    assert result["success"] is False
+    assert "install_prefix is required" in result["error"]
+
+
 def test_code_modification_tool_schemas_include_install_prefix():
     schemas = [
         COMPLETE_CODE_TASK_SCHEMA,
@@ -234,3 +315,27 @@ def _write_project_markers(repo):
     tools_dir = repo / "tools"
     tools_dir.mkdir(exist_ok=True)
     (tools_dir / "code_modification_tool.py").write_text("# tool\n", encoding="utf-8")
+
+
+def _make_runtime_release(prefix, release_id, source_repo):
+    release_root = prefix / "runtime" / "releases" / release_id
+    (release_root / "source").mkdir(parents=True)
+    (release_root / "venv").mkdir()
+    (release_root / "build").mkdir()
+    payload = {
+        "schema_version": 1,
+        "release_id": release_id,
+        "source_path": str(release_root / "source"),
+        "venv_path": str(release_root / "venv"),
+        "build_path": str(release_root / "build"),
+        "candidate_commit": "0000000",
+        "source_repo": {"path": str(source_repo)},
+        "activated_at": "",
+    }
+    (release_root / "metadata.json").write_text(
+        json.dumps(payload, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    active_path = prefix / "runtime" / "active.json"
+    active_path.parent.mkdir(parents=True, exist_ok=True)
+    active_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
