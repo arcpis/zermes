@@ -43,6 +43,7 @@ from code_modification.runtime_update import (
     read_runtime_update_state,
     rollback_active_release,
     runtime_update_lock,
+    run_candidate_health_checks,
     write_runtime_update_state,
 )
 from code_modification.token_strategy import AnalysisHints, build_analysis_context
@@ -371,6 +372,7 @@ def self_update_application(
     health_checks: list[str] | None = None,
     conclusion: str = "",
     reason: str = "",
+    python_path: str | None = None,
 ) -> str:
     """Manage audited self-update application state without restarting runtime."""
     normalized = str(action or "").strip().lower()
@@ -388,6 +390,7 @@ def self_update_application(
                 expected_old_release_id=expected_old_release_id,
                 health_checks=health_checks or [],
                 reason=reason,
+                python_path=python_path,
             )
         root = _resolve_tool_project_root(project_root, install_prefix)
         clean_task_id = str(task_id or "")
@@ -442,8 +445,9 @@ def self_update_application(
             return tool_error(
                 "action must be one of status, plan, prepare, record_build, "
                 "record_health, activate, rollback, runtime_prepare, "
-                "runtime_status, runtime_verify, runtime_block, "
-                "runtime_promote, runtime_activate, or runtime_rollback.",
+                "runtime_status, runtime_verify, runtime_run_health, "
+                "runtime_block, runtime_promote, runtime_activate, or "
+                "runtime_rollback.",
                 success=False,
             )
     except (
@@ -470,10 +474,11 @@ def _runtime_update_application_action(
     expected_old_release_id: str,
     health_checks: list[str],
     reason: str,
+    python_path: str | None,
 ) -> str:
     if not install_prefix:
         return tool_error("install_prefix is required for runtime update actions.", success=False)
-    if action in {"runtime_prepare", "runtime_verify", "runtime_block", "runtime_promote"} and not str(candidate_id or "").strip():
+    if action in {"runtime_prepare", "runtime_verify", "runtime_block", "runtime_promote", "runtime_run_health"} and not str(candidate_id or "").strip():
         return tool_error("candidate_id is required for this runtime update action.", success=False)
     if action in {"runtime_promote", "runtime_activate"} and not str(release_id or "").strip():
         return tool_error("release_id is required for this runtime update action.", success=False)
@@ -492,6 +497,7 @@ def _runtime_update_application_action(
             expected_old_release_id=expected_old_release_id,
             health_checks=health_checks,
             reason=reason,
+            python_path=python_path,
         )
 
 
@@ -508,6 +514,7 @@ def _run_locked_runtime_update_action(
     expected_old_release_id: str,
     health_checks: list[str],
     reason: str,
+    python_path: str | None,
 ) -> str:
     if action == "runtime_prepare":
         root = _resolve_tool_project_root(project_root, install_prefix)
@@ -542,6 +549,18 @@ def _run_locked_runtime_update_action(
             health_checks=health_checks,
         )
         return _runtime_state_result(state, action=action)
+    if action == "runtime_run_health":
+        state, results = run_candidate_health_checks(
+            install_prefix,
+            candidate_id,
+            checks=health_checks,
+            python_path=python_path,
+        )
+        return _runtime_state_result(
+            state,
+            action=action,
+            health_results=[_runtime_health_result_payload(result) for result in results],
+        )
     if action == "runtime_block":
         state = mark_candidate_blocked(
             install_prefix,
@@ -582,8 +601,8 @@ def _run_locked_runtime_update_action(
         return _runtime_release_result(release, action=action, task_id=task_id)
     return tool_error(
         "runtime action must be one of runtime_prepare, runtime_verify, "
-        "runtime_status, runtime_block, runtime_promote, runtime_activate, "
-        "or runtime_rollback.",
+        "runtime_run_health, runtime_status, runtime_block, runtime_promote, "
+        "runtime_activate, or runtime_rollback.",
         success=False,
     )
 
@@ -774,6 +793,17 @@ def _runtime_update_payload(state) -> dict:
         "health_checks": list(state.health_checks),
         "error": state.error,
         "updated_at": state.updated_at,
+    }
+
+
+def _runtime_health_result_payload(result) -> dict:
+    return {
+        "name": result.name,
+        "command": list(result.command),
+        "exit_code": result.exit_code,
+        "stdout_summary": result.stdout_summary,
+        "stderr_summary": result.stderr_summary,
+        "status": result.status,
     }
 
 
@@ -1088,8 +1118,8 @@ SELF_UPDATE_APPLICATION_SCHEMA = {
                 "description": (
                     "One of status, plan, prepare, record_build, record_health, "
                     "activate, rollback, runtime_prepare, runtime_verify, "
-                    "runtime_block, runtime_promote, runtime_activate, "
-                    "runtime_rollback, or runtime_status."
+                    "runtime_run_health, runtime_block, runtime_promote, "
+                    "runtime_activate, runtime_rollback, or runtime_status."
                 ),
             },
             "task_id": {
@@ -1141,7 +1171,18 @@ SELF_UPDATE_APPLICATION_SCHEMA = {
             "health_checks": {
                 "type": "array",
                 "items": {"type": "string"},
-                "description": "Health-check evidence to record.",
+                "description": (
+                    "Health-check evidence to record, or allow-listed check "
+                    "names for runtime_run_health: python_version, cli_help, compileall."
+                ),
+            },
+            "python_path": {
+                "type": "string",
+                "description": (
+                    "Optional Python executable for runtime_run_health. When "
+                    "omitted, the candidate venv Python is used if present, "
+                    "otherwise the current interpreter is used."
+                ),
             },
             "conclusion": {
                 "type": "string",
@@ -1348,6 +1389,7 @@ registry.register(
         health_checks=args.get("health_checks"),
         conclusion=args.get("conclusion", ""),
         reason=args.get("reason", ""),
+        python_path=args.get("python_path"),
     ),
     check_fn=check_code_modification_requirements,
     emoji="U",

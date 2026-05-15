@@ -19,6 +19,7 @@ from pathlib import Path
 import re
 import socket
 import subprocess
+import sys
 import tarfile
 from typing import Any
 
@@ -33,6 +34,8 @@ UPDATE_LOCK_FILE = "update.lock"
 CANDIDATES_DIR_NAME = "candidates"
 RELEASES_DIR_NAME = "releases"
 RUNTIME_SCHEMA_VERSION = 1
+DEFAULT_RUNTIME_HEALTH_TIMEOUT_SECONDS = 60
+OUTPUT_SNIPPET_CHARS = 1200
 
 
 class RuntimeUpdateError(RuntimeError):
@@ -104,6 +107,18 @@ class RuntimeUpdateState:
     error: str = ""
     schema_version: int = RUNTIME_SCHEMA_VERSION
     updated_at: str = ""
+
+
+@dataclass(frozen=True)
+class RuntimeHealthCheckResult:
+    """Result from one allow-listed candidate health check."""
+
+    name: str
+    command: tuple[str, ...]
+    exit_code: int | None
+    stdout_summary: str
+    stderr_summary: str
+    status: str
 
 
 @dataclass(frozen=True)
@@ -363,6 +378,56 @@ def mark_candidate_blocked(
     )
 
 
+def run_candidate_health_checks(
+    prefix: str | Path,
+    candidate_id: str,
+    *,
+    checks: list[str] | None = None,
+    python_path: str | Path | None = None,
+    timeout_seconds: int = DEFAULT_RUNTIME_HEALTH_TIMEOUT_SECONDS,
+) -> tuple[RuntimeUpdateState, tuple[RuntimeHealthCheckResult, ...]]:
+    """Run allow-listed health checks for a prepared candidate.
+
+    The accepted check names are intentionally fixed. This function does not
+    accept shell commands from the model or user; it only maps known check names
+    to argv-form subprocess calls inside the candidate source tree.
+    """
+    paths = resolve_runtime_paths(prefix)
+    candidate_root = _candidate_root(paths, _safe_id(candidate_id, "candidate"))
+    candidate = _read_candidate(candidate_root)
+    selected_checks = _normalize_health_check_names(checks)
+    python_executable = _candidate_python(candidate, python_path)
+    results = tuple(
+        _run_candidate_health_check(
+            candidate,
+            name,
+            python_executable=python_executable,
+            timeout_seconds=timeout_seconds,
+        )
+        for name in selected_checks
+    )
+    _atomic_write_json(
+        candidate_root / "logs" / "health-checks.json",
+        {"results": [_health_result_to_payload(result) for result in results]},
+    )
+    summaries = tuple(_health_result_summary(result) for result in results)
+    failed = [result for result in results if result.status != "passed"]
+    if failed:
+        state = mark_candidate_blocked(
+            paths.prefix,
+            candidate.candidate_id,
+            reason="; ".join(_health_result_summary(result) for result in failed),
+            health_checks=list(summaries),
+        )
+    else:
+        state = mark_candidate_verified(
+            paths.prefix,
+            candidate.candidate_id,
+            health_checks=list(summaries),
+        )
+    return state, results
+
+
 def validate_release_directory(paths: RuntimePaths, release: RuntimeRelease) -> None:
     """Validate that a release points to complete paths inside releases/.
 
@@ -516,6 +581,30 @@ def _read_update_state(path: Path) -> RuntimeUpdateState:
     )
 
 
+def _read_candidate(candidate_root: Path) -> RuntimeCandidate:
+    metadata = _read_json(candidate_root / "metadata.json")
+    candidate_id = str(metadata.get("candidate_id") or candidate_root.name).strip()
+    if not candidate_id:
+        raise RuntimeUpdateError(f"candidate_id is missing from {candidate_root}")
+    candidate = RuntimeCandidate(
+        candidate_id=_safe_id(candidate_id, "candidate"),
+        source_path=str(metadata.get("source_path") or candidate_root / "source"),
+        venv_path=str(metadata.get("venv_path") or candidate_root / "venv"),
+        build_path=str(metadata.get("build_path") or candidate_root / "build"),
+        logs_path=str(metadata.get("logs_path") or candidate_root / "logs"),
+        candidate_commit=str(metadata.get("candidate_commit") or metadata.get("commit") or "").strip(),
+        source_repo=_source_repo_from_payload(metadata),
+        task_id=str(metadata.get("task_id") or "").strip(),
+        created_at=str(metadata.get("created_at") or "").strip(),
+        schema_version=int(metadata.get("schema_version") or RUNTIME_SCHEMA_VERSION),
+    )
+    _required_child_path(candidate.source_path, candidate_root, "source_path")
+    _required_child_path(candidate.venv_path, candidate_root, "venv_path")
+    _required_child_path(candidate.build_path, candidate_root, "build_path")
+    _required_child_path(candidate.logs_path, candidate_root, "logs_path")
+    return candidate
+
+
 def _read_json(path: Path) -> dict[str, Any]:
     if not path.exists():
         raise RuntimeUpdateError(f"JSON file does not exist: {path}")
@@ -551,6 +640,12 @@ def _state_to_payload(state: RuntimeUpdateState) -> dict[str, Any]:
     payload = asdict(state)
     payload["steps"] = list(state.steps)
     payload["health_checks"] = list(state.health_checks)
+    return payload
+
+
+def _health_result_to_payload(result: RuntimeHealthCheckResult) -> dict[str, Any]:
+    payload = asdict(result)
+    payload["command"] = list(result.command)
     return payload
 
 
@@ -699,6 +794,85 @@ def _write_candidate_status(
 
 def _clean_health_checks(health_checks: list[str]) -> tuple[str, ...]:
     return tuple(str(check).strip() for check in health_checks if str(check).strip())
+
+
+def _normalize_health_check_names(checks: list[str] | None) -> tuple[str, ...]:
+    names = tuple(str(check).strip() for check in (checks or []) if str(check).strip())
+    selected = names or ("python_version", "cli_help", "compileall")
+    allowed = {"python_version", "cli_help", "compileall"}
+    invalid = [name for name in selected if name not in allowed]
+    if invalid:
+        raise RuntimeUpdateError(f"unsupported runtime health check: {', '.join(invalid)}")
+    return selected
+
+
+def _candidate_python(candidate: RuntimeCandidate, python_path: str | Path | None) -> Path:
+    if python_path:
+        candidate_python = Path(python_path).expanduser().resolve()
+        if not candidate_python.exists():
+            raise RuntimeUpdateError(f"candidate python does not exist: {candidate_python}")
+        return candidate_python
+    venv_dir = Path(candidate.venv_path)
+    venv_python = venv_dir / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+    return venv_python if venv_python.exists() else Path(sys.executable).resolve()
+
+
+def _run_candidate_health_check(
+    candidate: RuntimeCandidate,
+    name: str,
+    *,
+    python_executable: Path,
+    timeout_seconds: int,
+) -> RuntimeHealthCheckResult:
+    source_path = Path(candidate.source_path)
+    command = _health_check_command(name, python_executable, source_path)
+    try:
+        result = subprocess.run(
+            [str(part) for part in command],
+            cwd=source_path,
+            text=True,
+            capture_output=True,
+            timeout=timeout_seconds,
+            check=False,
+        )
+        exit_code = result.returncode
+        stdout = result.stdout
+        stderr = result.stderr
+    except subprocess.TimeoutExpired as exc:
+        exit_code = None
+        stdout = exc.stdout if isinstance(exc.stdout, str) else ""
+        stderr = f"timed out after {timeout_seconds} seconds"
+    status = "passed" if exit_code == 0 else "failed"
+    return RuntimeHealthCheckResult(
+        name=name,
+        command=tuple(str(part) for part in command),
+        exit_code=exit_code,
+        stdout_summary=_snippet(stdout),
+        stderr_summary=_snippet(stderr),
+        status=status,
+    )
+
+
+def _health_check_command(name: str, python_executable: Path, source_path: Path) -> tuple[Path | str, ...]:
+    if name == "python_version":
+        return (python_executable, "-c", "import sys; print(sys.version)")
+    if name == "cli_help":
+        cli_path = source_path / "cli.py"
+        if not cli_path.exists():
+            raise RuntimeUpdateError("candidate cli.py is missing")
+        return (python_executable, str(cli_path), "--help")
+    if name == "compileall":
+        return (python_executable, "-m", "compileall", "-q", str(source_path))
+    raise RuntimeUpdateError(f"unsupported runtime health check: {name}")
+
+
+def _health_result_summary(result: RuntimeHealthCheckResult) -> str:
+    return f"{result.name}: {result.status}"
+
+
+def _snippet(value: str) -> str:
+    text = str(value or "").strip()
+    return text[:OUTPUT_SNIPPET_CHARS]
 
 
 def _append_step(steps: tuple[str, ...], step: str) -> tuple[str, ...]:

@@ -252,6 +252,38 @@ def test_self_update_application_runtime_actions_manage_release_switch(tmp_path)
     ] == "source-install"
 
 
+def test_self_update_application_runtime_run_health_can_verify_candidate(tmp_path):
+    project_root = tmp_path / "hermes-agent"
+    _make_project_repo(project_root)
+    prefix = tmp_path / "zermes"
+    _make_runtime_release(prefix, "source-install", project_root)
+    candidate_id = "update-20260516-010000-abcdef0"
+
+    json.loads(
+        self_update_application(
+            "runtime_prepare",
+            "20260516-010000-update-flow",
+            project_root=str(project_root),
+            install_prefix=str(prefix),
+            candidate_id=candidate_id,
+            candidate_ref="HEAD",
+        )
+    )
+    result = json.loads(
+        self_update_application(
+            "runtime_run_health",
+            "20260516-010000-update-flow",
+            install_prefix=str(prefix),
+            candidate_id=candidate_id,
+            health_checks=["python_version", "cli_help"],
+        )
+    )
+
+    assert result["success"] is True
+    assert result["status"] == "verified"
+    assert [item["status"] for item in result["health_results"]] == ["passed", "passed"]
+
+
 def test_self_update_application_runtime_action_rejects_existing_lock(tmp_path):
     prefix = tmp_path / "zermes"
     lock_path = prefix / "runtime" / "update.lock"
@@ -340,6 +372,10 @@ def _init_git_repo(repo):
         text=True,
     )
     (repo / "README.md").write_text("initial\n", encoding="utf-8")
+    (repo / "cli.py").write_text(
+        "import argparse\nargparse.ArgumentParser().parse_args()\n",
+        encoding="utf-8",
+    )
     subprocess.run(["git", "add", "."], cwd=repo, check=True, capture_output=True, text=True)
     subprocess.run(
         ["git", "commit", "-m", "Initial commit"],

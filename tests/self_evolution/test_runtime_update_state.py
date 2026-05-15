@@ -23,6 +23,7 @@ from code_modification.runtime_update import (
     release_runtime_update_lock,
     rollback_active_release,
     runtime_update_lock,
+    run_candidate_health_checks,
     write_runtime_update_state,
 )
 
@@ -159,6 +160,52 @@ def test_mark_candidate_blocked_records_reason_without_touching_active(tmp_path)
     runtime_state = _read_json(prefix / "runtime" / "update-state.json")
     assert runtime_state["status"] == "blocked"
     assert runtime_state["error"] == "cli help failed"
+
+
+def test_run_candidate_health_checks_marks_verified_and_logs_results(tmp_path):
+    source_repo = tmp_path / "source-repo"
+    _make_source_repo(source_repo)
+    prefix = tmp_path / "zermes"
+    candidate = prepare_candidate_source(
+        prefix,
+        "update-20260510-120000-abcdef0",
+        source_repo=source_repo,
+        git_ref="HEAD",
+    )
+
+    state, results = run_candidate_health_checks(
+        prefix,
+        candidate.candidate_id,
+        checks=["python_version", "cli_help", "compileall"],
+    )
+
+    log_payload = _read_json(
+        prefix / "runtime" / "candidates" / candidate.candidate_id / "logs" / "health-checks.json"
+    )
+    assert state.status == "verified"
+    assert [result.status for result in results] == ["passed", "passed", "passed"]
+    assert log_payload["results"][1]["name"] == "cli_help"
+
+
+def test_run_candidate_health_checks_marks_blocked_on_failure(tmp_path):
+    source_repo = tmp_path / "source-repo"
+    _make_source_repo(source_repo)
+    (source_repo / "cli.py").write_text("raise SystemExit(7)\n", encoding="utf-8")
+    subprocess.run(["git", "add", "cli.py"], cwd=source_repo, check=True, capture_output=True, text=True)
+    subprocess.run(["git", "commit", "-m", "Break cli"], cwd=source_repo, check=True, capture_output=True, text=True)
+    prefix = tmp_path / "zermes"
+    candidate = prepare_candidate_source(
+        prefix,
+        "update-20260510-120000-abcdef0",
+        source_repo=source_repo,
+        git_ref="HEAD",
+    )
+
+    state, results = run_candidate_health_checks(prefix, candidate.candidate_id, checks=["cli_help"])
+
+    assert state.status == "blocked"
+    assert state.error == "cli_help: failed"
+    assert results[0].status == "failed"
 
 
 def test_read_active_release_validates_release_layout(tmp_path):
@@ -379,6 +426,10 @@ def _make_source_repo(repo):
     )
     (repo / "pyproject.toml").write_text("[project]\nname = 'hermes-agent'\n", encoding="utf-8")
     (repo / "install.py").write_text("# installer\n", encoding="utf-8")
+    (repo / "cli.py").write_text(
+        "import argparse\nargparse.ArgumentParser().parse_args()\n",
+        encoding="utf-8",
+    )
     (repo / "code_modification").mkdir()
     (repo / "code_modification" / "__init__.py").write_text("", encoding="utf-8")
     (repo / "tools").mkdir()
