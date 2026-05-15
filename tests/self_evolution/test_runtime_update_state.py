@@ -13,6 +13,8 @@ from code_modification.runtime_update import (
     activate_release,
     generate_candidate_id,
     generate_release_id,
+    mark_candidate_blocked,
+    mark_candidate_verified,
     prepare_candidate_source,
     promote_candidate_to_release,
     read_active_release,
@@ -80,6 +82,80 @@ def test_prepare_candidate_source_requires_git_root(tmp_path):
             source_repo=source_repo / "code_modification",
             git_ref="HEAD",
         )
+
+
+def test_mark_candidate_verified_records_health_checks(tmp_path):
+    source_repo = tmp_path / "source-repo"
+    _make_source_repo(source_repo)
+    prefix = tmp_path / "zermes"
+    candidate = prepare_candidate_source(
+        prefix,
+        "update-20260510-120000-abcdef0",
+        source_repo=source_repo,
+        git_ref="HEAD",
+        task_id="20260516-010000-update-flow",
+        old_release_id="source-install",
+    )
+
+    state = mark_candidate_verified(
+        prefix,
+        candidate.candidate_id,
+        health_checks=["cli help passed", "focused tests passed", ""],
+    )
+
+    candidate_state = _read_json(
+        prefix / "runtime" / "candidates" / candidate.candidate_id / "update-state.json"
+    )
+    runtime_state = _read_json(prefix / "runtime" / "update-state.json")
+    assert state.status == "verified"
+    assert state.health_checks == ("cli help passed", "focused tests passed")
+    assert candidate_state["status"] == "verified"
+    assert candidate_state["steps"] == ["source_synced", "verified"]
+    assert runtime_state["status"] == "verified"
+    assert runtime_state["health_checks"] == ["cli help passed", "focused tests passed"]
+
+
+def test_mark_candidate_verified_requires_health_checks(tmp_path):
+    source_repo = tmp_path / "source-repo"
+    _make_source_repo(source_repo)
+    prefix = tmp_path / "zermes"
+    candidate = prepare_candidate_source(
+        prefix,
+        "update-20260510-120000-abcdef0",
+        source_repo=source_repo,
+        git_ref="HEAD",
+    )
+
+    with pytest.raises(RuntimeUpdateError, match="at least one health check"):
+        mark_candidate_verified(prefix, candidate.candidate_id, health_checks=[])
+
+
+def test_mark_candidate_blocked_records_reason_without_touching_active(tmp_path):
+    source_repo = tmp_path / "source-repo"
+    _make_source_repo(source_repo)
+    prefix = tmp_path / "zermes"
+    active_release = _make_release(prefix, "source-install")
+    _write_json(prefix / "runtime" / "active.json", _release_payload(active_release))
+    candidate = prepare_candidate_source(
+        prefix,
+        "update-20260510-120000-abcdef0",
+        source_repo=source_repo,
+        git_ref="HEAD",
+    )
+
+    state = mark_candidate_blocked(
+        prefix,
+        candidate.candidate_id,
+        reason="cli help failed",
+        health_checks=["cli help failed"],
+    )
+
+    assert state.status == "blocked"
+    assert state.error == "cli help failed"
+    assert read_active_release(prefix).release_id == "source-install"
+    runtime_state = _read_json(prefix / "runtime" / "update-state.json")
+    assert runtime_state["status"] == "blocked"
+    assert runtime_state["error"] == "cli help failed"
 
 
 def test_read_active_release_validates_release_layout(tmp_path):

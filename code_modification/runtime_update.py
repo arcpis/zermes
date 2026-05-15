@@ -95,6 +95,7 @@ class RuntimeUpdateState:
     candidate_commit: str = ""
     old_release_id: str = ""
     steps: tuple[str, ...] = ()
+    health_checks: tuple[str, ...] = ()
     error: str = ""
     schema_version: int = RUNTIME_SCHEMA_VERSION
     updated_at: str = ""
@@ -145,6 +146,7 @@ def write_runtime_update_state(prefix: str | Path, state: RuntimeUpdateState) ->
         candidate_commit=state.candidate_commit,
         old_release_id=state.old_release_id,
         steps=state.steps,
+        health_checks=state.health_checks,
         error=state.error,
         schema_version=state.schema_version,
         updated_at=state.updated_at or _utc_timestamp(),
@@ -226,6 +228,55 @@ def prepare_candidate_source(
             raise
         raise RuntimeUpdateError(f"candidate source preparation failed: {exc}") from exc
     return candidate
+
+
+def mark_candidate_verified(
+    prefix: str | Path,
+    candidate_id: str,
+    *,
+    health_checks: list[str],
+) -> RuntimeUpdateState:
+    """Mark a prepared candidate as verified.
+
+    The caller must provide the health-check evidence gathered by a separate
+    allow-listed runner. This function only records that evidence and advances
+    the candidate state so promotion can happen later.
+    """
+    checks = _clean_health_checks(health_checks)
+    if not checks:
+        raise RuntimeUpdateError("at least one health check is required")
+    return _write_candidate_status(
+        prefix,
+        candidate_id,
+        status="verified",
+        health_checks=checks,
+        error="",
+    )
+
+
+def mark_candidate_blocked(
+    prefix: str | Path,
+    candidate_id: str,
+    *,
+    reason: str,
+    health_checks: list[str] | None = None,
+) -> RuntimeUpdateState:
+    """Record that a candidate cannot be promoted.
+
+    Blocking a candidate is also a state transition: active.json is not touched,
+    but both candidate-local and runtime-level update-state files explain why
+    the update stopped.
+    """
+    clean_reason = str(reason or "").strip()
+    if not clean_reason:
+        raise RuntimeUpdateError("blocked reason is required")
+    return _write_candidate_status(
+        prefix,
+        candidate_id,
+        status="blocked",
+        health_checks=_clean_health_checks(health_checks or []),
+        error=clean_reason,
+    )
 
 
 def validate_release_directory(paths: RuntimePaths, release: RuntimeRelease) -> None:
@@ -397,6 +448,7 @@ def _candidate_to_payload(candidate: RuntimeCandidate) -> dict[str, Any]:
 def _state_to_payload(state: RuntimeUpdateState) -> dict[str, Any]:
     payload = asdict(state)
     payload["steps"] = list(state.steps)
+    payload["health_checks"] = list(state.health_checks)
     return payload
 
 
@@ -472,6 +524,50 @@ def _candidate_root(paths: RuntimePaths, candidate_id: str) -> Path:
 
 def _release_root(paths: RuntimePaths, release_id: str) -> Path:
     return _runtime_child(paths, paths.releases_dir / release_id)
+
+
+def _write_candidate_status(
+    prefix: str | Path,
+    candidate_id: str,
+    *,
+    status: str,
+    health_checks: tuple[str, ...],
+    error: str,
+) -> RuntimeUpdateState:
+    paths = resolve_runtime_paths(prefix)
+    candidate_root = _candidate_root(paths, _safe_id(candidate_id, "candidate"))
+    if not candidate_root.exists():
+        raise RuntimeUpdateError(f"candidate does not exist: {candidate_root}")
+    metadata = _read_json(candidate_root / "metadata.json")
+    previous_state = _read_json(candidate_root / UPDATE_STATE_FILE)
+    previous_status = str(previous_state.get("status") or "").strip()
+    if previous_status not in {"source_synced", "blocked", "verified"}:
+        raise RuntimeUpdateError(f"candidate cannot be marked from status {previous_status or 'unknown'}")
+    steps = _append_step(tuple(previous_state.get("steps") or ()), status)
+    state = RuntimeUpdateState(
+        status=status,
+        task_id=str(previous_state.get("task_id") or metadata.get("task_id") or "").strip(),
+        candidate_id=_safe_id(candidate_id, "candidate"),
+        release_id=str(previous_state.get("release_id") or "").strip(),
+        source_repo=_source_repo_from_payload(metadata),
+        candidate_commit=str(metadata.get("candidate_commit") or metadata.get("commit") or "").strip(),
+        old_release_id=str(previous_state.get("old_release_id") or "").strip(),
+        steps=steps,
+        health_checks=health_checks,
+        error=error,
+    )
+    _atomic_write_json(candidate_root / UPDATE_STATE_FILE, _state_to_payload(state))
+    write_runtime_update_state(paths.prefix, state)
+    return state
+
+
+def _clean_health_checks(health_checks: list[str]) -> tuple[str, ...]:
+    return tuple(str(check).strip() for check in health_checks if str(check).strip())
+
+
+def _append_step(steps: tuple[str, ...], step: str) -> tuple[str, ...]:
+    clean_steps = tuple(str(item).strip() for item in steps if str(item).strip())
+    return clean_steps if clean_steps and clean_steps[-1] == step else (*clean_steps, step)
 
 
 def _required_child_path(value: str, parent: Path, field_name: str) -> Path:
