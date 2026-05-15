@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 from code_modification.approval import build_approval_plan, write_approval_documents
@@ -15,6 +14,10 @@ from code_modification.executor import (
     start_approved_task,
 )
 from code_modification.git_workflow import GitWorkflowError
+from code_modification.governance import (
+    ProjectRootResolutionError,
+    resolve_self_evolution_project_root,
+)
 from code_modification.token_strategy import AnalysisHints, build_analysis_context
 from code_modification.thinking import (
     SelfEvolutionThinkingError,
@@ -39,6 +42,7 @@ def complete_code_task(
     context: str = "",
     affected_areas: list[str] | None = None,
     project_root: str | None = None,
+    install_prefix: str | None = None,
 ) -> str:
     """Create a pre-change approval plan without modifying product code."""
     clean_requirement = str(requirement or "").strip()
@@ -46,7 +50,10 @@ def complete_code_task(
         return tool_error("requirement is required.")
 
     clean_affected_areas = _clean_affected_areas(affected_areas)
-    root = Path(project_root).expanduser() if project_root else Path(os.getcwd())
+    try:
+        root = _resolve_tool_project_root(project_root, install_prefix)
+    except ProjectRootResolutionError as exc:
+        return tool_error(str(exc), success=False)
     analysis_context = build_analysis_context(
         root,
         purpose="approval",
@@ -107,18 +114,24 @@ def start_approved_code_task(
     approval_text: str,
     *,
     project_root: str | None = None,
+    install_prefix: str | None = None,
     base_branch: str | None = None,
 ) -> str:
     """Start an approved task by creating its dedicated development branch."""
-    root = Path(project_root).expanduser() if project_root else Path(os.getcwd())
     try:
+        root = _resolve_tool_project_root(project_root, install_prefix)
         state = start_approved_task(
             str(task_id or ""),
             approval_text=str(approval_text or ""),
             project_root=root,
             base_branch=str(base_branch).strip() if base_branch else None,
         )
-    except (CodeTaskExecutionError, CodeTaskVerificationError, GitWorkflowError) as exc:
+    except (
+        CodeTaskExecutionError,
+        CodeTaskVerificationError,
+        GitWorkflowError,
+        ProjectRootResolutionError,
+    ) as exc:
         return tool_error(str(exc), success=False)
     return _execution_state_result(state)
 
@@ -131,10 +144,11 @@ def commit_code_task_step(
     verification_summary: str = "",
     plan_step_index: int | None = None,
     project_root: str | None = None,
+    install_prefix: str | None = None,
 ) -> str:
     """Commit one explicit implementation step for an approved task."""
-    root = Path(project_root).expanduser() if project_root else Path(os.getcwd())
     try:
+        root = _resolve_tool_project_root(project_root, install_prefix)
         state, commit_hash = commit_task_step(
             str(task_id or ""),
             summary=str(summary or ""),
@@ -143,7 +157,7 @@ def commit_code_task_step(
             plan_step_index=plan_step_index,
             project_root=root,
         )
-    except (CodeTaskExecutionError, GitWorkflowError) as exc:
+    except (CodeTaskExecutionError, GitWorkflowError, ProjectRootResolutionError) as exc:
         return tool_error(str(exc), success=False)
     return _execution_state_result(state, commit_hash=commit_hash)
 
@@ -152,12 +166,13 @@ def finalize_code_task_branch(
     task_id: str,
     *,
     project_root: str | None = None,
+    install_prefix: str | None = None,
 ) -> str:
     """Merge an approved task branch into the self-evolution integration branch."""
-    root = Path(project_root).expanduser() if project_root else Path(os.getcwd())
     try:
+        root = _resolve_tool_project_root(project_root, install_prefix)
         state = finalize_task_branch(str(task_id or ""), project_root=root)
-    except (CodeTaskExecutionError, GitWorkflowError) as exc:
+    except (CodeTaskExecutionError, GitWorkflowError, ProjectRootResolutionError) as exc:
         return tool_error(str(exc), success=False)
     return _execution_state_result(state)
 
@@ -166,13 +181,14 @@ def get_code_task_status(
     task_id: str,
     *,
     project_root: str | None = None,
+    install_prefix: str | None = None,
 ) -> str:
     """Return the audit and execution state for an approved code task."""
-    root = Path(project_root).expanduser() if project_root else Path(os.getcwd())
     try:
+        root = _resolve_tool_project_root(project_root, install_prefix)
         status = describe_task_execution(str(task_id or ""), project_root=root)
         status.update(describe_task_verification(str(task_id or ""), project_root=root))
-    except (CodeTaskExecutionError, GitWorkflowError) as exc:
+    except (CodeTaskExecutionError, GitWorkflowError, ProjectRootResolutionError) as exc:
         return tool_error(str(exc), success=False)
     return tool_result(success=True, **status)
 
@@ -181,17 +197,23 @@ def plan_code_task_verification(
     task_id: str,
     *,
     project_root: str | None = None,
+    install_prefix: str | None = None,
     include_full_suite: bool = False,
 ) -> str:
     """Create a verification plan for an approved task branch."""
-    root = Path(project_root).expanduser() if project_root else Path(os.getcwd())
     try:
+        root = _resolve_tool_project_root(project_root, install_prefix)
         state = plan_task_verification(
             str(task_id or ""),
             project_root=root,
             include_full_suite=bool(include_full_suite),
         )
-    except (CodeTaskExecutionError, CodeTaskVerificationError, GitWorkflowError) as exc:
+    except (
+        CodeTaskExecutionError,
+        CodeTaskVerificationError,
+        GitWorkflowError,
+        ProjectRootResolutionError,
+    ) as exc:
         return tool_error(str(exc), success=False)
     return _verification_state_result(state)
 
@@ -201,16 +223,22 @@ def run_code_task_verification(
     *,
     commands: list[str] | None = None,
     project_root: str | None = None,
+    install_prefix: str | None = None,
 ) -> str:
     """Run planned or explicit verification commands for an approved task."""
-    root = Path(project_root).expanduser() if project_root else Path(os.getcwd())
     try:
+        root = _resolve_tool_project_root(project_root, install_prefix)
         state = run_task_verification(
             str(task_id or ""),
             commands=commands,
             project_root=root,
         )
-    except (CodeTaskExecutionError, CodeTaskVerificationError, GitWorkflowError) as exc:
+    except (
+        CodeTaskExecutionError,
+        CodeTaskVerificationError,
+        GitWorkflowError,
+        ProjectRootResolutionError,
+    ) as exc:
         return tool_error(str(exc), success=False)
     return _verification_state_result(state)
 
@@ -222,10 +250,11 @@ def record_code_task_safety_review(
     answers: list[str] | None = None,
     conclusion: str = "",
     project_root: str | None = None,
+    install_prefix: str | None = None,
 ) -> str:
     """Record the isolated safety review result for an approved task."""
-    root = Path(project_root).expanduser() if project_root else Path(os.getcwd())
     try:
+        root = _resolve_tool_project_root(project_root, install_prefix)
         state = record_task_safety_review(
             str(task_id or ""),
             questions=questions or [],
@@ -233,7 +262,12 @@ def record_code_task_safety_review(
             conclusion=str(conclusion or ""),
             project_root=root,
         )
-    except (CodeTaskExecutionError, CodeTaskVerificationError, GitWorkflowError) as exc:
+    except (
+        CodeTaskExecutionError,
+        CodeTaskVerificationError,
+        GitWorkflowError,
+        ProjectRootResolutionError,
+    ) as exc:
         return tool_error(str(exc), success=False)
     return _verification_state_result(state)
 
@@ -244,11 +278,12 @@ def self_evolution_thinking(
     schedule: str | None = None,
     max_candidates: int | None = None,
     project_root: str | None = None,
+    install_prefix: str | None = None,
 ) -> str:
     """Manage read-only self-evolution thinking and candidate reports."""
-    root = Path(project_root).expanduser() if project_root else Path(os.getcwd())
     normalized = str(action or "").strip().lower()
     try:
+        root = _resolve_tool_project_root(project_root, install_prefix)
         if normalized == "status":
             return tool_result(
                 success=True,
@@ -283,11 +318,21 @@ def self_evolution_thinking(
                 candidates_path=str(report.candidates_path),
                 state_path=str(report.state_path),
             )
-    except SelfEvolutionThinkingError as exc:
+    except (SelfEvolutionThinkingError, ProjectRootResolutionError) as exc:
         return tool_error(str(exc), success=False)
     return tool_error(
         "action must be one of status, enable, disable, or run_once.",
         success=False,
+    )
+
+
+def _resolve_tool_project_root(
+    project_root: str | None,
+    install_prefix: str | None,
+) -> Path:
+    return resolve_self_evolution_project_root(
+        explicit_project_root=project_root,
+        install_prefix=install_prefix,
     )
 
 
@@ -641,6 +686,39 @@ SELF_EVOLUTION_THINKING_SCHEMA = {
 }
 
 
+def _add_install_prefix_to_schema(schema: dict) -> None:
+    properties = schema["parameters"]["properties"]
+    if "project_root" in properties:
+        properties["project_root"]["description"] = (
+            "Optional development source repository root. When omitted, the "
+            "tool resolves a safe self-evolution project root from cwd, "
+            "install_prefix state, or self_evolution.source_repo."
+        )
+    properties["install_prefix"] = {
+        "type": "string",
+        "description": (
+            "Optional Zermes install prefix. When project_root is omitted, "
+            "runtime/install-state.json or runtime/active.json source_repo.path "
+            "can identify the development source repository. Runtime release "
+            "or candidate source copies are rejected."
+        ),
+    }
+
+
+for _schema in (
+    COMPLETE_CODE_TASK_SCHEMA,
+    START_APPROVED_CODE_TASK_SCHEMA,
+    COMMIT_CODE_TASK_STEP_SCHEMA,
+    FINALIZE_CODE_TASK_BRANCH_SCHEMA,
+    GET_CODE_TASK_STATUS_SCHEMA,
+    PLAN_CODE_TASK_VERIFICATION_SCHEMA,
+    RUN_CODE_TASK_VERIFICATION_SCHEMA,
+    RECORD_CODE_TASK_SAFETY_REVIEW_SCHEMA,
+    SELF_EVOLUTION_THINKING_SCHEMA,
+):
+    _add_install_prefix_to_schema(_schema)
+
+
 registry.register(
     name="complete_code_task",
     toolset="code_modification",
@@ -650,6 +728,7 @@ registry.register(
         context=args.get("context", ""),
         affected_areas=args.get("affected_areas"),
         project_root=args.get("project_root"),
+        install_prefix=args.get("install_prefix"),
     ),
     check_fn=check_code_modification_requirements,
     emoji="🧭",
@@ -663,6 +742,7 @@ registry.register(
         task_id=args.get("task_id", ""),
         approval_text=args.get("approval_text", ""),
         project_root=args.get("project_root"),
+        install_prefix=args.get("install_prefix"),
         base_branch=args.get("base_branch"),
     ),
     check_fn=check_code_modification_requirements,
@@ -680,6 +760,7 @@ registry.register(
         verification_summary=args.get("verification_summary", ""),
         plan_step_index=args.get("plan_step_index"),
         project_root=args.get("project_root"),
+        install_prefix=args.get("install_prefix"),
     ),
     check_fn=check_code_modification_requirements,
     emoji="✅",
@@ -692,6 +773,7 @@ registry.register(
     handler=lambda args, **kw: finalize_code_task_branch(
         task_id=args.get("task_id", ""),
         project_root=args.get("project_root"),
+        install_prefix=args.get("install_prefix"),
     ),
     check_fn=check_code_modification_requirements,
     emoji="🔀",
@@ -704,6 +786,7 @@ registry.register(
     handler=lambda args, **kw: get_code_task_status(
         task_id=args.get("task_id", ""),
         project_root=args.get("project_root"),
+        install_prefix=args.get("install_prefix"),
     ),
     check_fn=check_code_modification_requirements,
     emoji="📋",
@@ -716,6 +799,7 @@ registry.register(
     handler=lambda args, **kw: plan_code_task_verification(
         task_id=args.get("task_id", ""),
         project_root=args.get("project_root"),
+        install_prefix=args.get("install_prefix"),
         include_full_suite=args.get("include_full_suite", False),
     ),
     check_fn=check_code_modification_requirements,
@@ -730,6 +814,7 @@ registry.register(
         task_id=args.get("task_id", ""),
         commands=args.get("commands"),
         project_root=args.get("project_root"),
+        install_prefix=args.get("install_prefix"),
     ),
     check_fn=check_code_modification_requirements,
     emoji="🔬",
@@ -745,6 +830,7 @@ registry.register(
         answers=args.get("answers"),
         conclusion=args.get("conclusion", ""),
         project_root=args.get("project_root"),
+        install_prefix=args.get("install_prefix"),
     ),
     check_fn=check_code_modification_requirements,
     emoji="🛡️",
@@ -759,6 +845,7 @@ registry.register(
         schedule=args.get("schedule"),
         max_candidates=args.get("max_candidates"),
         project_root=args.get("project_root"),
+        install_prefix=args.get("install_prefix"),
     ),
     check_fn=check_code_modification_requirements,
     emoji="T",

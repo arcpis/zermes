@@ -1,15 +1,19 @@
 from datetime import UTC, datetime
+import json
 from pathlib import Path
+import subprocess
 import tomllib
 
 from code_modification.governance import (
     AUDIT_FILE_NAMES,
     DEFAULT_INTEGRATION_BRANCH,
     GovernancePolicy,
+    ProjectRootResolutionError,
     build_development_branch_name,
     build_task_record_layout,
     get_evolution_workspace,
     make_task_id,
+    resolve_self_evolution_project_root,
 )
 
 
@@ -97,3 +101,154 @@ def test_code_modification_package_is_included():
     package_includes = data["tool"]["setuptools"]["packages"]["find"]["include"]
 
     assert "code_modification" in package_includes
+
+
+def test_resolve_project_root_prefers_explicit_path(tmp_path):
+    repo = _make_project_repo(tmp_path / "explicit")
+    cwd_repo = _make_project_repo(tmp_path / "cwd")
+
+    previous = Path.cwd()
+    try:
+        import os
+
+        os.chdir(cwd_repo)
+        assert resolve_self_evolution_project_root(str(repo)) == repo
+    finally:
+        os.chdir(previous)
+
+
+def test_resolve_project_root_accepts_valid_cwd(tmp_path):
+    repo = _make_project_repo(tmp_path / "hermes-agent")
+
+    previous = Path.cwd()
+    try:
+        import os
+
+        os.chdir(repo)
+        assert resolve_self_evolution_project_root() == repo
+    finally:
+        os.chdir(previous)
+
+
+def test_resolve_project_root_reads_install_state_source_repo(tmp_path):
+    repo = _make_project_repo(tmp_path / "source")
+    prefix = tmp_path / "app"
+    state_path = prefix / "runtime" / "install-state.json"
+    state_path.parent.mkdir(parents=True)
+    state_path.write_text(
+        json.dumps({"source_repo": {"path": str(repo)}}),
+        encoding="utf-8",
+    )
+
+    assert (
+        resolve_self_evolution_project_root(install_prefix=prefix, allow_cwd=False)
+        == repo
+    )
+
+
+def test_resolve_project_root_reads_active_source_repo(tmp_path):
+    repo = _make_project_repo(tmp_path / "source")
+    prefix = tmp_path / "app"
+    active_path = prefix / "runtime" / "active.json"
+    active_path.parent.mkdir(parents=True)
+    active_path.write_text(
+        json.dumps(
+            {
+                "source_path": str(prefix / "runtime" / "releases" / "r1" / "source"),
+                "source_repo": {"path": str(repo)},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    assert (
+        resolve_self_evolution_project_root(install_prefix=prefix, allow_cwd=False)
+        == repo
+    )
+
+
+def test_resolve_project_root_reads_configured_source_repo(tmp_path, monkeypatch):
+    repo = _make_project_repo(tmp_path / "source")
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("ZERMES_HOME", str(home))
+    (home / "config.yaml").write_text(
+        f"self_evolution:\n  source_repo: {repo}\n",
+        encoding="utf-8",
+    )
+
+    assert resolve_self_evolution_project_root(allow_cwd=False) == repo
+
+
+def test_resolve_project_root_reports_missing_source(tmp_path):
+    try:
+        resolve_self_evolution_project_root(
+            str(tmp_path / "missing"),
+            allow_cwd=False,
+        )
+    except ProjectRootResolutionError as exc:
+        assert "Pass project_root" in str(exc)
+    else:
+        raise AssertionError("Expected missing project root to fail")
+
+
+def test_resolve_project_root_rejects_release_source_copy(tmp_path):
+    prefix = tmp_path / "app"
+    release_source = _make_project_repo(
+        prefix / "runtime" / "releases" / "release-1" / "source"
+    )
+
+    try:
+        resolve_self_evolution_project_root(
+            str(release_source),
+            install_prefix=prefix,
+        )
+    except ProjectRootResolutionError as exc:
+        assert "runtime release/candidate source copy" in str(exc)
+    else:
+        raise AssertionError("Expected release source copy to fail")
+
+
+def test_resolve_project_root_rejects_candidate_source_copy(tmp_path):
+    prefix = tmp_path / "app"
+    candidate_source = _make_project_repo(
+        prefix / "runtime" / "candidates" / "candidate-1" / "source"
+    )
+
+    try:
+        resolve_self_evolution_project_root(
+            str(candidate_source),
+            install_prefix=prefix,
+        )
+    except ProjectRootResolutionError as exc:
+        assert "runtime release/candidate source copy" in str(exc)
+    else:
+        raise AssertionError("Expected candidate source copy to fail")
+
+
+def test_resolve_project_root_rejects_non_git_root(tmp_path):
+    project_root = tmp_path / "not-git"
+    _write_project_markers(project_root)
+
+    try:
+        resolve_self_evolution_project_root(str(project_root), allow_cwd=False)
+    except ProjectRootResolutionError as exc:
+        assert "git repository root" in str(exc)
+    else:
+        raise AssertionError("Expected non-git root to fail")
+
+
+def _make_project_repo(path: Path) -> Path:
+    _write_project_markers(path)
+    subprocess.run(["git", "init"], cwd=path, check=True, capture_output=True, text=True)
+    return path.resolve()
+
+
+def _write_project_markers(path: Path) -> None:
+    path.mkdir(parents=True, exist_ok=True)
+    (path / "pyproject.toml").write_text("[project]\nname = 'hermes-agent'\n", encoding="utf-8")
+    (path / "install.py").write_text("# installer\n", encoding="utf-8")
+    (path / "code_modification").mkdir(exist_ok=True)
+    tools_dir = path / "tools"
+    tools_dir.mkdir(exist_ok=True)
+    (tools_dir / "code_modification_tool.py").write_text("# tool\n", encoding="utf-8")

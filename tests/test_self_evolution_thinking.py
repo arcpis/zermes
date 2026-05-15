@@ -73,7 +73,7 @@ def test_run_once_finds_failed_verification_candidate(tmp_path):
 def test_tool_run_once_returns_report_paths(tmp_path):
     """The tool wrapper should expose the generated report paths as JSON."""
     project_root = tmp_path / "hermes-agent"
-    project_root.mkdir()
+    _make_project_repo(project_root)
 
     result = json.loads(
         self_evolution_thinking("run_once", project_root=str(project_root))
@@ -89,7 +89,7 @@ def test_enable_updates_single_cron_job_and_disable_pauses_it(tmp_path, monkeypa
     """Enabling should update the dedicated job instead of creating duplicates."""
     _redirect_cron_storage(tmp_path, monkeypatch)
     project_root = tmp_path / "hermes-agent"
-    project_root.mkdir()
+    _make_project_repo(project_root)
 
     first = json.loads(
         self_evolution_thinking(
@@ -130,3 +130,16 @@ def _redirect_cron_storage(tmp_path, monkeypatch):
     monkeypatch.setattr(jobs_module, "CRON_DIR", cron_dir)
     monkeypatch.setattr(jobs_module, "JOBS_FILE", cron_dir / "jobs.json")
     monkeypatch.setattr(jobs_module, "OUTPUT_DIR", cron_dir / "output")
+
+
+def _make_project_repo(repo):
+    import subprocess
+
+    repo.mkdir(parents=True, exist_ok=True)
+    (repo / "pyproject.toml").write_text("[project]\nname = 'hermes-agent'\n", encoding="utf-8")
+    (repo / "install.py").write_text("# installer\n", encoding="utf-8")
+    (repo / "code_modification").mkdir(exist_ok=True)
+    tools_dir = repo / "tools"
+    tools_dir.mkdir(exist_ok=True)
+    (tools_dir / "code_modification_tool.py").write_text("# tool\n", encoding="utf-8")
+    subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True, text=True)

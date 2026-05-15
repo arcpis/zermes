@@ -1295,6 +1295,7 @@ DEFAULT_CONFIG = {
     # Self-evolution automation is disabled by default. When enabled, the
     # thinking job only writes local candidate reports and never edits code.
     "self_evolution": {
+        "source_repo": "",
         "thinking": {
             "enabled": False,
             "schedule": "every 7d",

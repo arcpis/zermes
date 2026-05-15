@@ -3,6 +3,15 @@ import json
 from code_modification.approval import build_approval_plan, write_approval_documents
 from code_modification.executor import commit_task_step, start_approved_task
 from tools.code_modification_tool import (
+    COMMIT_CODE_TASK_STEP_SCHEMA,
+    COMPLETE_CODE_TASK_SCHEMA,
+    FINALIZE_CODE_TASK_BRANCH_SCHEMA,
+    GET_CODE_TASK_STATUS_SCHEMA,
+    PLAN_CODE_TASK_VERIFICATION_SCHEMA,
+    RECORD_CODE_TASK_SAFETY_REVIEW_SCHEMA,
+    RUN_CODE_TASK_VERIFICATION_SCHEMA,
+    SELF_EVOLUTION_THINKING_SCHEMA,
+    START_APPROVED_CODE_TASK_SCHEMA,
     complete_code_task,
     plan_code_task_verification,
     record_code_task_safety_review,
@@ -13,7 +22,7 @@ from tools.code_modification_tool import (
 
 def test_complete_code_task_writes_plan_and_approval_for_clear_requirement(tmp_path):
     project_root = tmp_path / "hermes-agent"
-    project_root.mkdir()
+    _make_project_repo(project_root)
 
     result = json.loads(
         complete_code_task(
@@ -43,7 +52,7 @@ def test_complete_code_task_writes_plan_and_approval_for_clear_requirement(tmp_p
 
 def test_complete_code_task_reports_documentation_update_candidates(tmp_path):
     project_root = tmp_path / "hermes-agent"
-    project_root.mkdir()
+    _make_project_repo(project_root)
     (project_root / "AGENTS.md").write_text("# Rules\n", encoding="utf-8")
     (project_root / "README.md").write_text("# Hermes\n", encoding="utf-8")
 
@@ -60,7 +69,7 @@ def test_complete_code_task_reports_documentation_update_candidates(tmp_path):
 
 def test_complete_code_task_for_vague_requirement_requests_clarification(tmp_path):
     project_root = tmp_path / "hermes-agent"
-    project_root.mkdir()
+    _make_project_repo(project_root)
 
     result = json.loads(complete_code_task("Improve", project_root=str(project_root)))
 
@@ -74,7 +83,7 @@ def test_complete_code_task_for_vague_requirement_requests_clarification(tmp_pat
 
 def test_complete_code_task_requires_requirement_and_does_not_create_records(tmp_path):
     project_root = tmp_path / "hermes-agent"
-    project_root.mkdir()
+    _make_project_repo(project_root)
 
     result = json.loads(complete_code_task("  ", project_root=str(project_root)))
 
@@ -84,7 +93,7 @@ def test_complete_code_task_requires_requirement_and_does_not_create_records(tmp
 
 def test_complete_code_task_rejects_non_list_affected_areas(tmp_path):
     project_root = tmp_path / "hermes-agent"
-    project_root.mkdir()
+    _make_project_repo(project_root)
 
     try:
         complete_code_task(
@@ -100,8 +109,7 @@ def test_complete_code_task_rejects_non_list_affected_areas(tmp_path):
 
 def test_verification_tools_return_structured_results(tmp_path):
     project_root = tmp_path / "hermes-agent"
-    project_root.mkdir()
-    _init_git_repo(project_root)
+    _make_project_repo(project_root)
     plan, layout = build_approval_plan(
         "Add verification workflow support",
         project_root,
@@ -109,7 +117,7 @@ def test_verification_tools_return_structured_results(tmp_path):
     )
     write_approval_documents(plan, layout)
     start_approved_task(plan.task_id, approval_text="approved", project_root=project_root)
-    (project_root / "code_modification").mkdir()
+    (project_root / "code_modification").mkdir(exist_ok=True)
     (project_root / "code_modification" / "marker.py").write_text("VALUE = 1\n", encoding="utf-8")
     commit_task_step(
         plan.task_id,
@@ -153,7 +161,7 @@ def test_verification_tools_return_structured_results(tmp_path):
 
 def test_self_evolution_thinking_tool_rejects_unknown_action(tmp_path):
     project_root = tmp_path / "hermes-agent"
-    project_root.mkdir()
+    _make_project_repo(project_root)
 
     result = json.loads(
         self_evolution_thinking("unknown", project_root=str(project_root))
@@ -161,6 +169,28 @@ def test_self_evolution_thinking_tool_rejects_unknown_action(tmp_path):
 
     assert result["success"] is False
     assert "status, enable, disable, or run_once" in result["error"]
+
+
+def test_code_modification_tool_schemas_include_install_prefix():
+    schemas = [
+        COMPLETE_CODE_TASK_SCHEMA,
+        START_APPROVED_CODE_TASK_SCHEMA,
+        COMMIT_CODE_TASK_STEP_SCHEMA,
+        FINALIZE_CODE_TASK_BRANCH_SCHEMA,
+        GET_CODE_TASK_STATUS_SCHEMA,
+        PLAN_CODE_TASK_VERIFICATION_SCHEMA,
+        RUN_CODE_TASK_VERIFICATION_SCHEMA,
+        RECORD_CODE_TASK_SAFETY_REVIEW_SCHEMA,
+        SELF_EVOLUTION_THINKING_SCHEMA,
+    ]
+
+    for schema in schemas:
+        assert "install_prefix" in schema["parameters"]["properties"]
+
+
+def _make_project_repo(repo):
+    _write_project_markers(repo)
+    _init_git_repo(repo)
 
 
 def _init_git_repo(repo):
@@ -182,7 +212,7 @@ def _init_git_repo(repo):
         text=True,
     )
     (repo / "README.md").write_text("initial\n", encoding="utf-8")
-    subprocess.run(["git", "add", "README.md"], cwd=repo, check=True, capture_output=True, text=True)
+    subprocess.run(["git", "add", "."], cwd=repo, check=True, capture_output=True, text=True)
     subprocess.run(
         ["git", "commit", "-m", "Initial commit"],
         cwd=repo,
@@ -191,3 +221,13 @@ def _init_git_repo(repo):
         text=True,
     )
     subprocess.run(["git", "switch", "-c", "main"], cwd=repo, check=True, capture_output=True, text=True)
+
+
+def _write_project_markers(repo):
+    repo.mkdir(parents=True, exist_ok=True)
+    (repo / "pyproject.toml").write_text("[project]\nname = 'hermes-agent'\n", encoding="utf-8")
+    (repo / "install.py").write_text("# installer\n", encoding="utf-8")
+    (repo / "code_modification").mkdir(exist_ok=True)
+    tools_dir = repo / "tools"
+    tools_dir.mkdir(exist_ok=True)
+    (tools_dir / "code_modification_tool.py").write_text("# tool\n", encoding="utf-8")
