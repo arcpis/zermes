@@ -2,6 +2,7 @@
 
 from datetime import UTC, datetime
 import json
+import os
 import subprocess
 
 import pytest
@@ -87,6 +88,40 @@ def test_prepare_candidate_source_requires_git_root(tmp_path):
             source_repo=source_repo / "code_modification",
             git_ref="HEAD",
         )
+
+
+def test_prepare_candidate_source_cleans_partial_candidate_on_archive_error(tmp_path):
+    if not hasattr(os, "symlink"):
+        pytest.skip("symlink support is required for this archive safety test")
+    source_repo = tmp_path / "source-repo"
+    _make_source_repo(source_repo)
+    os.symlink("pyproject.toml", source_repo / "linked-pyproject.toml")
+    subprocess.run(
+        ["git", "add", "linked-pyproject.toml"],
+        cwd=source_repo,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    subprocess.run(
+        ["git", "commit", "-m", "Add symlink"],
+        cwd=source_repo,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    prefix = tmp_path / "zermes"
+    candidate_id = "update-20260510-120000-abcdef0"
+
+    with pytest.raises(RuntimeUpdateError, match="unsupported archive member type"):
+        prepare_candidate_source(
+            prefix,
+            candidate_id,
+            source_repo=source_repo,
+            git_ref="HEAD",
+        )
+
+    assert not (prefix / "runtime" / "candidates" / candidate_id).exists()
 
 
 def test_mark_candidate_verified_records_health_checks(tmp_path):

@@ -17,6 +17,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
 import socket
 import subprocess
 import sys
@@ -335,6 +336,8 @@ def prepare_candidate_source(
         _atomic_write_json(candidate_root / UPDATE_STATE_FILE, _state_to_payload(state))
         write_runtime_update_state(paths.prefix, state)
     except Exception as exc:
+        if candidate_root.exists():
+            shutil.rmtree(candidate_root)
         if isinstance(exc, RuntimeUpdateError):
             raise
         raise RuntimeUpdateError(f"candidate source preparation failed: {exc}") from exc
