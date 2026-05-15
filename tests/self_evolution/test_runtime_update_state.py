@@ -16,6 +16,7 @@ from code_modification.runtime_update import (
     generate_release_id,
     mark_candidate_blocked,
     mark_candidate_verified,
+    prepare_candidate_environment,
     prepare_candidate_source,
     promote_candidate_to_release,
     read_active_release,
@@ -160,6 +161,27 @@ def test_mark_candidate_blocked_records_reason_without_touching_active(tmp_path)
     runtime_state = _read_json(prefix / "runtime" / "update-state.json")
     assert runtime_state["status"] == "blocked"
     assert runtime_state["error"] == "cli help failed"
+
+
+def test_prepare_candidate_environment_creates_venv_and_records_state(tmp_path):
+    source_repo = tmp_path / "source-repo"
+    _make_source_repo(source_repo)
+    prefix = tmp_path / "zermes"
+    candidate = prepare_candidate_source(
+        prefix,
+        "update-20260510-120000-abcdef0",
+        source_repo=source_repo,
+        git_ref="HEAD",
+    )
+
+    state, results = prepare_candidate_environment(prefix, candidate.candidate_id)
+
+    candidate_root = prefix / "runtime" / "candidates" / candidate.candidate_id
+    assert state.status == "env_prepared"
+    assert results[0].name == "create_venv"
+    assert results[0].status == "passed"
+    assert (candidate_root / "venv" / "bin" / "python").exists()
+    assert _read_json(candidate_root / "logs" / "environment.json")["results"][0]["name"] == "create_venv"
 
 
 def test_run_candidate_health_checks_marks_verified_and_logs_results(tmp_path):

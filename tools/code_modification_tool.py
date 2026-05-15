@@ -35,6 +35,7 @@ from code_modification.runtime_update import (
     activate_release as activate_runtime_release,
     mark_candidate_blocked,
     mark_candidate_verified,
+    prepare_candidate_environment,
     prepare_candidate_source,
     promote_candidate_to_release,
     read_active_release,
@@ -373,6 +374,7 @@ def self_update_application(
     conclusion: str = "",
     reason: str = "",
     python_path: str | None = None,
+    install_editable: bool = False,
 ) -> str:
     """Manage audited self-update application state without restarting runtime."""
     normalized = str(action or "").strip().lower()
@@ -391,6 +393,7 @@ def self_update_application(
                 health_checks=health_checks or [],
                 reason=reason,
                 python_path=python_path,
+                install_editable=install_editable,
             )
         root = _resolve_tool_project_root(project_root, install_prefix)
         clean_task_id = str(task_id or "")
@@ -445,9 +448,9 @@ def self_update_application(
             return tool_error(
                 "action must be one of status, plan, prepare, record_build, "
                 "record_health, activate, rollback, runtime_prepare, "
-                "runtime_status, runtime_verify, runtime_run_health, "
-                "runtime_block, runtime_promote, runtime_activate, or "
-                "runtime_rollback.",
+                "runtime_status, runtime_verify, runtime_prepare_env, "
+                "runtime_run_health, runtime_block, runtime_promote, "
+                "runtime_activate, or runtime_rollback.",
                 success=False,
             )
     except (
@@ -475,10 +478,11 @@ def _runtime_update_application_action(
     health_checks: list[str],
     reason: str,
     python_path: str | None,
+    install_editable: bool,
 ) -> str:
     if not install_prefix:
         return tool_error("install_prefix is required for runtime update actions.", success=False)
-    if action in {"runtime_prepare", "runtime_verify", "runtime_block", "runtime_promote", "runtime_run_health"} and not str(candidate_id or "").strip():
+    if action in {"runtime_prepare", "runtime_verify", "runtime_block", "runtime_promote", "runtime_run_health", "runtime_prepare_env"} and not str(candidate_id or "").strip():
         return tool_error("candidate_id is required for this runtime update action.", success=False)
     if action in {"runtime_promote", "runtime_activate"} and not str(release_id or "").strip():
         return tool_error("release_id is required for this runtime update action.", success=False)
@@ -498,6 +502,7 @@ def _runtime_update_application_action(
             health_checks=health_checks,
             reason=reason,
             python_path=python_path,
+            install_editable=install_editable,
         )
 
 
@@ -515,6 +520,7 @@ def _run_locked_runtime_update_action(
     health_checks: list[str],
     reason: str,
     python_path: str | None,
+    install_editable: bool,
 ) -> str:
     if action == "runtime_prepare":
         root = _resolve_tool_project_root(project_root, install_prefix)
@@ -549,6 +555,18 @@ def _run_locked_runtime_update_action(
             health_checks=health_checks,
         )
         return _runtime_state_result(state, action=action)
+    if action == "runtime_prepare_env":
+        state, results = prepare_candidate_environment(
+            install_prefix,
+            candidate_id,
+            install_editable=bool(install_editable),
+            python_path=python_path,
+        )
+        return _runtime_state_result(
+            state,
+            action=action,
+            command_results=[_runtime_command_result_payload(result) for result in results],
+        )
     if action == "runtime_run_health":
         state, results = run_candidate_health_checks(
             install_prefix,
@@ -601,8 +619,8 @@ def _run_locked_runtime_update_action(
         return _runtime_release_result(release, action=action, task_id=task_id)
     return tool_error(
         "runtime action must be one of runtime_prepare, runtime_verify, "
-        "runtime_run_health, runtime_status, runtime_block, runtime_promote, "
-        "runtime_activate, or runtime_rollback.",
+        "runtime_prepare_env, runtime_run_health, runtime_status, "
+        "runtime_block, runtime_promote, runtime_activate, or runtime_rollback.",
         success=False,
     )
 
@@ -797,6 +815,17 @@ def _runtime_update_payload(state) -> dict:
 
 
 def _runtime_health_result_payload(result) -> dict:
+    return {
+        "name": result.name,
+        "command": list(result.command),
+        "exit_code": result.exit_code,
+        "stdout_summary": result.stdout_summary,
+        "stderr_summary": result.stderr_summary,
+        "status": result.status,
+    }
+
+
+def _runtime_command_result_payload(result) -> dict:
     return {
         "name": result.name,
         "command": list(result.command),
@@ -1118,8 +1147,9 @@ SELF_UPDATE_APPLICATION_SCHEMA = {
                 "description": (
                     "One of status, plan, prepare, record_build, record_health, "
                     "activate, rollback, runtime_prepare, runtime_verify, "
-                    "runtime_run_health, runtime_block, runtime_promote, "
-                    "runtime_activate, runtime_rollback, or runtime_status."
+                    "runtime_prepare_env, runtime_run_health, runtime_block, "
+                    "runtime_promote, runtime_activate, runtime_rollback, "
+                    "or runtime_status."
                 ),
             },
             "task_id": {
@@ -1179,9 +1209,16 @@ SELF_UPDATE_APPLICATION_SCHEMA = {
             "python_path": {
                 "type": "string",
                 "description": (
-                    "Optional Python executable for runtime_run_health. When "
-                    "omitted, the candidate venv Python is used if present, "
-                    "otherwise the current interpreter is used."
+                    "Optional Python executable for runtime_prepare_env or "
+                    "runtime_run_health. Health checks use the candidate venv "
+                    "Python when present, otherwise the current interpreter."
+                ),
+            },
+            "install_editable": {
+                "type": "boolean",
+                "description": (
+                    "For runtime_prepare_env only: when true, run the "
+                    "allow-listed candidate venv command `python -m pip install -e <source>`."
                 ),
             },
             "conclusion": {
@@ -1390,6 +1427,7 @@ registry.register(
         conclusion=args.get("conclusion", ""),
         reason=args.get("reason", ""),
         python_path=args.get("python_path"),
+        install_editable=args.get("install_editable", False),
     ),
     check_fn=check_code_modification_requirements,
     emoji="U",

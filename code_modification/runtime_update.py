@@ -122,6 +122,18 @@ class RuntimeHealthCheckResult:
 
 
 @dataclass(frozen=True)
+class RuntimeCommandResult:
+    """Result from one allow-listed runtime preparation command."""
+
+    name: str
+    command: tuple[str, ...]
+    exit_code: int | None
+    stdout_summary: str
+    stderr_summary: str
+    status: str
+
+
+@dataclass(frozen=True)
 class RuntimeUpdateLock:
     """A held runtime update lock.
 
@@ -376,6 +388,67 @@ def mark_candidate_blocked(
         health_checks=_clean_health_checks(health_checks or []),
         error=clean_reason,
     )
+
+
+def prepare_candidate_environment(
+    prefix: str | Path,
+    candidate_id: str,
+    *,
+    install_editable: bool = False,
+    python_path: str | Path | None = None,
+    timeout_seconds: int = DEFAULT_RUNTIME_HEALTH_TIMEOUT_SECONDS,
+) -> tuple[RuntimeUpdateState, tuple[RuntimeCommandResult, ...]]:
+    """Create candidate venv and optionally install the candidate package.
+
+    The only install command this function can run is ``python -m pip install
+    -e <candidate-source>`` after creating the candidate venv. Dependency
+    installation is intentionally opt-in so offline verification can still
+    prepare the isolated interpreter without reaching package indexes.
+    """
+    paths = resolve_runtime_paths(prefix)
+    candidate_root = _candidate_root(paths, _safe_id(candidate_id, "candidate"))
+    candidate = _read_candidate(candidate_root)
+    base_python = Path(python_path).expanduser().resolve() if python_path else Path(sys.executable).resolve()
+    if not base_python.exists():
+        raise RuntimeUpdateError(f"base python does not exist: {base_python}")
+    commands = [
+        ("create_venv", (str(base_python), "-m", "venv", candidate.venv_path)),
+    ]
+    if install_editable:
+        venv_python = _candidate_python(candidate, None)
+        commands.append(
+            ("install_editable", (str(venv_python), "-m", "pip", "install", "-e", candidate.source_path))
+        )
+    results = tuple(
+        _run_runtime_command(
+            name,
+            command,
+            cwd=Path(candidate.source_path),
+            timeout_seconds=timeout_seconds,
+        )
+        for name, command in commands
+    )
+    _atomic_write_json(
+        candidate_root / "logs" / "environment.json",
+        {"results": [_command_result_to_payload(result) for result in results]},
+    )
+    failed = [result for result in results if result.status != "passed"]
+    if failed:
+        state = mark_candidate_blocked(
+            paths.prefix,
+            candidate.candidate_id,
+            reason="; ".join(_command_result_summary(result) for result in failed),
+            health_checks=[_command_result_summary(result) for result in results],
+        )
+    else:
+        state = _write_candidate_status(
+            paths.prefix,
+            candidate.candidate_id,
+            status="env_prepared",
+            health_checks=tuple(_command_result_summary(result) for result in results),
+            error="",
+        )
+    return state, results
 
 
 def run_candidate_health_checks(
@@ -649,6 +722,12 @@ def _health_result_to_payload(result: RuntimeHealthCheckResult) -> dict[str, Any
     return payload
 
 
+def _command_result_to_payload(result: RuntimeCommandResult) -> dict[str, Any]:
+    payload = asdict(result)
+    payload["command"] = list(result.command)
+    return payload
+
+
 def _lock_to_payload(lock: RuntimeUpdateLock) -> dict[str, Any]:
     return {
         "schema_version": RUNTIME_SCHEMA_VERSION,
@@ -772,7 +851,7 @@ def _write_candidate_status(
     metadata = _read_json(candidate_root / "metadata.json")
     previous_state = _read_json(candidate_root / UPDATE_STATE_FILE)
     previous_status = str(previous_state.get("status") or "").strip()
-    if previous_status not in {"source_synced", "blocked", "verified"}:
+    if previous_status not in {"source_synced", "env_prepared", "blocked", "verified"}:
         raise RuntimeUpdateError(f"candidate cannot be marked from status {previous_status or 'unknown'}")
     steps = _append_step(tuple(previous_state.get("steps") or ()), status)
     state = RuntimeUpdateState(
@@ -815,6 +894,40 @@ def _candidate_python(candidate: RuntimeCandidate, python_path: str | Path | Non
     venv_dir = Path(candidate.venv_path)
     venv_python = venv_dir / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
     return venv_python if venv_python.exists() else Path(sys.executable).resolve()
+
+
+def _run_runtime_command(
+    name: str,
+    command: tuple[str, ...],
+    *,
+    cwd: Path,
+    timeout_seconds: int,
+) -> RuntimeCommandResult:
+    try:
+        result = subprocess.run(
+            list(command),
+            cwd=cwd,
+            text=True,
+            capture_output=True,
+            timeout=timeout_seconds,
+            check=False,
+        )
+        exit_code = result.returncode
+        stdout = result.stdout
+        stderr = result.stderr
+    except subprocess.TimeoutExpired as exc:
+        exit_code = None
+        stdout = exc.stdout if isinstance(exc.stdout, str) else ""
+        stderr = f"timed out after {timeout_seconds} seconds"
+    status = "passed" if exit_code == 0 else "failed"
+    return RuntimeCommandResult(
+        name=name,
+        command=command,
+        exit_code=exit_code,
+        stdout_summary=_snippet(stdout),
+        stderr_summary=_snippet(stderr),
+        status=status,
+    )
 
 
 def _run_candidate_health_check(
@@ -867,6 +980,10 @@ def _health_check_command(name: str, python_executable: Path, source_path: Path)
 
 
 def _health_result_summary(result: RuntimeHealthCheckResult) -> str:
+    return f"{result.name}: {result.status}"
+
+
+def _command_result_summary(result: RuntimeCommandResult) -> str:
     return f"{result.name}: {result.status}"
 
 
