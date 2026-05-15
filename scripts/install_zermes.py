@@ -212,20 +212,6 @@ def _add_install_options(parser: argparse.ArgumentParser) -> None:
         action="store_true",
         help="Skip post-install runtime verification.",
     )
-    start_group = parser.add_mutually_exclusive_group()
-    start_group.add_argument(
-        "--start",
-        dest="start",
-        action="store_true",
-        default=None,
-        help="Start Zermes after installation completes.",
-    )
-    start_group.add_argument(
-        "--no-start",
-        dest="start",
-        action="store_false",
-        help="Do not start Zermes after installation completes.",
-    )
 
 
 def _add_update_options(parser: argparse.ArgumentParser) -> None:
@@ -978,49 +964,6 @@ def verify_installed_runtime(
     return tuple(results)
 
 
-def should_start_after_install(args: argparse.Namespace, *, input_fn=input) -> bool:
-    if args.start is not None:
-        return bool(args.start)
-    if getattr(args, "non_interactive", False):
-        return False
-    return prompt_yes_no("Start Zermes now? [y/N] ", default=False, input_fn=input_fn)
-
-
-def start_zermes(
-    plan: InstallerPlan,
-    *,
-    start: bool = False,
-    dry_run: bool = False,
-) -> CommandResult:
-    if not start:
-        return CommandResult(command=(), returncode=0, dry_run=dry_run)
-    launcher = Path(plan.bin_dir) / ("zermes.bat" if sys.platform == "win32" else "zermes")
-    command = (str(launcher),)
-    if dry_run:
-        return CommandResult(command=command, returncode=0, dry_run=True)
-    popen_kwargs: dict[str, object] = {
-        "stdin": subprocess.DEVNULL,
-        "stdout": subprocess.DEVNULL,
-        "stderr": subprocess.DEVNULL,
-        "cwd": plan.source_dir,
-        "shell": False,
-    }
-    if sys.platform == "win32":
-        popen_kwargs["creationflags"] = (
-            getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
-            | getattr(subprocess, "DETACHED_PROCESS", 0)
-        )
-    else:
-        popen_kwargs["start_new_session"] = True
-    try:
-        subprocess.Popen(list(command), **popen_kwargs)
-    except FileNotFoundError as exc:
-        raise InstallerCommandError(
-            CommandResult(command=command, returncode=127, stderr=str(exc))
-        ) from exc
-    return CommandResult(command=command, returncode=0)
-
-
 def create_data_directory(plan: InstallerPlan, *, dry_run: bool = False) -> Path:
     """Create the user data directory recorded in launcher environment."""
 
@@ -1214,16 +1157,12 @@ def run_install_workflow(
         verify_cli=getattr(args, "install_deps", True),
     )
     mark("verify-runtime", {"commands": len(verification_results)})
-    should_start = should_start_after_install(args, input_fn=input_fn)
-    start_result = start_zermes(plan, start=should_start)
-    mark("start-zermes", {"started": bool(start_result.command)})
     return {
         "status": "installed",
         "plan": asdict(plan),
         "steps": steps,
         "metadata": metadata,
         "launchers": [str(path) for path in launchers],
-        "started": bool(start_result.command),
     }
 
 

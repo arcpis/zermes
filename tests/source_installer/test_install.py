@@ -366,7 +366,6 @@ def test_run_install_workflow_runs_steps_in_order(monkeypatch, tmp_path):
     monkeypatch.setattr(install_zermes, "write_release_metadata", record("metadata"))
     monkeypatch.setattr(install_zermes, "create_launcher_scripts", record("launchers"))
     monkeypatch.setattr(install_zermes, "verify_installed_runtime", record("verify"))
-    monkeypatch.setattr(install_zermes, "start_zermes", record("start"))
 
     result = install_zermes.run_install_workflow(args, repo_root=tmp_path / "repo")
 
@@ -379,7 +378,6 @@ def test_run_install_workflow_runs_steps_in_order(monkeypatch, tmp_path):
         "metadata",
         "launchers",
         "verify",
-        "start",
     ]
     assert result["status"] == "installed"
     assert [step["step"] for step in result["steps"]] == [
@@ -391,7 +389,6 @@ def test_run_install_workflow_runs_steps_in_order(monkeypatch, tmp_path):
         "write-release-metadata",
         "create-launchers",
         "verify-runtime",
-        "start-zermes",
     ]
 
 
@@ -419,7 +416,6 @@ def test_main_real_install_outputs_success_json(monkeypatch, tmp_path, capsys):
         args.no_venv = True
         args.install_deps = False
         args.create_launchers = False
-        args.start = False
         prepared_args.append(args)
         return args
 
@@ -730,101 +726,6 @@ def test_sync_source_to_release_rejects_target_inside_repo(tmp_path):
 
     with pytest.raises(ValueError, match="inside the repository root"):
         install_zermes.sync_source_to_release(plan)
-
-
-
-# From test_start.py
-
-import argparse
-from pathlib import Path
-
-from scripts import install_zermes
-
-
-def _plan_start(tmp_path):
-    args = argparse.Namespace(
-        prefix=tmp_path / "app",
-        data_dir=tmp_path / "data",
-        release_id="source-install",
-        dry_run=False,
-        no_venv=False,
-        python=None,
-    )
-    return install_zermes.build_plan(args, repo_root=tmp_path / "repo")
-
-
-def test_should_start_honors_start_flag():
-    args = argparse.Namespace(start=True, non_interactive=True)
-
-    assert install_zermes.should_start_after_install(args) is True
-
-
-def test_should_start_honors_no_start_flag():
-    args = argparse.Namespace(start=False, non_interactive=False)
-
-    assert install_zermes.should_start_after_install(args) is False
-
-
-def test_should_start_non_interactive_defaults_false():
-    args = argparse.Namespace(start=None, non_interactive=True)
-
-    assert install_zermes.should_start_after_install(args) is False
-
-
-def test_should_start_interactive_uses_answer():
-    args = argparse.Namespace(start=None, non_interactive=False)
-
-    assert install_zermes.should_start_after_install(args, input_fn=lambda _prompt: "y") is True
-    assert install_zermes.should_start_after_install(args, input_fn=lambda _prompt: "") is False
-
-
-def test_start_zermes_dry_run_uses_generated_launcher(monkeypatch, tmp_path):
-    plan = _plan_start(tmp_path)
-
-    def fail_popen(*_args, **_kwargs):
-        raise AssertionError("dry-run should not start a process")
-
-    monkeypatch.setattr(install_zermes.subprocess, "Popen", fail_popen)
-    result = install_zermes.start_zermes(plan, start=True, dry_run=True)
-
-    assert result.dry_run is True
-    assert result.command == (str(Path(plan.bin_dir) / "zermes"),)
-
-
-def test_start_zermes_launches_detached_process(monkeypatch, tmp_path):
-    plan = _plan_start(tmp_path)
-    calls = []
-
-    def fake_popen(command, **kwargs):
-        calls.append((command, kwargs))
-        return SimpleNamespace(pid=123)
-
-    monkeypatch.setattr(install_zermes.subprocess, "Popen", fake_popen)
-    result = install_zermes.start_zermes(plan, start=True)
-
-    assert result.command == (str(Path(plan.bin_dir) / "zermes"),)
-    assert result.returncode == 0
-    assert calls[0][0] == [str(Path(plan.bin_dir) / "zermes")]
-    assert calls[0][1]["stdin"] == install_zermes.subprocess.DEVNULL
-    assert calls[0][1]["stdout"] == install_zermes.subprocess.DEVNULL
-    assert calls[0][1]["stderr"] == install_zermes.subprocess.DEVNULL
-    assert calls[0][1]["cwd"] == plan.source_dir
-    assert calls[0][1]["shell"] is False
-
-
-def test_start_zermes_skips_when_disabled(monkeypatch, tmp_path):
-    plan = _plan_start(tmp_path)
-
-    def fail_popen(*_args, **_kwargs):
-        raise AssertionError("Popen should not be called")
-
-    monkeypatch.setattr(install_zermes.subprocess, "Popen", fail_popen)
-
-    result = install_zermes.start_zermes(plan, start=False)
-
-    assert result.command == ()
-    assert result.returncode == 0
-
 
 
 # From test_venv.py
