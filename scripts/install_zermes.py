@@ -424,7 +424,7 @@ def build_update_candidate_plan(
         venv_dir=str(venv_dir.resolve()),
         build_dir=str(build_dir.resolve()),
         bin_dir=str((prefix / "bin").resolve()),
-        python_path=str(venv_python_path(venv_dir).expanduser().resolve()),
+        python_path=str(venv_python_path(venv_dir).expanduser()),
         use_venv=True,
         active_path=str((runtime_dir / "active.json").resolve()),
         previous_path=str((runtime_dir / "previous.json").resolve()),
@@ -452,7 +452,7 @@ def release_plan_from_candidate(plan: InstallerPlan) -> InstallerPlan:
         venv_dir=str(venv_dir.resolve()),
         build_dir=str(build_dir.resolve()),
         bin_dir=str((prefix / "bin").resolve()),
-        python_path=str(venv_python_path(venv_dir).expanduser().resolve()),
+        python_path=str(venv_python_path(venv_dir).expanduser()),
         use_venv=plan.use_venv,
         active_path=plan.active_path,
         previous_path=plan.previous_path,
@@ -745,15 +745,20 @@ def run_command(
     command_tuple = tuple(str(part) for part in command)
     if dry_run:
         return CommandResult(command=command_tuple, returncode=0, dry_run=True)
-    completed = subprocess.run(
-        list(command_tuple),
-        cwd=cwd,
-        env={**os.environ, **env} if env else None,
-        text=True,
-        capture_output=True,
-        check=False,
-        shell=False,
-    )
+    try:
+        completed = subprocess.run(
+            list(command_tuple),
+            cwd=cwd,
+            env={**os.environ, **env} if env else None,
+            text=True,
+            capture_output=True,
+            check=False,
+            shell=False,
+        )
+    except FileNotFoundError as exc:
+        raise InstallerCommandError(
+            CommandResult(command=command_tuple, returncode=127, stderr=str(exc))
+        ) from exc
     result = CommandResult(
         command=command_tuple,
         returncode=completed.returncode,
@@ -1101,6 +1106,9 @@ def build_plan(args: argparse.Namespace, *, repo_root: Path) -> InstallerPlan:
     bin_dir = prefix / "bin"
     selected_python = getattr(args, "python", None)
     python_path = venv_python_path(venv_dir) if use_venv else Path(selected_python or sys.executable)
+    resolved_python_path = python_path.expanduser()
+    if not use_venv:
+        resolved_python_path = resolved_python_path.resolve()
     return InstallerPlan(
         repo_root=str(repo_root.resolve()),
         prefix=str(prefix.resolve()),
@@ -1112,7 +1120,7 @@ def build_plan(args: argparse.Namespace, *, repo_root: Path) -> InstallerPlan:
         venv_dir=str(venv_dir.resolve()),
         build_dir=str(build_dir.resolve()),
         bin_dir=str(bin_dir.resolve()),
-        python_path=str(python_path.expanduser().resolve()),
+        python_path=str(resolved_python_path),
         use_venv=use_venv,
         active_path=str((runtime_dir / "active.json").resolve()),
         previous_path=str((runtime_dir / "previous.json").resolve()),

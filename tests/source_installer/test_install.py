@@ -169,6 +169,28 @@ def test_install_dependencies_falls_back_to_python_pip(monkeypatch, tmp_path):
     ]
 
 
+def test_install_dependencies_falls_back_when_uv_is_missing(monkeypatch, tmp_path):
+    plan = _plan_dependencies(tmp_path)
+    calls = []
+
+    def fake_run(command, **_kwargs):
+        calls.append(command)
+        if command[0] == "uv":
+            raise FileNotFoundError("uv")
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(install_zermes.subprocess, "run", fake_run)
+
+    result = install_zermes.install_python_dependencies(plan)
+
+    assert result.command == (plan.python_path, "-m", "pip", "install", "-e", ".[all]")
+    assert calls == [
+        ["uv", "pip", "install", "--python", plan.python_path, "-e", ".[all]"],
+        ["uv", "pip", "install", "--python", plan.python_path, "-e", "."],
+        [plan.python_path, "-m", "pip", "install", "-e", ".[all]"],
+    ]
+
+
 def test_install_dependencies_can_be_skipped(monkeypatch, tmp_path):
     plan = _plan_dependencies(tmp_path)
 
@@ -825,7 +847,7 @@ def test_build_plan_uses_release_venv_python_by_default(tmp_path):
     plan = _plan_venv(tmp_path)
 
     assert plan.use_venv is True
-    assert Path(plan.python_path) == install_zermes.venv_python_path(Path(plan.venv_dir)).resolve()
+    assert Path(plan.python_path) == install_zermes.venv_python_path(Path(plan.venv_dir))
 
 
 def test_build_plan_no_venv_uses_selected_python(tmp_path):
