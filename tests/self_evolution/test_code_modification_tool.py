@@ -11,12 +11,14 @@ from tools.code_modification_tool import (
     RECORD_CODE_TASK_SAFETY_REVIEW_SCHEMA,
     RUN_CODE_TASK_VERIFICATION_SCHEMA,
     SELF_EVOLUTION_THINKING_SCHEMA,
+    SELF_UPDATE_APPLICATION_SCHEMA,
     START_APPROVED_CODE_TASK_SCHEMA,
     complete_code_task,
     plan_code_task_verification,
     record_code_task_safety_review,
     run_code_task_verification,
     self_evolution_thinking,
+    self_update_application,
 )
 
 
@@ -182,6 +184,7 @@ def test_code_modification_tool_schemas_include_install_prefix():
         RUN_CODE_TASK_VERIFICATION_SCHEMA,
         RECORD_CODE_TASK_SAFETY_REVIEW_SCHEMA,
         SELF_EVOLUTION_THINKING_SCHEMA,
+        SELF_UPDATE_APPLICATION_SCHEMA,
     ]
 
     for schema in schemas:

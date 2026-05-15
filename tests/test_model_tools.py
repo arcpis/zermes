@@ -327,6 +327,7 @@ class TestBackwardCompat:
         assert get_toolset_for_tool("run_code_task_verification") == "code_modification"
         assert get_toolset_for_tool("record_code_task_safety_review") == "code_modification"
         assert get_toolset_for_tool("self_evolution_thinking") == "code_modification"
+        assert get_toolset_for_tool("self_update_application") == "code_modification"
 
     def test_get_toolset_for_unknown_tool(self):
         result = get_toolset_for_tool("totally_nonexistent_tool")

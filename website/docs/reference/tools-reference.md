@@ -63,6 +63,7 @@ Registered only when a Chrome DevTools Protocol endpoint is reachable at session
 | `finalize_code_task_branch` | Merge the task branch into the self-evolution integration branch after verification passes. Does not merge into the normal project main branch. | — |
 | `get_code_task_status` | Return approval, execution, verification, and audit state for a self-evolution task. | — |
 | `self_evolution_thinking` | Manage read-only thinking status, schedule, enable/disable, and manual candidate report generation. Does not execute code changes. | — |
+| `self_update_application` | Record self-update application plans, approvals, build status, health checks, activation intent, and rollback intent. Does not restart processes or change active runtime code. | — |
 
 ## `cronjob` toolset
 

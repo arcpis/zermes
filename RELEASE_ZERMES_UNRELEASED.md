@@ -21,6 +21,9 @@ Zermes now supports a conservative self-evolution flow:
 - Commits use explicit file lists instead of broad staging.
 - Verification records gate finalization.
 - `self_evolution_thinking` creates advisory candidate reports only.
+- `self_update_application` records approved update application plans, build
+  status, health checks, activation intent, and rollback intent without
+  restarting the runtime or changing active source code.
 - Final reports include documentation sync status for user-visible changes.
 
 ## Low-Token Analysis
@@ -52,6 +55,5 @@ python -m pytest \
 Result:
 
 ```text
-99 passed
+123 passed
 ```
-

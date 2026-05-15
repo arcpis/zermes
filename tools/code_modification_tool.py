@@ -18,6 +18,16 @@ from code_modification.governance import (
     ProjectRootResolutionError,
     resolve_self_evolution_project_root,
 )
+from code_modification.self_update import (
+    SelfUpdateApplicationError,
+    activate_self_update,
+    describe_self_update_application,
+    plan_self_update_application,
+    prepare_self_update,
+    record_self_update_build,
+    record_self_update_health_check,
+    rollback_self_update,
+)
 from code_modification.token_strategy import AnalysisHints, build_analysis_context
 from code_modification.thinking import (
     SelfEvolutionThinkingError,
@@ -326,6 +336,90 @@ def self_evolution_thinking(
     )
 
 
+def self_update_application(
+    action: str,
+    task_id: str,
+    *,
+    project_root: str | None = None,
+    install_prefix: str | None = None,
+    approval_text: str = "",
+    candidate_ref: str | None = None,
+    previous_active_ref: str | None = None,
+    mode: str = "manual",
+    worktree_path: str | None = None,
+    build_summary: str = "",
+    health_checks: list[str] | None = None,
+    conclusion: str = "",
+    reason: str = "",
+) -> str:
+    """Manage audited self-update application state without restarting runtime."""
+    normalized = str(action or "").strip().lower()
+    try:
+        root = _resolve_tool_project_root(project_root, install_prefix)
+        clean_task_id = str(task_id or "")
+        if normalized == "status":
+            return tool_result(
+                success=True,
+                action=normalized,
+                **describe_self_update_application(clean_task_id, project_root=root),
+            )
+        if normalized == "plan":
+            state = plan_self_update_application(
+                clean_task_id,
+                project_root=root,
+                candidate_ref=candidate_ref,
+                previous_active_ref=previous_active_ref,
+                mode=mode,
+            )
+        elif normalized == "prepare":
+            state = prepare_self_update(
+                clean_task_id,
+                approval_text=approval_text,
+                project_root=root,
+                worktree_path=worktree_path,
+            )
+        elif normalized == "record_build":
+            state = record_self_update_build(
+                clean_task_id,
+                project_root=root,
+                build_summary=build_summary,
+            )
+        elif normalized == "record_health":
+            state = record_self_update_health_check(
+                clean_task_id,
+                project_root=root,
+                checks=health_checks or [],
+                conclusion=conclusion,  # type: ignore[arg-type]
+            )
+        elif normalized == "activate":
+            state = activate_self_update(
+                clean_task_id,
+                approval_text=approval_text,
+                project_root=root,
+            )
+        elif normalized == "rollback":
+            state = rollback_self_update(
+                clean_task_id,
+                approval_text=approval_text,
+                project_root=root,
+                reason=reason,
+            )
+        else:
+            return tool_error(
+                "action must be one of status, plan, prepare, record_build, "
+                "record_health, activate, or rollback.",
+                success=False,
+            )
+    except (
+        CodeTaskExecutionError,
+        GitWorkflowError,
+        ProjectRootResolutionError,
+        SelfUpdateApplicationError,
+    ) as exc:
+        return tool_error(str(exc), success=False)
+    return _self_update_state_result(state, action=normalized)
+
+
 def _resolve_tool_project_root(
     project_root: str | None,
     install_prefix: str | None,
@@ -391,6 +485,30 @@ def _verification_state_result(state, **extra) -> str:
             if result.status != "passed"
         ],
         blocked_reason=state.blocked_reason,
+        **extra,
+    )
+
+
+def _self_update_state_result(state, **extra) -> str:
+    task_dir = (
+        Path(state.project_root).parent
+        / "self-evolution"
+        / "tasks"
+        / state.task_id
+    )
+    return tool_result(
+        success=True,
+        task_id=state.task_id,
+        status=state.status,
+        mode=state.mode,
+        candidate_commit=state.candidate_commit,
+        previous_active_commit=state.previous_active_commit,
+        approved_by_user=state.approved_by_user,
+        dependency_files_changed=list(state.dependency_files_changed),
+        restart_required=state.restart_required,
+        blocked_reason=state.blocked_reason,
+        update_application_path=str(task_dir / "update-application.md"),
+        update_state_path=str(task_dir / "update-state.json"),
         **extra,
     )
 
@@ -685,6 +803,75 @@ SELF_EVOLUTION_THINKING_SCHEMA = {
     },
 }
 
+SELF_UPDATE_APPLICATION_SCHEMA = {
+    "name": "self_update_application",
+    "description": (
+        "Manage audited self-update application state for an integrated "
+        "self-evolution task. This tool records plan, approval, build status, "
+        "health checks, activation intent, and rollback intent. It never "
+        "installs dependencies, changes active runtime code, restarts a "
+        "process, or runs arbitrary commands."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "action": {
+                "type": "string",
+                "description": (
+                    "One of status, plan, prepare, record_build, record_health, "
+                    "activate, or rollback."
+                ),
+            },
+            "task_id": {
+                "type": "string",
+                "description": "Integrated self-evolution task id.",
+            },
+            "approval_text": {
+                "type": "string",
+                "description": "Explicit user approval text for prepare, activate, or rollback.",
+            },
+            "candidate_ref": {
+                "type": "string",
+                "description": "Optional git ref for the candidate commit when planning.",
+            },
+            "previous_active_ref": {
+                "type": "string",
+                "description": "Optional git ref for the previous active commit when planning.",
+            },
+            "mode": {
+                "type": "string",
+                "description": "Application mode for plan: manual, cli, gateway, or cron.",
+            },
+            "worktree_path": {
+                "type": "string",
+                "description": "Optional candidate worktree path to record during prepare.",
+            },
+            "build_summary": {
+                "type": "string",
+                "description": "Build result or reason no build is required; commands are not run.",
+            },
+            "health_checks": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Health-check evidence to record.",
+            },
+            "conclusion": {
+                "type": "string",
+                "description": "Health conclusion: passed, failed, or inconclusive.",
+            },
+            "reason": {
+                "type": "string",
+                "description": "Optional rollback reason.",
+            },
+            "project_root": {
+                "type": "string",
+                "description": "Optional git repository root. Defaults to the current directory.",
+            },
+        },
+        "required": ["action", "task_id"],
+    },
+}
+
 
 def _add_install_prefix_to_schema(schema: dict) -> None:
     properties = schema["parameters"]["properties"]
@@ -715,6 +902,7 @@ for _schema in (
     RUN_CODE_TASK_VERIFICATION_SCHEMA,
     RECORD_CODE_TASK_SAFETY_REVIEW_SCHEMA,
     SELF_EVOLUTION_THINKING_SCHEMA,
+    SELF_UPDATE_APPLICATION_SCHEMA,
 ):
     _add_install_prefix_to_schema(_schema)
 
@@ -849,4 +1037,27 @@ registry.register(
     ),
     check_fn=check_code_modification_requirements,
     emoji="T",
+)
+
+registry.register(
+    name="self_update_application",
+    toolset="code_modification",
+    schema=SELF_UPDATE_APPLICATION_SCHEMA,
+    handler=lambda args, **kw: self_update_application(
+        action=args.get("action", ""),
+        task_id=args.get("task_id", ""),
+        project_root=args.get("project_root"),
+        install_prefix=args.get("install_prefix"),
+        approval_text=args.get("approval_text", ""),
+        candidate_ref=args.get("candidate_ref"),
+        previous_active_ref=args.get("previous_active_ref"),
+        mode=args.get("mode", "manual"),
+        worktree_path=args.get("worktree_path"),
+        build_summary=args.get("build_summary", ""),
+        health_checks=args.get("health_checks"),
+        conclusion=args.get("conclusion", ""),
+        reason=args.get("reason", ""),
+    ),
+    check_fn=check_code_modification_requirements,
+    emoji="U",
 )

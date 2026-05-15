@@ -66,6 +66,7 @@ class TestResolveToolset:
             "record_code_task_safety_review",
             "run_code_task_verification",
             "self_evolution_thinking",
+            "self_update_application",
             "start_approved_code_task",
         ]
 
@@ -253,6 +254,7 @@ class TestToolsetConsistency:
         assert "run_code_task_verification" in resolve_toolset("hermes-cli")
         assert "record_code_task_safety_review" in resolve_toolset("hermes-cli")
         assert "self_evolution_thinking" in resolve_toolset("hermes-cli")
+        assert "self_update_application" in resolve_toolset("hermes-cli")
 
 
 class TestPluginToolsets:
