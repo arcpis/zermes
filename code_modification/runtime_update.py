@@ -9,12 +9,15 @@ processes. Those actions belong to later, explicitly allow-listed steps.
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 import io
 import json
+import os
 from pathlib import Path
 import re
+import socket
 import subprocess
 import tarfile
 from typing import Any
@@ -26,6 +29,7 @@ RUNTIME_DIR_NAME = "runtime"
 ACTIVE_STATE_FILE = "active.json"
 PREVIOUS_STATE_FILE = "previous.json"
 UPDATE_STATE_FILE = "update-state.json"
+UPDATE_LOCK_FILE = "update.lock"
 CANDIDATES_DIR_NAME = "candidates"
 RELEASES_DIR_NAME = "releases"
 RUNTIME_SCHEMA_VERSION = 1
@@ -44,6 +48,7 @@ class RuntimePaths:
     active_path: Path
     previous_path: Path
     update_state_path: Path
+    update_lock_path: Path
     candidates_dir: Path
     releases_dir: Path
 
@@ -101,6 +106,21 @@ class RuntimeUpdateState:
     updated_at: str = ""
 
 
+@dataclass(frozen=True)
+class RuntimeUpdateLock:
+    """A held runtime update lock.
+
+    The lock is a small JSON file created with O_EXCL so competing update
+    actions fail before they can mutate candidate, release, or active pointers.
+    """
+
+    path: Path
+    operation: str
+    created_at: str
+    pid: int
+    hostname: str
+
+
 def resolve_runtime_paths(prefix: str | Path) -> RuntimePaths:
     """Return normalized runtime paths for an installation prefix."""
     resolved_prefix = Path(prefix).expanduser().resolve()
@@ -111,6 +131,7 @@ def resolve_runtime_paths(prefix: str | Path) -> RuntimePaths:
         active_path=runtime_dir / ACTIVE_STATE_FILE,
         previous_path=runtime_dir / PREVIOUS_STATE_FILE,
         update_state_path=runtime_dir / UPDATE_STATE_FILE,
+        update_lock_path=runtime_dir / UPDATE_LOCK_FILE,
         candidates_dir=runtime_dir / CANDIDATES_DIR_NAME,
         releases_dir=runtime_dir / RELEASES_DIR_NAME,
     )
@@ -172,6 +193,49 @@ def write_runtime_update_state(prefix: str | Path, state: RuntimeUpdateState) ->
         updated_at=state.updated_at or _utc_timestamp(),
     )
     _atomic_write_json(paths.update_state_path, _state_to_payload(updated))
+
+
+@contextmanager
+def runtime_update_lock(prefix: str | Path, operation: str):
+    """Hold the runtime update lock for one mutating operation."""
+    lock = acquire_runtime_update_lock(prefix, operation)
+    try:
+        yield lock
+    finally:
+        release_runtime_update_lock(lock)
+
+
+def acquire_runtime_update_lock(prefix: str | Path, operation: str) -> RuntimeUpdateLock:
+    """Acquire an exclusive update lock for one installation prefix."""
+    paths = resolve_runtime_paths(prefix)
+    paths.runtime_dir.mkdir(parents=True, exist_ok=True)
+    lock = RuntimeUpdateLock(
+        path=paths.update_lock_path,
+        operation=str(operation or "runtime_update").strip() or "runtime_update",
+        created_at=_utc_timestamp(),
+        pid=os.getpid(),
+        hostname=socket.gethostname(),
+    )
+    payload = _lock_to_payload(lock)
+    try:
+        fd = os.open(str(lock.path), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+    except FileExistsError as exc:
+        raise RuntimeUpdateError(_lock_exists_message(lock.path)) from exc
+    with os.fdopen(fd, "w", encoding="utf-8") as handle:
+        handle.write(json.dumps(payload, indent=2) + "\n")
+    return lock
+
+
+def release_runtime_update_lock(lock: RuntimeUpdateLock) -> None:
+    """Release a lock only if the file still describes this holder."""
+    if not lock.path.exists():
+        return
+    try:
+        payload = _read_json(lock.path)
+    except RuntimeUpdateError:
+        return
+    if _lock_matches(payload, lock):
+        lock.path.unlink()
 
 
 def generate_candidate_id(now: datetime | None, commit: str) -> str:
@@ -488,6 +552,40 @@ def _state_to_payload(state: RuntimeUpdateState) -> dict[str, Any]:
     payload["steps"] = list(state.steps)
     payload["health_checks"] = list(state.health_checks)
     return payload
+
+
+def _lock_to_payload(lock: RuntimeUpdateLock) -> dict[str, Any]:
+    return {
+        "schema_version": RUNTIME_SCHEMA_VERSION,
+        "operation": lock.operation,
+        "created_at": lock.created_at,
+        "pid": lock.pid,
+        "hostname": lock.hostname,
+    }
+
+
+def _lock_exists_message(path: Path) -> str:
+    try:
+        payload = _read_json(path)
+    except RuntimeUpdateError:
+        return f"runtime update lock already exists: {path}"
+    operation = payload.get("operation") or "unknown"
+    created_at = payload.get("created_at") or "unknown"
+    pid = payload.get("pid") or "unknown"
+    hostname = payload.get("hostname") or "unknown"
+    return (
+        "runtime update is already in progress "
+        f"(operation={operation}, pid={pid}, hostname={hostname}, created_at={created_at})"
+    )
+
+
+def _lock_matches(payload: dict[str, Any], lock: RuntimeUpdateLock) -> bool:
+    return (
+        payload.get("operation") == lock.operation
+        and payload.get("created_at") == lock.created_at
+        and payload.get("pid") == lock.pid
+        and payload.get("hostname") == lock.hostname
+    )
 
 
 def _source_repo_from_payload(payload: dict[str, Any]) -> str:

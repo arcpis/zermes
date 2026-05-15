@@ -42,6 +42,7 @@ from code_modification.runtime_update import (
     read_release as read_runtime_release,
     read_runtime_update_state,
     rollback_active_release,
+    runtime_update_lock,
     write_runtime_update_state,
 )
 from code_modification.token_strategy import AnalysisHints, build_analysis_context
@@ -478,6 +479,36 @@ def _runtime_update_application_action(
         return tool_error("release_id is required for this runtime update action.", success=False)
     if action == "runtime_status":
         return _runtime_status_result(install_prefix, action=action, task_id=task_id)
+    with runtime_update_lock(install_prefix, action):
+        return _run_locked_runtime_update_action(
+            action,
+            task_id,
+            project_root=project_root,
+            install_prefix=install_prefix,
+            approval_text=approval_text,
+            candidate_ref=candidate_ref,
+            candidate_id=candidate_id,
+            release_id=release_id,
+            expected_old_release_id=expected_old_release_id,
+            health_checks=health_checks,
+            reason=reason,
+        )
+
+
+def _run_locked_runtime_update_action(
+    action: str,
+    task_id: str,
+    *,
+    project_root: str | None,
+    install_prefix: str,
+    approval_text: str,
+    candidate_ref: str | None,
+    candidate_id: str,
+    release_id: str,
+    expected_old_release_id: str,
+    health_checks: list[str],
+    reason: str,
+) -> str:
     if action == "runtime_prepare":
         root = _resolve_tool_project_root(project_root, install_prefix)
         candidate = prepare_candidate_source(

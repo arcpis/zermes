@@ -246,9 +246,42 @@ def test_self_update_application_runtime_actions_manage_release_switch(tmp_path)
     assert status["previous_release"]["release_id"] == release_id
     assert status["update_state"]["status"] == "rolled_back"
     assert status["update_state"]["steps"][-1] == "rolled_back"
+    assert not (prefix / "runtime" / "update.lock").exists()
     assert json.loads((prefix / "runtime" / "active.json").read_text(encoding="utf-8"))[
         "release_id"
     ] == "source-install"
+
+
+def test_self_update_application_runtime_action_rejects_existing_lock(tmp_path):
+    prefix = tmp_path / "zermes"
+    lock_path = prefix / "runtime" / "update.lock"
+    lock_path.parent.mkdir(parents=True)
+    lock_path.write_text(
+        json.dumps(
+            {
+                "operation": "runtime_prepare",
+                "created_at": "2026-05-16T01:00:00Z",
+                "pid": 123,
+                "hostname": "tests",
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    result = json.loads(
+        self_update_application(
+            "runtime_verify",
+            "20260516-010000-update-flow",
+            install_prefix=str(prefix),
+            candidate_id="update-20260516-010000-abcdef0",
+            health_checks=["cli help passed"],
+        )
+    )
+
+    assert result["success"] is False
+    assert "already in progress" in result["error"]
 
 
 def test_self_update_application_runtime_action_requires_install_prefix(tmp_path):

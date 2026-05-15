@@ -11,6 +11,7 @@ from code_modification.runtime_update import (
     RuntimeUpdateError,
     RuntimeUpdateState,
     activate_release,
+    acquire_runtime_update_lock,
     generate_candidate_id,
     generate_release_id,
     mark_candidate_blocked,
@@ -19,7 +20,9 @@ from code_modification.runtime_update import (
     promote_candidate_to_release,
     read_active_release,
     read_previous_release,
+    release_runtime_update_lock,
     rollback_active_release,
+    runtime_update_lock,
     write_runtime_update_state,
 )
 
@@ -316,6 +319,30 @@ def test_generated_ids_are_stable_and_sanitized():
 
     assert candidate_id == "update-20260516-010203-abcdef0"
     assert release_id == "bad-candidate-abcdef0"
+
+
+def test_runtime_update_lock_rejects_concurrent_update(tmp_path):
+    prefix = tmp_path / "zermes"
+    lock = acquire_runtime_update_lock(prefix, "runtime_prepare")
+
+    try:
+        with pytest.raises(RuntimeUpdateError, match="already in progress"):
+            acquire_runtime_update_lock(prefix, "runtime_activate")
+    finally:
+        release_runtime_update_lock(lock)
+
+    assert not (prefix / "runtime" / "update.lock").exists()
+
+
+def test_runtime_update_lock_releases_after_exception(tmp_path):
+    prefix = tmp_path / "zermes"
+
+    with pytest.raises(RuntimeError, match="boom"):
+        with runtime_update_lock(prefix, "runtime_prepare"):
+            assert (prefix / "runtime" / "update.lock").exists()
+            raise RuntimeError("boom")
+
+    assert not (prefix / "runtime" / "update.lock").exists()
 
 
 def _make_release(prefix, release_id, *, commit="abcdef0"):
