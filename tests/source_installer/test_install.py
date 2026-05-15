@@ -778,29 +778,47 @@ def test_should_start_interactive_uses_answer():
     assert install_zermes.should_start_after_install(args, input_fn=lambda _prompt: "") is False
 
 
-def test_start_zermes_uses_generated_launcher(monkeypatch, tmp_path):
+def test_start_zermes_dry_run_uses_generated_launcher(monkeypatch, tmp_path):
     plan = _plan_start(tmp_path)
-    calls = []
 
-    def fake_run(command, *, cwd=None, env=None, dry_run=False):
-        calls.append((command, dry_run))
-        return install_zermes.CommandResult(command=tuple(command), returncode=0, dry_run=dry_run)
+    def fail_popen(*_args, **_kwargs):
+        raise AssertionError("dry-run should not start a process")
 
-    monkeypatch.setattr(install_zermes, "run_command", fake_run)
-
+    monkeypatch.setattr(install_zermes.subprocess, "Popen", fail_popen)
     result = install_zermes.start_zermes(plan, start=True, dry_run=True)
 
     assert result.dry_run is True
-    assert calls == [([str(Path(plan.bin_dir) / "zermes")], True)]
+    assert result.command == (str(Path(plan.bin_dir) / "zermes"),)
+
+
+def test_start_zermes_launches_detached_process(monkeypatch, tmp_path):
+    plan = _plan_start(tmp_path)
+    calls = []
+
+    def fake_popen(command, **kwargs):
+        calls.append((command, kwargs))
+        return SimpleNamespace(pid=123)
+
+    monkeypatch.setattr(install_zermes.subprocess, "Popen", fake_popen)
+    result = install_zermes.start_zermes(plan, start=True)
+
+    assert result.command == (str(Path(plan.bin_dir) / "zermes"),)
+    assert result.returncode == 0
+    assert calls[0][0] == [str(Path(plan.bin_dir) / "zermes")]
+    assert calls[0][1]["stdin"] == install_zermes.subprocess.DEVNULL
+    assert calls[0][1]["stdout"] == install_zermes.subprocess.DEVNULL
+    assert calls[0][1]["stderr"] == install_zermes.subprocess.DEVNULL
+    assert calls[0][1]["cwd"] == plan.source_dir
+    assert calls[0][1]["shell"] is False
 
 
 def test_start_zermes_skips_when_disabled(monkeypatch, tmp_path):
     plan = _plan_start(tmp_path)
 
-    def fail_run(*_args, **_kwargs):
-        raise AssertionError("run_command should not be called")
+    def fail_popen(*_args, **_kwargs):
+        raise AssertionError("Popen should not be called")
 
-    monkeypatch.setattr(install_zermes, "run_command", fail_run)
+    monkeypatch.setattr(install_zermes.subprocess, "Popen", fail_popen)
 
     result = install_zermes.start_zermes(plan, start=False)
 

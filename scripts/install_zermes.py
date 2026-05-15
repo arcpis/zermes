@@ -995,7 +995,30 @@ def start_zermes(
     if not start:
         return CommandResult(command=(), returncode=0, dry_run=dry_run)
     launcher = Path(plan.bin_dir) / ("zermes.bat" if sys.platform == "win32" else "zermes")
-    return run_command([str(launcher)], dry_run=dry_run)
+    command = (str(launcher),)
+    if dry_run:
+        return CommandResult(command=command, returncode=0, dry_run=True)
+    popen_kwargs: dict[str, object] = {
+        "stdin": subprocess.DEVNULL,
+        "stdout": subprocess.DEVNULL,
+        "stderr": subprocess.DEVNULL,
+        "cwd": plan.source_dir,
+        "shell": False,
+    }
+    if sys.platform == "win32":
+        popen_kwargs["creationflags"] = (
+            getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+            | getattr(subprocess, "DETACHED_PROCESS", 0)
+        )
+    else:
+        popen_kwargs["start_new_session"] = True
+    try:
+        subprocess.Popen(list(command), **popen_kwargs)
+    except FileNotFoundError as exc:
+        raise InstallerCommandError(
+            CommandResult(command=command, returncode=127, stderr=str(exc))
+        ) from exc
+    return CommandResult(command=command, returncode=0)
 
 
 def create_data_directory(plan: InstallerPlan, *, dry_run: bool = False) -> Path:
