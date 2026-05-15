@@ -228,6 +228,13 @@ def test_self_update_application_runtime_actions_manage_release_switch(tmp_path)
             approval_text="approved",
         )
     )
+    status = json.loads(
+        self_update_application(
+            "runtime_status",
+            "20260516-010000-update-flow",
+            install_prefix=str(prefix),
+        )
+    )
 
     assert prepared["success"] is True
     assert prepared["candidate_id"] == candidate_id
@@ -235,6 +242,10 @@ def test_self_update_application_runtime_actions_manage_release_switch(tmp_path)
     assert promoted["release_id"] == release_id
     assert activated["release_id"] == release_id
     assert rolled_back["release_id"] == "source-install"
+    assert status["active_release"]["release_id"] == "source-install"
+    assert status["previous_release"]["release_id"] == release_id
+    assert status["update_state"]["status"] == "rolled_back"
+    assert status["update_state"]["steps"][-1] == "rolled_back"
     assert json.loads((prefix / "runtime" / "active.json").read_text(encoding="utf-8"))[
         "release_id"
     ] == "source-install"

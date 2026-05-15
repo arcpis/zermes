@@ -146,6 +146,14 @@ def read_release(prefix: str | Path, release_id: str) -> RuntimeRelease:
     return release
 
 
+def read_runtime_update_state(prefix: str | Path) -> RuntimeUpdateState | None:
+    """Read the latest runtime update state if it exists."""
+    paths = resolve_runtime_paths(prefix)
+    if not paths.update_state_path.exists():
+        return None
+    return _read_update_state(paths.update_state_path)
+
+
 def write_runtime_update_state(prefix: str | Path, state: RuntimeUpdateState) -> None:
     """Atomically write the latest runtime update state."""
     paths = resolve_runtime_paths(prefix)
@@ -423,6 +431,24 @@ def _read_release(path: Path) -> RuntimeRelease:
         source_repo=_source_repo_from_payload(payload),
         activated_at=str(payload.get("activated_at") or ""),
         schema_version=int(payload.get("schema_version") or RUNTIME_SCHEMA_VERSION),
+    )
+
+
+def _read_update_state(path: Path) -> RuntimeUpdateState:
+    payload = _read_json(path)
+    return RuntimeUpdateState(
+        status=str(payload.get("status") or "").strip(),
+        task_id=str(payload.get("task_id") or "").strip(),
+        candidate_id=str(payload.get("candidate_id") or "").strip(),
+        release_id=str(payload.get("release_id") or "").strip(),
+        source_repo=str(payload.get("source_repo") or "").strip(),
+        candidate_commit=str(payload.get("candidate_commit") or "").strip(),
+        old_release_id=str(payload.get("old_release_id") or "").strip(),
+        steps=tuple(payload.get("steps") or ()),
+        health_checks=tuple(payload.get("health_checks") or ()),
+        error=str(payload.get("error") or "").strip(),
+        schema_version=int(payload.get("schema_version") or RUNTIME_SCHEMA_VERSION),
+        updated_at=str(payload.get("updated_at") or "").strip(),
     )
 
 

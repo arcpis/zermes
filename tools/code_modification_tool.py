@@ -30,14 +30,19 @@ from code_modification.self_update import (
     rollback_self_update,
 )
 from code_modification.runtime_update import (
+    RuntimeUpdateState,
     RuntimeUpdateError,
     activate_release as activate_runtime_release,
     mark_candidate_blocked,
     mark_candidate_verified,
     prepare_candidate_source,
     promote_candidate_to_release,
+    read_active_release,
+    read_previous_release,
     read_release as read_runtime_release,
+    read_runtime_update_state,
     rollback_active_release,
+    write_runtime_update_state,
 )
 from code_modification.token_strategy import AnalysisHints, build_analysis_context
 from code_modification.thinking import (
@@ -436,8 +441,8 @@ def self_update_application(
             return tool_error(
                 "action must be one of status, plan, prepare, record_build, "
                 "record_health, activate, rollback, runtime_prepare, "
-                "runtime_verify, runtime_block, runtime_promote, "
-                "runtime_activate, or runtime_rollback.",
+                "runtime_status, runtime_verify, runtime_block, "
+                "runtime_promote, runtime_activate, or runtime_rollback.",
                 success=False,
             )
     except (
@@ -471,6 +476,8 @@ def _runtime_update_application_action(
         return tool_error("candidate_id is required for this runtime update action.", success=False)
     if action in {"runtime_promote", "runtime_activate"} and not str(release_id or "").strip():
         return tool_error("release_id is required for this runtime update action.", success=False)
+    if action == "runtime_status":
+        return _runtime_status_result(install_prefix, action=action, task_id=task_id)
     if action == "runtime_prepare":
         root = _resolve_tool_project_root(project_root, install_prefix)
         candidate = prepare_candidate_source(
@@ -523,14 +530,29 @@ def _runtime_update_application_action(
             release,
             expected_old_release_id=expected_old_release_id or None,
         )
+        _record_runtime_terminal_state(
+            install_prefix,
+            "activated",
+            activated,
+            task_id=task_id,
+            old_release_id=expected_old_release_id,
+        )
         return _runtime_release_result(activated, action=action, task_id=task_id)
     if action == "runtime_rollback":
         require_explicit_approval(approval_text)
         release = rollback_active_release(install_prefix)
+        _record_runtime_terminal_state(
+            install_prefix,
+            "rolled_back",
+            release,
+            task_id=task_id,
+            old_release_id=release_id,
+        )
         return _runtime_release_result(release, action=action, task_id=task_id)
     return tool_error(
         "runtime action must be one of runtime_prepare, runtime_verify, "
-        "runtime_block, runtime_promote, runtime_activate, or runtime_rollback.",
+        "runtime_status, runtime_block, runtime_promote, runtime_activate, "
+        "or runtime_rollback.",
         success=False,
     )
 
@@ -656,6 +678,76 @@ def _runtime_release_result(release, **extra) -> str:
         activated_at=release.activated_at,
         **extra,
     )
+
+
+def _runtime_status_result(install_prefix: str, **extra) -> str:
+    active = read_active_release(install_prefix)
+    previous = read_previous_release(install_prefix)
+    update_state = read_runtime_update_state(install_prefix)
+    return tool_result(
+        success=True,
+        active_release=_runtime_release_payload(active),
+        previous_release=_runtime_release_payload(previous) if previous else None,
+        update_state=_runtime_update_payload(update_state) if update_state else None,
+        **extra,
+    )
+
+
+def _record_runtime_terminal_state(
+    install_prefix: str,
+    status: str,
+    release,
+    *,
+    task_id: str,
+    old_release_id: str,
+) -> None:
+    previous = read_runtime_update_state(install_prefix)
+    previous_steps = previous.steps if previous else ()
+    write_runtime_update_state(
+        install_prefix,
+        RuntimeUpdateState(
+            status=status,
+            task_id=task_id or (previous.task_id if previous else ""),
+            candidate_id=previous.candidate_id if previous else "",
+            release_id=release.release_id,
+            source_repo=release.source_repo,
+            candidate_commit=release.candidate_commit,
+            old_release_id=old_release_id or (previous.old_release_id if previous else ""),
+            steps=_append_runtime_step(previous_steps, status),
+            health_checks=previous.health_checks if previous else (),
+        ),
+    )
+
+
+def _runtime_release_payload(release) -> dict:
+    return {
+        "release_id": release.release_id,
+        "candidate_commit": release.candidate_commit,
+        "source_path": release.source_path,
+        "venv_path": release.venv_path,
+        "build_path": release.build_path,
+        "source_repo": release.source_repo,
+        "activated_at": release.activated_at,
+    }
+
+
+def _runtime_update_payload(state) -> dict:
+    return {
+        "status": state.status,
+        "task_id": state.task_id,
+        "candidate_id": state.candidate_id,
+        "release_id": state.release_id,
+        "candidate_commit": state.candidate_commit,
+        "old_release_id": state.old_release_id,
+        "steps": list(state.steps),
+        "health_checks": list(state.health_checks),
+        "error": state.error,
+        "updated_at": state.updated_at,
+    }
+
+
+def _append_runtime_step(steps: tuple[str, ...], step: str) -> tuple[str, ...]:
+    return steps if steps and steps[-1] == step else (*steps, step)
 
 
 def check_code_modification_requirements() -> bool:
@@ -965,8 +1057,8 @@ SELF_UPDATE_APPLICATION_SCHEMA = {
                 "description": (
                     "One of status, plan, prepare, record_build, record_health, "
                     "activate, rollback, runtime_prepare, runtime_verify, "
-                    "runtime_block, runtime_promote, runtime_activate, or "
-                    "runtime_rollback."
+                    "runtime_block, runtime_promote, runtime_activate, "
+                    "runtime_rollback, or runtime_status."
                 ),
             },
             "task_id": {
