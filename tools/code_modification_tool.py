@@ -1574,8 +1574,10 @@ SELF_UPDATE_APPLICATION_SCHEMA = {
             "mode": {
                 "type": "string",
                 "description": (
-                    "Application mode for plan or restart mode for "
-                    "runtime_request_restart: manual, cli, gateway, or cron."
+                    "Application mode for plan: manual, cli, gateway, or cron. "
+                    "For runtime_request_restart and runtime_apply_update "
+                    "request_restart, only cli and gateway have automatic "
+                    "restart consumers."
                 ),
             },
             "worktree_path": {

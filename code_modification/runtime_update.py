@@ -39,6 +39,7 @@ RELEASES_DIR_NAME = "releases"
 RUNTIME_SCHEMA_VERSION = 1
 DEFAULT_RUNTIME_HEALTH_TIMEOUT_SECONDS = 60
 OUTPUT_SNIPPET_CHARS = 1200
+AUTO_RESTART_MODES = frozenset({"cli", "gateway"})
 
 
 class RuntimeUpdateError(RuntimeError):
@@ -1062,8 +1063,12 @@ def _clean_health_checks(health_checks: list[str]) -> tuple[str, ...]:
 
 def _normalize_restart_mode(mode: str) -> str:
     clean_mode = str(mode or "").strip().lower()
-    if clean_mode not in {"cli", "gateway", "cron", "manual"}:
-        raise RuntimeUpdateError("restart mode must be cli, gateway, cron, or manual")
+    if clean_mode not in AUTO_RESTART_MODES:
+        raise RuntimeUpdateError(
+            "runtime restart intent mode must be cli or gateway; "
+            "manual and cron modes may be recorded in the application plan "
+            "but do not have automatic restart consumers yet"
+        )
     return clean_mode
 
 

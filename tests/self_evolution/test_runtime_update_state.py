@@ -491,6 +491,19 @@ def test_request_runtime_restart_requires_terminal_update_state(tmp_path):
     assert not (prefix / "runtime" / "restart-intent.json").exists()
 
 
+def test_request_runtime_restart_rejects_modes_without_consumers(tmp_path):
+    prefix = tmp_path / "zermes"
+    old_release = _make_release(prefix, "source-install")
+    new_release = _make_release(prefix, "update-next")
+    _write_json(prefix / "runtime" / "active.json", _release_payload(old_release))
+    activate_release(prefix, new_release, expected_old_release_id="source-install")
+
+    with pytest.raises(RuntimeUpdateError, match="cli or gateway"):
+        request_runtime_restart(prefix, mode="cron", approval_text="approved")
+
+    assert not (prefix / "runtime" / "restart-intent.json").exists()
+
+
 def test_request_runtime_restart_rejects_stale_update_state(tmp_path):
     prefix = tmp_path / "zermes"
     release = _make_release(prefix, "source-install")

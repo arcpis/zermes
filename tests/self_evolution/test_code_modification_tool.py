@@ -543,6 +543,34 @@ def test_self_update_application_runtime_apply_update_runs_main_flow(tmp_path):
     assert status["restart_intent"]["release_id"] == result["release_id"]
 
 
+def test_self_update_application_runtime_apply_update_rejects_unconsumed_restart_mode(
+    tmp_path,
+):
+    project_root = tmp_path / "hermes-agent"
+    _make_project_repo(project_root)
+    task_id = "20260516-050100-apply-update-cron"
+    _write_integrated_state(project_root, task_id)
+    prefix = tmp_path / "zermes"
+    _make_runtime_release(prefix, "source-install", project_root)
+
+    result = json.loads(
+        self_update_application(
+            "runtime_apply_update",
+            task_id,
+            project_root=str(project_root),
+            install_prefix=str(prefix),
+            approval_text="approved",
+            mode="cron",
+            health_checks=["python_version", "cli_help"],
+            request_restart=True,
+        )
+    )
+
+    assert result["success"] is False
+    assert "cli or gateway" in result["error"]
+    assert not (prefix / "runtime" / "restart-intent.json").exists()
+
+
 def test_self_update_application_runtime_run_health_can_verify_candidate(tmp_path):
     project_root = tmp_path / "hermes-agent"
     _make_project_repo(project_root)
