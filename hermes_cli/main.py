@@ -1339,6 +1339,33 @@ def _pin_kanban_board_env() -> None:
         pass
 
 
+def _runtime_restart_intent_path() -> Path | None:
+    """Return the managed-install restart intent path when this CLI is managed."""
+    prefix = os.environ.get("ZERMES_INSTALL_PREFIX")
+    if not prefix:
+        return None
+    try:
+        return Path(prefix).expanduser().resolve() / "runtime" / "restart-intent.json"
+    except (OSError, RuntimeError):
+        return None
+
+
+def _maybe_exec_runtime_restart_intent_after_cli() -> None:
+    """Consume a governed restart intent at a CLI safe point.
+
+    This intentionally performs only presence detection.  The launcher owns
+    validation of approval, active-release digests, argv, cwd, profile, and
+    execution, so the chat process cannot grow a second restart policy path.
+    """
+    intent_path = _runtime_restart_intent_path()
+    if intent_path is None or not intent_path.exists():
+        return
+
+    from launcher import zermes_launcher
+
+    zermes_launcher.main(["restart-intent"])
+
+
 def cmd_chat(args):
     """Run interactive chat CLI."""
     use_tui = getattr(args, "tui", False) or os.environ.get("HERMES_TUI") == "1"
@@ -1497,6 +1524,11 @@ def cmd_chat(args):
     except ValueError as e:
         print(f"Error: {e}")
         sys.exit(1)
+    except SystemExit:
+        _maybe_exec_runtime_restart_intent_after_cli()
+        raise
+    else:
+        _maybe_exec_runtime_restart_intent_after_cli()
 
 
 def cmd_gateway(args):
