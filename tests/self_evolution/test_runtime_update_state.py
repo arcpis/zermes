@@ -375,10 +375,15 @@ def test_activate_release_updates_previous_and_active(tmp_path):
 
     active_payload = _read_json(prefix / "runtime" / "active.json")
     previous_payload = _read_json(prefix / "runtime" / "previous.json")
+    runtime_state = _read_json(prefix / "runtime" / "update-state.json")
     assert activated.release_id == new_release.release_id
     assert active_payload["release_id"] == new_release.release_id
     assert active_payload["activated_at"]
     assert previous_payload["release_id"] == "source-install"
+    assert runtime_state["status"] == "activated"
+    assert runtime_state["release_id"] == new_release.release_id
+    assert runtime_state["old_release_id"] == "source-install"
+    assert runtime_state["steps"] == ["activated"]
     assert (prefix / "launcher" / "zermes_launcher.py").read_text(encoding="utf-8") == "# updated launcher\n"
 
 
@@ -442,6 +447,7 @@ def test_rollback_restores_previous_without_deleting_releases(tmp_path):
     assert restored.release_id == "source-install"
     assert read_active_release(prefix).release_id == "source-install"
     assert read_previous_release(prefix).release_id == new_release.release_id
+    assert _read_json(prefix / "runtime" / "update-state.json")["status"] == "rolled_back"
     assert (prefix / "runtime" / "releases" / new_release.release_id).exists()
 
 

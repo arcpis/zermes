@@ -636,6 +636,12 @@ def activate_release(
         schema_version=release.schema_version,
     )
     _atomic_write_json(paths.active_path, _release_to_payload(activated))
+    _record_runtime_release_state(
+        paths,
+        "activated",
+        activated,
+        old_release_id=current.release_id if current else "",
+    )
     return activated
 
 
@@ -650,6 +656,12 @@ def rollback_active_release(prefix: str | Path) -> RuntimeRelease:
     if current is not None:
         _atomic_write_json(paths.previous_path, _release_to_payload(current))
     _atomic_write_json(paths.active_path, _release_to_payload(previous))
+    _record_runtime_release_state(
+        paths,
+        "rolled_back",
+        previous,
+        old_release_id=current.release_id if current else "",
+    )
     return previous
 
 
@@ -907,6 +919,33 @@ def _write_candidate_status(
     )
     _atomic_write_json(candidate_root / UPDATE_STATE_FILE, _state_to_payload(state))
     write_runtime_update_state(paths.prefix, state)
+    return state
+
+
+def _record_runtime_release_state(
+    paths: RuntimePaths,
+    status: str,
+    release: RuntimeRelease,
+    *,
+    old_release_id: str,
+) -> RuntimeUpdateState:
+    previous = read_runtime_update_state(paths.prefix)
+    state = RuntimeUpdateState(
+        status=status,
+        task_id=previous.task_id if previous else "",
+        candidate_id=previous.candidate_id if previous else "",
+        release_id=release.release_id,
+        source_repo=release.source_repo,
+        candidate_commit=release.candidate_commit,
+        old_release_id=old_release_id or (previous.old_release_id if previous else ""),
+        steps=_append_step(previous.steps if previous else (), status),
+        health_checks=previous.health_checks if previous else (),
+        error="",
+    )
+    write_runtime_update_state(paths.prefix, state)
+    release_state_path = _release_root(paths, release.release_id) / UPDATE_STATE_FILE
+    if release_state_path.exists():
+        _atomic_write_json(release_state_path, _state_to_payload(state))
     return state
 
 
