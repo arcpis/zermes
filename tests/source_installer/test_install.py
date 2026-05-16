@@ -442,6 +442,8 @@ def test_run_install_workflow_minimal_real_install(tmp_path):
     repo = tmp_path / "repo"
     repo.mkdir()
     (repo / "README.md").write_text("hello", encoding="utf-8")
+    (repo / "launcher").mkdir()
+    (repo / "launcher" / "zermes_launcher.py").write_text("# launcher\n", encoding="utf-8")
     args = _args_install_workflow(
         tmp_path,
         no_venv=True,
@@ -490,8 +492,9 @@ def test_posix_launcher_uses_release_python_and_hermes_home(tmp_path):
     text = install_zermes.posix_launcher_text(plan)
 
     assert text.startswith("#!/usr/bin/env sh\n")
-    assert f'export HERMES_HOME="{plan.data_dir}"' in text
-    assert f'exec "{plan.python_path}" -m hermes_cli.main "$@"' in text
+    assert f'export ZERMES_INSTALL_PREFIX="{plan.prefix}"' in text
+    assert f'"{plan.prefix}/launcher/zermes_launcher.py" cli "$@"' in text
+    assert "-m hermes_cli.main" not in text
 
 
 def test_windows_launcher_uses_release_python_and_hermes_home(tmp_path):
@@ -500,16 +503,24 @@ def test_windows_launcher_uses_release_python_and_hermes_home(tmp_path):
     text = install_zermes.windows_launcher_text(plan)
 
     assert text.startswith("@echo off\r\n")
-    assert f"set HERMES_HOME={plan.data_dir}\r\n" in text
-    assert f'"{plan.python_path}" -m hermes_cli.main %*\r\n' in text
+    assert f"set ZERMES_INSTALL_PREFIX={plan.prefix}\r\n" in text
+    assert "zermes_launcher.py\" cli %*\r\n" in text
+    assert "-m hermes_cli.main" not in text
 
 
 def test_create_launcher_scripts_writes_posix_and_windows_launchers(tmp_path):
     plan = _plan_launchers(tmp_path)
+    _write_launcher_source(plan)
 
     paths = install_zermes.create_launcher_scripts(plan)
 
-    assert paths == (Path(plan.bin_dir) / "zermes", Path(plan.bin_dir) / "zermes.bat")
+    assert paths == (
+        Path(plan.prefix) / "launcher" / "zermes_launcher.py",
+        Path(plan.bin_dir) / "zermes",
+        Path(plan.bin_dir) / "zermes-gateway",
+        Path(plan.bin_dir) / "zermes.bat",
+        Path(plan.bin_dir) / "zermes-gateway.bat",
+    )
     assert (Path(plan.bin_dir) / "zermes").read_text(encoding="utf-8") == (
         install_zermes.posix_launcher_text(plan)
     )
@@ -533,8 +544,20 @@ def test_create_launcher_scripts_dry_run_does_not_write(tmp_path):
 
     paths = install_zermes.create_launcher_scripts(plan, dry_run=True)
 
-    assert paths == (Path(plan.bin_dir) / "zermes", Path(plan.bin_dir) / "zermes.bat")
+    assert paths == (
+        Path(plan.prefix) / "launcher" / "zermes_launcher.py",
+        Path(plan.bin_dir) / "zermes",
+        Path(plan.bin_dir) / "zermes-gateway",
+        Path(plan.bin_dir) / "zermes.bat",
+        Path(plan.bin_dir) / "zermes-gateway.bat",
+    )
     assert not Path(plan.bin_dir).exists()
+
+
+def _write_launcher_source(plan):
+    launcher_source = Path(plan.source_dir) / "launcher" / "zermes_launcher.py"
+    launcher_source.parent.mkdir(parents=True)
+    launcher_source.write_text("# launcher\n", encoding="utf-8")
 
 
 

@@ -94,6 +94,9 @@ def _plan_update_activate(tmp_path, source):
     candidate_source = Path(plan.source_dir)
     candidate_source.mkdir(parents=True)
     (candidate_source / "README.md").write_text("candidate", encoding="utf-8")
+    launcher_source = candidate_source / "launcher" / "zermes_launcher.py"
+    launcher_source.parent.mkdir()
+    launcher_source.write_text("# candidate launcher\n", encoding="utf-8")
     return plan
 
 
