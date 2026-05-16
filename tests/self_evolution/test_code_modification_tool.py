@@ -325,6 +325,17 @@ def test_self_update_application_runtime_actions_mirror_audit_state(tmp_path):
             expected_old_release_id="source-install",
         )
     )
+    restarted = json.loads(
+        self_update_application(
+            "runtime_request_restart",
+            task_id,
+            project_root=str(project_root),
+            install_prefix=str(prefix),
+            approval_text="approved",
+            mode="cli",
+            restart_argv=["zermes", "chat"],
+        )
+    )
     rolled_back = json.loads(
         self_update_application(
             "runtime_rollback",
@@ -342,10 +353,12 @@ def test_self_update_application_runtime_actions_mirror_audit_state(tmp_path):
     assert verified["audit_status"] == "verified"
     assert promoted["audit_status"] == "verified"
     assert activated["audit_status"] == "restart_pending"
+    assert restarted["audit_status"] == "restart_pending"
     assert rolled_back["audit_status"] == "rolled_back"
     assert audit_payload["status"] == "rolled_back"
     assert audit_payload["restart_required"] is True
     assert "Runtime release was activated" in audit_report
+    assert "Runtime restart intent was recorded" in audit_report
     assert "Runtime rollback restored" in audit_report
 
 

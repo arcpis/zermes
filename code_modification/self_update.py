@@ -309,6 +309,14 @@ def mirror_runtime_update_audit(
             restart_required=True if clean_status == "activated" else None,
             event=_runtime_audit_event(clean_status),
         )
+    elif clean_status == "restart_requested":
+        updated = _replace_state(
+            state,
+            status="restart_pending",
+            approved_by_user=approved_by_user,
+            restart_required=True,
+            event=_runtime_audit_event(clean_status),
+        )
     elif clean_status == "rolled_back":
         updated = _replace_state(
             state,
@@ -549,6 +557,7 @@ def _runtime_audit_event(status: str) -> str:
         "blocked": "Runtime candidate was blocked; active runtime was not changed.",
         "promoted": "Runtime candidate was promoted to a release.",
         "activated": "Runtime release was activated; restart remains pending.",
+        "restart_requested": "Runtime restart intent was recorded for launcher-managed execution.",
         "rolled_back": "Runtime rollback restored the previous active release.",
     }
     return messages.get(status, f"Runtime update status recorded: {status}.")
