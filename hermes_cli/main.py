@@ -1506,6 +1506,18 @@ def cmd_gateway(args):
     gateway_command(args)
 
 
+def cmd_runtime(args):
+    """Runtime installation commands."""
+    command = getattr(args, "runtime_command", None)
+    if command == "restart-intent":
+        from launcher import zermes_launcher
+
+        zermes_launcher.main(["restart-intent"])
+        return
+    print("Usage: hermes runtime restart-intent", file=sys.stderr)
+    sys.exit(2)
+
+
 def cmd_whatsapp(args):
     """Set up WhatsApp: choose mode, configure, install bridge, pair via QR."""
     _require_tty("whatsapp")
@@ -8889,7 +8901,7 @@ _BUILTIN_SUBCOMMANDS = frozenset(
         "dump", "fallback", "gateway", "hooks", "import", "insights",
         "kanban", "login", "logout", "logs", "mcp", "memory", "model",
         "pairing", "plugins", "profile", "sessions", "setup", "skills",
-        "slack", "status", "tools", "uninstall", "update", "version",
+        "runtime", "slack", "status", "tools", "uninstall", "update", "version",
         "webhook", "whatsapp", "chat",
         # Help-ish invocations — plugin commands not being listed in
         # top-level --help is an acceptable trade-off for skipping an
@@ -10950,6 +10962,25 @@ Examples:
     # =========================================================================
     version_parser = subparsers.add_parser("version", help="Show version information")
     version_parser.set_defaults(func=cmd_version)
+
+    # =========================================================================
+    # runtime command
+    # =========================================================================
+    runtime_parser = subparsers.add_parser(
+        "runtime",
+        help="Manage the active source-installed runtime",
+        description="Manage source-installed Zermes runtime state.",
+    )
+    runtime_subparsers = runtime_parser.add_subparsers(dest="runtime_command")
+    runtime_subparsers.add_parser(
+        "restart-intent",
+        help="Execute a governed restart intent from the install prefix",
+        description=(
+            "Read runtime/restart-intent.json from ZERMES_INSTALL_PREFIX, "
+            "validate it against active.json, and exec the active release."
+        ),
+    )
+    runtime_parser.set_defaults(func=cmd_runtime)
 
     # =========================================================================
     # update command
