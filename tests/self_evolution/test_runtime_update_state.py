@@ -358,7 +358,12 @@ def test_read_active_release_rejects_missing_release_files(tmp_path):
 def test_activate_release_updates_previous_and_active(tmp_path):
     prefix = tmp_path / "zermes"
     old_release = _make_release(prefix, "source-install", commit="1111111")
-    new_release = _make_release(prefix, "update-20260510-120000-2222222", commit="2222222")
+    new_release = _make_release(
+        prefix,
+        "update-20260510-120000-2222222",
+        commit="2222222",
+        launcher_text="# updated launcher\n",
+    )
     _write_json(prefix / "runtime" / "active.json", _release_payload(old_release))
 
     activated = activate_release(
@@ -373,6 +378,7 @@ def test_activate_release_updates_previous_and_active(tmp_path):
     assert active_payload["release_id"] == new_release.release_id
     assert active_payload["activated_at"]
     assert previous_payload["release_id"] == "source-install"
+    assert (prefix / "launcher" / "zermes_launcher.py").read_text(encoding="utf-8") == "# updated launcher\n"
 
 
 def test_activate_release_rejects_stale_expected_active(tmp_path):
@@ -517,9 +523,13 @@ def test_runtime_update_lock_releases_after_exception(tmp_path):
     assert not (prefix / "runtime" / "update.lock").exists()
 
 
-def _make_release(prefix, release_id, *, commit="abcdef0"):
+def _make_release(prefix, release_id, *, commit="abcdef0", launcher_text=""):
     release_root = prefix / "runtime" / "releases" / release_id
     _make_runtime_tree(release_root)
+    if launcher_text:
+        launcher_path = release_root / "source" / "launcher" / "zermes_launcher.py"
+        launcher_path.parent.mkdir()
+        launcher_path.write_text(launcher_text, encoding="utf-8")
     release = RuntimeRelease(
         release_id=release_id,
         source_path=str(release_root / "source"),

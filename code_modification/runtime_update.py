@@ -592,6 +592,7 @@ def activate_release(
         current is None or current.release_id != expected_old_release_id
     ):
         raise RuntimeUpdateError("active release changed since the update was planned")
+    _refresh_stable_launcher(paths, release)
     if current is not None:
         _atomic_write_json(paths.previous_path, _release_to_payload(current))
     activated = RuntimeRelease(
@@ -1024,6 +1025,16 @@ def _write_launcher_probe_prefix(candidate: RuntimeCandidate, python_executable:
     _atomic_write_json(probe_prefix / RUNTIME_DIR_NAME / ACTIVE_STATE_FILE, active_payload)
     (probe_prefix / "data").mkdir(parents=True, exist_ok=True)
     return probe_prefix
+
+
+def _refresh_stable_launcher(paths: RuntimePaths, release: RuntimeRelease) -> None:
+    release_launcher = Path(release.source_path) / "launcher" / "zermes_launcher.py"
+    if not release_launcher.exists():
+        return
+    target = paths.prefix / "launcher" / "zermes_launcher.py"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(release_launcher, target)
+    target.chmod(0o755)
 
 
 def _health_result_summary(result: RuntimeHealthCheckResult) -> str:
