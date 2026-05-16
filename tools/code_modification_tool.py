@@ -1135,9 +1135,9 @@ SELF_UPDATE_APPLICATION_SCHEMA = {
     "description": (
         "Manage audited self-update application state for an integrated "
         "self-evolution task. This tool records plan, approval, build status, "
-        "health checks, activation intent, and rollback intent. It never "
-        "installs dependencies, changes active runtime code, restarts a "
-        "process, or runs arbitrary commands."
+        "health checks, runtime candidate preparation, active pointer "
+        "switching, and rollback intent. It never restarts a process or runs "
+        "arbitrary commands."
     ),
     "parameters": {
         "type": "object",
@@ -1203,7 +1203,8 @@ SELF_UPDATE_APPLICATION_SCHEMA = {
                 "items": {"type": "string"},
                 "description": (
                     "Health-check evidence to record, or allow-listed check "
-                    "names for runtime_run_health: python_version, cli_help, compileall."
+                    "names for runtime_run_health: python_version, cli_help, "
+                    "compileall, launcher_cli_help, launcher_gateway_help."
                 ),
             },
             "python_path": {

@@ -1,4 +1,6 @@
 import json
+import os
+from pathlib import Path
 
 from code_modification.approval import build_approval_plan, write_approval_documents
 from code_modification.executor import commit_task_step, start_approved_task
@@ -284,6 +286,42 @@ def test_self_update_application_runtime_run_health_can_verify_candidate(tmp_pat
     assert [item["status"] for item in result["health_results"]] == ["passed", "passed"]
 
 
+def test_self_update_application_runtime_run_health_can_verify_launcher_entrypoints(tmp_path):
+    project_root = tmp_path / "hermes-agent"
+    _make_project_repo(project_root)
+    prefix = tmp_path / "zermes"
+    _make_runtime_release(prefix, "source-install", project_root)
+    candidate_id = "update-20260516-010000-abcdef0"
+
+    json.loads(
+        self_update_application(
+            "runtime_prepare",
+            "20260516-010000-update-flow",
+            project_root=str(project_root),
+            install_prefix=str(prefix),
+            candidate_id=candidate_id,
+            candidate_ref="HEAD",
+        )
+    )
+    result = json.loads(
+        self_update_application(
+            "runtime_run_health",
+            "20260516-010000-update-flow",
+            install_prefix=str(prefix),
+            candidate_id=candidate_id,
+            health_checks=["launcher_cli_help", "launcher_gateway_help"],
+            python_path=os.sys.executable,
+        )
+    )
+
+    assert result["success"] is True
+    assert result["status"] == "verified"
+    assert [item["name"] for item in result["health_results"]] == [
+        "launcher_cli_help",
+        "launcher_gateway_help",
+    ]
+
+
 def test_self_update_application_runtime_prepare_env_creates_venv(tmp_path):
     project_root = tmp_path / "hermes-agent"
     _make_project_repo(project_root)
@@ -380,6 +418,15 @@ def test_code_modification_tool_schemas_include_install_prefix():
         assert "install_prefix" in schema["parameters"]["properties"]
 
 
+def test_self_update_application_schema_lists_launcher_health_checks():
+    description = SELF_UPDATE_APPLICATION_SCHEMA["parameters"]["properties"]["health_checks"][
+        "description"
+    ]
+
+    assert "launcher_cli_help" in description
+    assert "launcher_gateway_help" in description
+
+
 def _make_project_repo(repo):
     _write_project_markers(repo)
     _init_git_repo(repo)
@@ -424,6 +471,26 @@ def _write_project_markers(repo):
     (repo / "pyproject.toml").write_text("[project]\nname = 'hermes-agent'\n", encoding="utf-8")
     (repo / "install.py").write_text("# installer\n", encoding="utf-8")
     (repo / "code_modification").mkdir(exist_ok=True)
+    (repo / "launcher").mkdir(exist_ok=True)
+    launcher_source = Path(__file__).resolve().parents[2] / "launcher" / "zermes_launcher.py"
+    (repo / "launcher" / "zermes_launcher.py").write_text(
+        launcher_source.read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    (repo / "hermes_cli").mkdir(exist_ok=True)
+    (repo / "hermes_cli" / "__init__.py").write_text("", encoding="utf-8")
+    (repo / "hermes_cli" / "main.py").write_text(
+        (
+            "import argparse\n"
+            "def main():\n"
+            "    parser = argparse.ArgumentParser()\n"
+            "    parser.add_argument('command', nargs='?')\n"
+            "    parser.parse_args()\n"
+            "if __name__ == '__main__':\n"
+            "    main()\n"
+        ),
+        encoding="utf-8",
+    )
     tools_dir = repo / "tools"
     tools_dir.mkdir(exist_ok=True)
     (tools_dir / "code_modification_tool.py").write_text("# tool\n", encoding="utf-8")
