@@ -498,6 +498,51 @@ def test_self_update_application_runtime_prepare_does_not_require_audit_task(tmp
     assert not (project_root.parent / "self-evolution" / "tasks" / "20260516-040000-no-audit").exists()
 
 
+def test_self_update_application_runtime_apply_update_runs_main_flow(tmp_path):
+    project_root = tmp_path / "hermes-agent"
+    _make_project_repo(project_root)
+    task_id = "20260516-050000-apply-update"
+    _write_integrated_state(project_root, task_id)
+    prefix = tmp_path / "zermes"
+    _make_runtime_release(prefix, "source-install", project_root)
+    restart_cwd = tmp_path / "restart-cwd"
+    restart_profile = tmp_path / "restart-profile"
+    restart_cwd.mkdir()
+    restart_profile.mkdir()
+
+    result = json.loads(
+        self_update_application(
+            "runtime_apply_update",
+            task_id,
+            project_root=str(project_root),
+            install_prefix=str(prefix),
+            approval_text="approved",
+            mode="cli",
+            health_checks=["python_version", "cli_help"],
+            request_restart=True,
+            restart_argv=["zermes", "chat", "--resume", "session-1"],
+            restart_cwd=str(restart_cwd),
+            restart_profile_home=str(restart_profile),
+        )
+    )
+    status = json.loads(
+        self_update_application(
+            "runtime_status",
+            task_id,
+            install_prefix=str(prefix),
+        )
+    )
+
+    assert result["success"] is True
+    assert result["release_id"].startswith("update-")
+    assert result["restart_intent"]["status"] == "requested"
+    assert result["restart_intent"]["argv"] == ["zermes", "chat", "--resume", "session-1"]
+    assert status["active_release"]["release_id"] == result["release_id"]
+    assert status["previous_release"]["release_id"] == "source-install"
+    assert status["update_state"]["status"] == "activated"
+    assert status["restart_intent"]["release_id"] == result["release_id"]
+
+
 def test_self_update_application_runtime_run_health_can_verify_candidate(tmp_path):
     project_root = tmp_path / "hermes-agent"
     _make_project_repo(project_root)

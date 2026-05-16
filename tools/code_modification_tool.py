@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from datetime import UTC, datetime
 
 from code_modification.approval import build_approval_plan, write_approval_documents
 from code_modification.executor import (
@@ -34,6 +35,8 @@ from code_modification.runtime_update import (
     RuntimeUpdateState,
     RuntimeUpdateError,
     activate_release as activate_runtime_release,
+    generate_candidate_id,
+    generate_release_id,
     mark_candidate_blocked,
     mark_candidate_verified,
     prepare_candidate_environment,
@@ -384,6 +387,7 @@ def self_update_application(
     restart_argv: list[str] | None = None,
     restart_cwd: str = "",
     restart_profile_home: str = "",
+    request_restart: bool = False,
 ) -> str:
     """Manage audited self-update application state without restarting runtime."""
     normalized = str(action or "").strip().lower()
@@ -408,6 +412,7 @@ def self_update_application(
                 restart_argv=restart_argv or [],
                 restart_cwd=restart_cwd,
                 restart_profile_home=restart_profile_home,
+                request_restart=bool(request_restart),
             )
         root = _resolve_tool_project_root(project_root, install_prefix)
         clean_task_id = str(task_id or "")
@@ -464,7 +469,8 @@ def self_update_application(
                 "record_health, activate, rollback, runtime_prepare, "
                 "runtime_status, runtime_verify, runtime_prepare_env, "
                 "runtime_run_health, runtime_block, runtime_promote, "
-                "runtime_activate, runtime_request_restart, or runtime_rollback.",
+                "runtime_activate, runtime_request_restart, runtime_apply_update, "
+                "or runtime_rollback.",
                 success=False,
             )
     except (
@@ -498,6 +504,7 @@ def _runtime_update_application_action(
     restart_argv: list[str],
     restart_cwd: str,
     restart_profile_home: str,
+    request_restart: bool,
 ) -> str:
     if not install_prefix:
         return tool_error("install_prefix is required for runtime update actions.", success=False)
@@ -527,6 +534,7 @@ def _runtime_update_application_action(
             restart_argv=restart_argv,
             restart_cwd=restart_cwd,
             restart_profile_home=restart_profile_home,
+            request_restart=request_restart,
         )
 
 
@@ -550,7 +558,29 @@ def _run_locked_runtime_update_action(
     restart_argv: list[str],
     restart_cwd: str,
     restart_profile_home: str,
+    request_restart: bool,
 ) -> str:
+    if action == "runtime_apply_update":
+        return _run_runtime_apply_update(
+            task_id,
+            project_root=project_root,
+            install_prefix=install_prefix,
+            approval_text=approval_text,
+            candidate_ref=candidate_ref,
+            candidate_id=candidate_id,
+            release_id=release_id,
+            expected_old_release_id=expected_old_release_id,
+            expected_old_active_digest=expected_old_active_digest,
+            mode=mode,
+            health_checks=health_checks,
+            reason=reason,
+            python_path=python_path,
+            install_editable=install_editable,
+            restart_argv=restart_argv,
+            restart_cwd=restart_cwd,
+            restart_profile_home=restart_profile_home,
+            request_restart=request_restart,
+        )
     if action == "runtime_prepare":
         root = _resolve_tool_project_root(project_root, install_prefix)
         candidate = prepare_candidate_source(
@@ -754,8 +784,156 @@ def _run_locked_runtime_update_action(
         "runtime action must be one of runtime_prepare, runtime_verify, "
         "runtime_prepare_env, runtime_run_health, runtime_status, "
         "runtime_block, runtime_promote, runtime_activate, "
-        "runtime_request_restart, or runtime_rollback.",
+        "runtime_request_restart, runtime_apply_update, or runtime_rollback.",
         success=False,
+    )
+
+
+def _run_runtime_apply_update(
+    task_id: str,
+    *,
+    project_root: str | None,
+    install_prefix: str,
+    approval_text: str,
+    candidate_ref: str | None,
+    candidate_id: str,
+    release_id: str,
+    expected_old_release_id: str,
+    expected_old_active_digest: str,
+    mode: str,
+    health_checks: list[str],
+    reason: str,
+    python_path: str | None,
+    install_editable: bool,
+    restart_argv: list[str],
+    restart_cwd: str,
+    restart_profile_home: str,
+    request_restart: bool,
+) -> str:
+    require_explicit_approval(approval_text)
+    root = _resolve_tool_project_root(project_root, install_prefix)
+    active = read_active_release(install_prefix)
+    active_digest = read_active_release_digest(install_prefix)
+    if expected_old_release_id and expected_old_release_id != active.release_id:
+        return tool_error("active release changed since the update was planned.", success=False)
+    if expected_old_active_digest and expected_old_active_digest != active_digest:
+        return tool_error("active release metadata changed since the update was planned.", success=False)
+    selected_candidate_id = (
+        str(candidate_id or "").strip()
+        or generate_candidate_id(datetime.now(UTC), str(candidate_ref or ""))
+    )
+    candidate = prepare_candidate_source(
+        install_prefix,
+        selected_candidate_id,
+        source_repo=root,
+        git_ref=candidate_ref or "HEAD",
+        task_id=task_id,
+        old_release_id=active.release_id,
+    )
+    env_state, command_results = prepare_candidate_environment(
+        install_prefix,
+        candidate.candidate_id,
+        install_editable=bool(install_editable),
+        python_path=python_path,
+    )
+    if env_state.status == "blocked":
+        audit = _mirror_runtime_update_audit(
+            task_id,
+            project_root=root,
+            install_prefix=install_prefix,
+            runtime_status=env_state.status,
+            candidate_commit=env_state.candidate_commit,
+            build_summary=", ".join(_runtime_command_result_summary(result) for result in command_results),
+            health_checks=tuple(env_state.health_checks),
+            blocked_reason=env_state.error,
+        )
+        return _runtime_state_result(
+            env_state,
+            action="runtime_apply_update",
+            command_results=[_runtime_command_result_payload(result) for result in command_results],
+            **audit,
+        )
+    verified_state, health_results = run_candidate_health_checks(
+        install_prefix,
+        candidate.candidate_id,
+        checks=health_checks,
+        python_path=python_path,
+    )
+    if verified_state.status == "blocked":
+        audit = _mirror_runtime_update_audit(
+            task_id,
+            project_root=root,
+            install_prefix=install_prefix,
+            runtime_status=verified_state.status,
+            candidate_commit=verified_state.candidate_commit,
+            health_checks=tuple(verified_state.health_checks),
+            blocked_reason=verified_state.error,
+        )
+        return _runtime_state_result(
+            verified_state,
+            action="runtime_apply_update",
+            command_results=[_runtime_command_result_payload(result) for result in command_results],
+            health_results=[_runtime_health_result_payload(result) for result in health_results],
+            **audit,
+        )
+    selected_release_id = (
+        str(release_id or "").strip()
+        or generate_release_id(candidate.candidate_id, candidate.candidate_commit)
+    )
+    release = promote_candidate_to_release(install_prefix, candidate.candidate_id, selected_release_id)
+    activated = activate_runtime_release(
+        install_prefix,
+        release,
+        expected_old_release_id=active.release_id,
+        expected_old_active_digest=active_digest,
+    )
+    _record_runtime_terminal_state(
+        install_prefix,
+        "activated",
+        activated,
+        task_id=task_id,
+        old_release_id=active.release_id,
+    )
+    audit = _mirror_runtime_update_audit(
+        task_id,
+        project_root=root,
+        install_prefix=install_prefix,
+        runtime_status="activated",
+        candidate_commit=activated.candidate_commit,
+        build_summary=", ".join(_runtime_command_result_summary(result) for result in command_results),
+        health_checks=tuple(verified_state.health_checks),
+        approved_by_user=True,
+    )
+    restart_intent = None
+    if request_restart:
+        restart_intent = request_runtime_restart(
+            install_prefix,
+            mode=mode,
+            approval_text=approval_text,
+            task_id=task_id,
+            argv=restart_argv,
+            cwd=restart_cwd or None,
+            profile_home=restart_profile_home or None,
+            reason=reason or "apply activated runtime update",
+        )
+        audit.update(
+            _mirror_runtime_update_audit(
+                task_id,
+                project_root=root,
+                install_prefix=install_prefix,
+                runtime_status="restart_requested",
+                approved_by_user=True,
+            )
+        )
+    return _runtime_release_result(
+        activated,
+        action="runtime_apply_update",
+        task_id=task_id,
+        candidate_id=candidate.candidate_id,
+        command_results=[_runtime_command_result_payload(result) for result in command_results],
+        health_results=[_runtime_health_result_payload(result) for result in health_results],
+        restart_intent=_runtime_restart_intent_payload(restart_intent) if restart_intent else None,
+        **audit,
     )
 
 
@@ -1374,7 +1552,7 @@ SELF_UPDATE_APPLICATION_SCHEMA = {
                     "activate, rollback, runtime_prepare, runtime_verify, "
                     "runtime_prepare_env, runtime_run_health, runtime_block, "
                     "runtime_promote, runtime_activate, runtime_rollback, "
-                    "runtime_request_restart, or runtime_status."
+                    "runtime_request_restart, runtime_apply_update, or runtime_status."
                 ),
             },
             "task_id": {
@@ -1476,6 +1654,14 @@ SELF_UPDATE_APPLICATION_SCHEMA = {
                 "description": (
                     "For runtime_request_restart only: profile/home path to "
                     "preserve in the restart intent."
+                ),
+            },
+            "request_restart": {
+                "type": "boolean",
+                "description": (
+                    "For runtime_apply_update only: when true, also record a "
+                    "governed restart intent after activation. The tool still "
+                    "does not execute the restart."
                 ),
             },
             "conclusion": {
@@ -1689,6 +1875,7 @@ registry.register(
         restart_argv=args.get("restart_argv"),
         restart_cwd=args.get("restart_cwd", ""),
         restart_profile_home=args.get("restart_profile_home", ""),
+        request_restart=args.get("request_restart", False),
     ),
     check_fn=check_code_modification_requirements,
     emoji="U",
