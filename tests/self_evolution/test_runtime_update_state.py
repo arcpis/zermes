@@ -463,6 +463,8 @@ def test_promote_candidate_to_release_moves_candidate_and_writes_metadata(tmp_pa
         "update-20260510-120000-abcdef0",
         "release-abcdef0",
     )
+    release_state = _read_json(prefix / "runtime" / "releases" / "release-abcdef0" / "update-state.json")
+    runtime_state = _read_json(prefix / "runtime" / "update-state.json")
 
     assert release.release_id == "release-abcdef0"
     assert not candidate.exists()
@@ -470,6 +472,11 @@ def test_promote_candidate_to_release_moves_candidate_and_writes_metadata(tmp_pa
     assert _read_json(prefix / "runtime" / "releases" / "release-abcdef0" / "metadata.json")[
         "release_id"
     ] == "release-abcdef0"
+    assert release_state["status"] == "promoted"
+    assert release_state["release_id"] == "release-abcdef0"
+    assert release_state["steps"] == ["promoted"]
+    assert runtime_state["status"] == "promoted"
+    assert runtime_state["release_id"] == "release-abcdef0"
 
 
 def test_promote_candidate_to_release_requires_verified_candidate(tmp_path):

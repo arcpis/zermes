@@ -562,6 +562,7 @@ def promote_candidate_to_release(
         raise RuntimeUpdateError(f"release already exists: {release_root}")
     _require_verified_candidate(candidate_root)
     metadata = _read_json(candidate_root / "metadata.json")
+    previous_state = _read_update_state(candidate_root / UPDATE_STATE_FILE)
     candidate_commit = str(metadata.get("candidate_commit") or metadata.get("commit") or "").strip()
     source_repo = _source_repo_from_payload(metadata)
     release_root.parent.mkdir(parents=True, exist_ok=True)
@@ -577,6 +578,20 @@ def promote_candidate_to_release(
     )
     validate_release_directory(paths, release)
     _atomic_write_json(release_root / "metadata.json", _release_to_payload(release))
+    promoted_state = RuntimeUpdateState(
+        status="promoted",
+        task_id=previous_state.task_id,
+        candidate_id=clean_candidate,
+        release_id=clean_release,
+        source_repo=source_repo,
+        candidate_commit=candidate_commit,
+        old_release_id=previous_state.old_release_id,
+        steps=_append_step(previous_state.steps, "promoted"),
+        health_checks=previous_state.health_checks,
+        error="",
+    )
+    _atomic_write_json(release_root / UPDATE_STATE_FILE, _state_to_payload(promoted_state))
+    write_runtime_update_state(paths.prefix, promoted_state)
     return release
 
 
