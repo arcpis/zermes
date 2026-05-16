@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
+import hashlib
 from io import BytesIO
 import json
 import os
@@ -546,7 +547,15 @@ def activate_update_candidate(
         activated=True,
         restart_requested=restart_requested,
     )
-    return write_update_state(plan, activated_state, dry_run=dry_run)
+    payload = write_update_state(plan, activated_state, dry_run=dry_run)
+    if restart_requested and not dry_run:
+        payload["restart_intent"] = write_restart_intent(
+            release_plan,
+            mode="cli",
+            argv=("zermes", "chat"),
+            cwd=Path.cwd(),
+        )
+    return payload
 
 
 def build_update_candidate(
@@ -914,6 +923,42 @@ def write_release_metadata(plan: InstallerPlan, *, now: datetime | None = None) 
     atomic_write_json(metadata_path, metadata)
     atomic_write_json(active_path, metadata)
     return metadata
+
+
+def write_restart_intent(
+    plan: InstallerPlan,
+    *,
+    mode: str,
+    argv: tuple[str, ...],
+    cwd: Path | None = None,
+    now: datetime | None = None,
+) -> dict:
+    """Write the governed launcher restart intent for an activated release."""
+
+    active_path = Path(plan.active_path)
+    active_payload = json.loads(active_path.read_text(encoding="utf-8"))
+    timestamp = (now or datetime.now(UTC)).isoformat()
+    intent = {
+        "schema_version": 1,
+        "status": "requested",
+        "mode": mode,
+        "release_id": active_payload.get("release_id", ""),
+        "active_release_digest": _json_digest(active_payload),
+        "requested_by": "installer",
+        "approved_by_user": True,
+        "argv": list(argv),
+        "cwd": str((cwd or Path.cwd()).expanduser().resolve()),
+        "profile_home": plan.data_dir,
+        "reason": "installer update requested restart",
+        "created_at": timestamp,
+    }
+    atomic_write_json(Path(plan.runtime_dir) / "restart-intent.json", intent)
+    return intent
+
+
+def _json_digest(payload: dict) -> str:
+    data = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(data).hexdigest()
 
 
 def posix_launcher_text(plan: InstallerPlan) -> str:

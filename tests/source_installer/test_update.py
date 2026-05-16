@@ -164,6 +164,33 @@ def test_activate_update_candidate_writes_active_and_previous(tmp_path):
     assert previous == old_active
 
 
+def test_activate_update_candidate_writes_restart_intent_when_requested(tmp_path):
+    source = _source_update_activate(tmp_path)
+    plan = _plan_update_activate(tmp_path, source)
+    old_active = {
+        "release_id": "old-release",
+        "source_path": str(tmp_path / "app" / "runtime" / "releases" / "old-release" / "source"),
+    }
+    install_zermes.atomic_write_json(Path(plan.active_path), old_active)
+
+    state = install_zermes.activate_update_candidate(
+        plan,
+        source,
+        candidate_id="candidate-one",
+        restart_requested=True,
+    )
+
+    intent = json.loads((tmp_path / "app" / "runtime" / "restart-intent.json").read_text(encoding="utf-8"))
+    active = json.loads(Path(plan.active_path).read_text(encoding="utf-8"))
+    assert state["restart_requested"] is True
+    assert state["restart_intent"] == intent
+    assert intent["status"] == "requested"
+    assert intent["mode"] == "cli"
+    assert intent["release_id"] == "next-release"
+    assert intent["active_release_digest"] == install_zermes._json_digest(active)
+    assert intent["argv"] == ["zermes", "chat"]
+
+
 def test_activate_update_candidate_does_not_delete_old_release(tmp_path):
     source = _source_update_activate(tmp_path)
     plan = _plan_update_activate(tmp_path, source)
