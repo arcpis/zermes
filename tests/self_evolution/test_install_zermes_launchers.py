@@ -152,6 +152,10 @@ def test_stable_launcher_execs_restart_intent(monkeypatch, tmp_path):
     source.mkdir()
     python.parent.mkdir(parents=True)
     python.write_text("", encoding="utf-8")
+    restart_cwd = tmp_path / "restart-cwd"
+    restart_profile = tmp_path / "restart-profile"
+    restart_cwd.mkdir()
+    restart_profile.mkdir()
     active = {
         "schema_version": 1,
         "release_id": "release-abc1234",
@@ -175,6 +179,8 @@ def test_stable_launcher_execs_restart_intent(monkeypatch, tmp_path):
                 "active_release_digest": digest,
                 "approved_by_user": True,
                 "argv": ["zermes", "chat", "--resume", "session-1"],
+                "cwd": str(restart_cwd),
+                "profile_home": str(restart_profile),
             },
             indent=2,
         )
@@ -207,8 +213,9 @@ def test_stable_launcher_execs_restart_intent(monkeypatch, tmp_path):
         "--resume",
         "session-1",
     ]
-    assert captured["cwd"] == str(source.resolve())
+    assert captured["cwd"] == str(restart_cwd.resolve())
     assert captured["env"]["ZERMES_ACTIVE_RELEASE"] == "release-abc1234"
+    assert captured["env"]["HERMES_HOME"] == str(restart_profile.resolve())
 
 
 def test_stable_launcher_rejects_stale_restart_intent(monkeypatch, tmp_path):

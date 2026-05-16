@@ -35,18 +35,28 @@ def _exec_restart_intent(args: list[str]) -> int:
     _validate_restart_intent(active, intent)
     mode = str(intent.get("mode") or "cli").strip().lower()
     restart_args = _restart_args(intent)
-    return _exec_active_release(prefix, active, mode=mode, args=restart_args)
+    return _exec_active_release(prefix, active, mode=mode, args=restart_args, intent=intent)
 
 
-def _exec_active_release(prefix: Path, active: dict, *, mode: str, args: list[str]) -> int:
+def _exec_active_release(
+    prefix: Path,
+    active: dict,
+    *,
+    mode: str,
+    args: list[str],
+    intent: dict | None = None,
+) -> int:
     python_path = _active_python(active)
     source_path = _required_path(active, "source_path")
     data_dir = str(active.get("data_dir") or "").strip()
+    restart_cwd = _restart_cwd(intent) if intent else ""
+    restart_profile_home = _restart_profile_home(intent) if intent else ""
 
     env = os.environ.copy()
-    if data_dir:
-        env["HERMES_HOME"] = data_dir
-        env["ZERMES_HOME"] = data_dir
+    profile_home = restart_profile_home or data_dir
+    if profile_home:
+        env["HERMES_HOME"] = profile_home
+        env["ZERMES_HOME"] = profile_home
     env["ZERMES_INSTALL_PREFIX"] = str(prefix)
     env["ZERMES_ACTIVE_RELEASE"] = str(active.get("release_id") or "")
     env["PYTHONPATH"] = _prepend_pythonpath(source_path, env.get("PYTHONPATH"))
@@ -55,7 +65,7 @@ def _exec_active_release(prefix: Path, active: dict, *, mode: str, args: list[st
     if mode == "gateway":
         command.append("gateway")
     command.extend(args)
-    os.chdir(source_path)
+    os.chdir(restart_cwd or source_path)
     os.execve(str(python_path), command, env)
     return 127
 
@@ -122,6 +132,26 @@ def _restart_args(intent: dict) -> list[str]:
     if args and args[0] in {"cli", "gateway"}:
         args = args[1:]
     return args
+
+
+def _restart_cwd(intent: dict | None) -> str:
+    cwd = str((intent or {}).get("cwd") or "").strip()
+    if not cwd:
+        return ""
+    path = Path(cwd).expanduser().resolve()
+    if not path.is_dir():
+        raise SystemExit(f"restart intent cwd does not exist: {path}")
+    return str(path)
+
+
+def _restart_profile_home(intent: dict | None) -> str:
+    profile_home = str((intent or {}).get("profile_home") or "").strip()
+    if not profile_home:
+        return ""
+    path = Path(profile_home).expanduser().resolve()
+    if not path.is_dir():
+        raise SystemExit(f"restart intent profile_home does not exist: {path}")
+    return str(path)
 
 
 def _json_digest(payload: dict) -> str:
