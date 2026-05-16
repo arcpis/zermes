@@ -44,6 +44,7 @@ from code_modification.runtime_update import (
     read_previous_release,
     read_release as read_runtime_release,
     read_release_update_state,
+    read_runtime_restart_intent,
     read_runtime_update_state,
     rollback_active_release,
     runtime_update_lock,
@@ -903,12 +904,14 @@ def _runtime_status_result(install_prefix: str, **extra) -> str:
     active = read_active_release(install_prefix)
     previous = read_previous_release(install_prefix)
     update_state = read_runtime_update_state(install_prefix)
+    restart_intent = read_runtime_restart_intent(install_prefix)
     return tool_result(
         success=True,
         active_release=_runtime_release_payload(active),
         active_release_digest=read_active_release_digest(install_prefix),
         previous_release=_runtime_release_payload(previous) if previous else None,
         update_state=_runtime_update_payload(update_state) if update_state else None,
+        restart_intent=_runtime_restart_intent_payload(restart_intent) if restart_intent else None,
         **extra,
     )
 
@@ -963,6 +966,22 @@ def _runtime_update_payload(state) -> dict:
         "health_checks": list(state.health_checks),
         "error": state.error,
         "updated_at": state.updated_at,
+    }
+
+
+def _runtime_restart_intent_payload(intent) -> dict:
+    return {
+        "status": intent.status,
+        "mode": intent.mode,
+        "release_id": intent.release_id,
+        "active_release_digest": intent.active_release_digest,
+        "task_id": intent.task_id,
+        "approved_by_user": intent.approved_by_user,
+        "argv": list(intent.argv),
+        "cwd": intent.cwd,
+        "profile_home": intent.profile_home,
+        "reason": intent.reason,
+        "created_at": intent.created_at,
     }
 
 
