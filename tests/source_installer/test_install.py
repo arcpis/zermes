@@ -567,13 +567,18 @@ def test_release_metadata_contains_runtime_fields(tmp_path):
     metadata = install_zermes.release_metadata(plan, now=now)
 
     assert metadata == {
+        "schema_version": 1,
         "release_id": "source-install",
         "install_prefix": plan.prefix,
         "data_dir": plan.data_dir,
         "source_path": plan.source_dir,
         "venv_path": plan.venv_dir,
+        "build_path": plan.build_dir,
         "python_path": plan.python_path,
+        "candidate_commit": "",
+        "source_repo": {"path": plan.repo_root},
         "created_at": "2026-05-10T12:00:00+00:00",
+        "activated_at": "2026-05-10T12:00:00+00:00",
         "installer_version": "source-installer-v1",
     }
 

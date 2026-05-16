@@ -155,6 +155,9 @@ def test_activate_update_candidate_writes_active_and_previous(tmp_path):
     assert (release_dir / "source" / "README.md").read_text(encoding="utf-8") == "candidate"
     assert active["release_id"] == "next-release"
     assert active["source_path"] == str((release_dir / "source").resolve())
+    assert active["build_path"] == str((release_dir / "build").resolve())
+    assert active["source_repo"]["path"] == source.path
+    assert "candidate_commit" in active
     assert previous == old_active
 
 

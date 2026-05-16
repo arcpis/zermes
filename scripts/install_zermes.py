@@ -871,15 +871,36 @@ def atomic_write_json(path: Path, payload: dict) -> None:
 def release_metadata(plan: InstallerPlan, *, now: datetime | None = None) -> dict:
     timestamp = (now or datetime.now(UTC)).isoformat()
     return {
+        "schema_version": 1,
         "release_id": plan.release_id,
         "install_prefix": plan.prefix,
         "data_dir": plan.data_dir,
         "source_path": plan.source_dir,
         "venv_path": plan.venv_dir,
+        "build_path": plan.build_dir,
         "python_path": plan.python_path,
+        "candidate_commit": git_commit_or_empty(Path(plan.repo_root)),
+        "source_repo": {"path": plan.repo_root},
         "created_at": timestamp,
+        "activated_at": timestamp,
         "installer_version": "source-installer-v1",
     }
+
+
+def git_commit_or_empty(repo_root: Path) -> str:
+    """Return the current Git commit for metadata, or empty for non-Git tests."""
+
+    if not repo_root.exists():
+        return ""
+    completed = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=repo_root,
+        text=True,
+        capture_output=True,
+        check=False,
+        shell=False,
+    )
+    return completed.stdout.strip() if completed.returncode == 0 else ""
 
 
 def write_release_metadata(plan: InstallerPlan, *, now: datetime | None = None) -> dict:
