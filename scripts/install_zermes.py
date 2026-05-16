@@ -537,6 +537,7 @@ def activate_update_candidate(
     if not dry_run:
         shutil.copytree(Path(plan.release_dir), Path(release_plan.release_dir), dirs_exist_ok=True)
         write_release_metadata(release_plan, now=now)
+        create_launcher_scripts(release_plan)
     activated_state = build_update_state(
         plan,
         update_source,
@@ -938,7 +939,7 @@ def create_launcher_scripts(
 ) -> tuple[Path, ...]:
     if not create_launchers:
         return ()
-    launcher_source = Path(plan.repo_root) / "launcher" / "zermes_launcher.py"
+    launcher_source = Path(plan.source_dir) / "launcher" / "zermes_launcher.py"
     launcher_path = Path(plan.prefix) / "launcher" / "zermes_launcher.py"
     posix_path = Path(plan.bin_dir) / "zermes"
     posix_gateway_path = Path(plan.bin_dir) / "zermes-gateway"
