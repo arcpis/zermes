@@ -1,4 +1,5 @@
 from argparse import Namespace
+import hashlib
 import json
 from pathlib import Path
 
@@ -139,6 +140,125 @@ def test_stable_launcher_execs_active_release(monkeypatch, tmp_path):
     assert captured["env"]["ZERMES_ACTIVE_RELEASE"] == "release-abc1234"
     assert captured["env"]["HERMES_HOME"] == str(tmp_path / "data")
     assert captured["env"]["PYTHONPATH"].split(zermes_launcher.os.pathsep)[0] == str(source.resolve())
+
+
+def test_stable_launcher_execs_restart_intent(monkeypatch, tmp_path):
+    from launcher import zermes_launcher
+
+    prefix = tmp_path / "install"
+    source = tmp_path / "active-source"
+    venv = tmp_path / "active-venv"
+    python = venv / ("Scripts/python.exe" if zermes_launcher.os.name == "nt" else "bin/python")
+    source.mkdir()
+    python.parent.mkdir(parents=True)
+    python.write_text("", encoding="utf-8")
+    active = {
+        "schema_version": 1,
+        "release_id": "release-abc1234",
+        "source_path": str(source),
+        "venv_path": str(venv),
+        "data_dir": str(tmp_path / "data"),
+    }
+    active_path = prefix / "runtime" / "active.json"
+    active_path.parent.mkdir(parents=True)
+    active_path.write_text(json.dumps(active, indent=2) + "\n", encoding="utf-8")
+    digest = hashlib.sha256(
+        json.dumps(active, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+    (prefix / "runtime" / "restart-intent.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "status": "requested",
+                "mode": "cli",
+                "release_id": "release-abc1234",
+                "active_release_digest": digest,
+                "approved_by_user": True,
+                "argv": ["zermes", "chat", "--resume", "session-1"],
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    captured = {}
+
+    def fake_execve(path, command, env):
+        captured["path"] = path
+        captured["command"] = command
+        captured["env"] = env
+        raise SystemExit(0)
+
+    monkeypatch.setenv("ZERMES_INSTALL_PREFIX", str(prefix))
+    monkeypatch.setattr(zermes_launcher.os, "execve", fake_execve)
+    monkeypatch.setattr(zermes_launcher.os, "chdir", lambda path: captured.setdefault("cwd", path))
+
+    try:
+        zermes_launcher.main(["restart-intent"])
+    except SystemExit as exc:
+        assert exc.code == 0
+
+    assert captured["path"] == str(python.resolve())
+    assert captured["command"] == [
+        str(python.resolve()),
+        "-m",
+        "hermes_cli.main",
+        "chat",
+        "--resume",
+        "session-1",
+    ]
+    assert captured["cwd"] == str(source.resolve())
+    assert captured["env"]["ZERMES_ACTIVE_RELEASE"] == "release-abc1234"
+
+
+def test_stable_launcher_rejects_stale_restart_intent(monkeypatch, tmp_path):
+    from launcher import zermes_launcher
+
+    prefix = tmp_path / "install"
+    source = tmp_path / "active-source"
+    venv = tmp_path / "active-venv"
+    python = venv / ("Scripts/python.exe" if zermes_launcher.os.name == "nt" else "bin/python")
+    source.mkdir()
+    python.parent.mkdir(parents=True)
+    python.write_text("", encoding="utf-8")
+    active_path = prefix / "runtime" / "active.json"
+    active_path.parent.mkdir(parents=True)
+    active_path.write_text(
+        json.dumps(
+            {
+                "release_id": "release-new",
+                "source_path": str(source),
+                "venv_path": str(venv),
+            }
+        ),
+        encoding="utf-8",
+    )
+    (prefix / "runtime" / "restart-intent.json").write_text(
+        json.dumps(
+            {
+                "status": "requested",
+                "mode": "cli",
+                "release_id": "release-old",
+                "active_release_digest": "stale",
+                "approved_by_user": True,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setenv("ZERMES_INSTALL_PREFIX", str(prefix))
+    monkeypatch.setattr(
+        zermes_launcher.os,
+        "execve",
+        lambda *_args: (_ for _ in ()).throw(AssertionError("execve should not run")),
+    )
+
+    try:
+        zermes_launcher.main(["restart-intent"])
+    except SystemExit as exc:
+        assert "does not match active release" in str(exc)
+    else:
+        raise AssertionError("Expected SystemExit for stale restart intent")
 
 
 def _install_args(tmp_path):

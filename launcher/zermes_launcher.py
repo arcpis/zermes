@@ -9,6 +9,7 @@ updates. They enter this launcher, and this launcher reads
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 from pathlib import Path
 import sys
@@ -16,9 +17,28 @@ import sys
 
 def main(argv: list[str] | None = None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
+    if args and args[0] == "restart-intent":
+        args.pop(0)
+        return _exec_restart_intent(args)
     mode = args.pop(0) if args and args[0] in {"cli", "gateway"} else "cli"
     prefix = _resolve_prefix()
     active = _read_active_metadata(prefix)
+    return _exec_active_release(prefix, active, mode=mode, args=args)
+
+
+def _exec_restart_intent(args: list[str]) -> int:
+    if args:
+        raise SystemExit("restart-intent does not accept command arguments")
+    prefix = _resolve_prefix()
+    active = _read_active_metadata(prefix)
+    intent = _read_restart_intent(prefix)
+    _validate_restart_intent(active, intent)
+    mode = str(intent.get("mode") or "cli").strip().lower()
+    restart_args = _restart_args(intent)
+    return _exec_active_release(prefix, active, mode=mode, args=restart_args)
+
+
+def _exec_active_release(prefix: Path, active: dict, *, mode: str, args: list[str]) -> int:
     python_path = _active_python(active)
     source_path = _required_path(active, "source_path")
     data_dir = str(active.get("data_dir") or "").strip()
@@ -58,6 +78,55 @@ def _read_active_metadata(prefix: Path) -> dict:
     if not isinstance(payload, dict):
         raise SystemExit(f"active runtime metadata must be a JSON object: {active_path}")
     return payload
+
+
+def _read_restart_intent(prefix: Path) -> dict:
+    intent_path = prefix / "runtime" / "restart-intent.json"
+    try:
+        payload = json.loads(intent_path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        raise SystemExit(f"restart intent is missing: {intent_path}") from None
+    except json.JSONDecodeError as exc:
+        raise SystemExit(f"restart intent is invalid: {intent_path}") from exc
+    if not isinstance(payload, dict):
+        raise SystemExit(f"restart intent must be a JSON object: {intent_path}")
+    return payload
+
+
+def _validate_restart_intent(active: dict, intent: dict) -> None:
+    if intent.get("status") != "requested":
+        raise SystemExit("restart intent status must be requested")
+    if not intent.get("approved_by_user"):
+        raise SystemExit("restart intent is missing user approval")
+    mode = str(intent.get("mode") or "").strip().lower()
+    if mode not in {"cli", "gateway"}:
+        raise SystemExit("restart intent mode must be cli or gateway")
+    if str(intent.get("release_id") or "") != str(active.get("release_id") or ""):
+        raise SystemExit("restart intent release does not match active release")
+    expected_digest = str(intent.get("active_release_digest") or "").strip()
+    if not expected_digest:
+        raise SystemExit("restart intent is missing active release digest")
+    if expected_digest != _json_digest(active):
+        raise SystemExit("restart intent active release digest is stale")
+
+
+def _restart_args(intent: dict) -> list[str]:
+    raw = intent.get("argv") or []
+    if not isinstance(raw, list):
+        raise SystemExit("restart intent argv must be a list")
+    args = [str(item) for item in raw if str(item)]
+    if any("\x00" in item for item in args):
+        raise SystemExit("restart intent argv contains an invalid NUL byte")
+    if args and Path(args[0]).name in {"zermes", "zermes.exe", "zermes.bat", "hermes"}:
+        args = args[1:]
+    if args and args[0] in {"cli", "gateway"}:
+        args = args[1:]
+    return args
+
+
+def _json_digest(payload: dict) -> str:
+    data = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(data).hexdigest()
 
 
 def _active_python(active: dict) -> Path:
