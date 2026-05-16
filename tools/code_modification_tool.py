@@ -43,6 +43,7 @@ from code_modification.runtime_update import (
     read_active_release,
     read_previous_release,
     read_release as read_runtime_release,
+    read_release_update_state,
     read_runtime_update_state,
     rollback_active_release,
     runtime_update_lock,
@@ -655,6 +656,18 @@ def _run_locked_runtime_update_action(
     if action == "runtime_activate":
         require_explicit_approval(approval_text)
         release = read_runtime_release(install_prefix, release_id)
+        try:
+            release_state = read_release_update_state(install_prefix, release.release_id)
+        except RuntimeUpdateError:
+            return tool_error(
+                "runtime release must be promoted before activation.",
+                success=False,
+            )
+        if release_state.status != "promoted":
+            return tool_error(
+                "runtime release must be promoted before activation.",
+                success=False,
+            )
         activated = activate_runtime_release(
             install_prefix,
             release,

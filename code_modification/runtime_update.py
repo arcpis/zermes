@@ -204,6 +204,13 @@ def read_runtime_update_state(prefix: str | Path) -> RuntimeUpdateState | None:
     return _read_update_state(paths.update_state_path)
 
 
+def read_release_update_state(prefix: str | Path, release_id: str) -> RuntimeUpdateState:
+    """Read the update state stored with a runtime release."""
+    paths = resolve_runtime_paths(prefix)
+    clean_release = _safe_id(release_id, "release")
+    return _read_update_state(_release_root(paths, clean_release) / UPDATE_STATE_FILE)
+
+
 def read_active_release_digest(prefix: str | Path) -> str:
     """Return a stable digest of the current active.json payload."""
     paths = resolve_runtime_paths(prefix)

@@ -394,6 +394,52 @@ def test_self_update_application_runtime_activate_rejects_stale_active_digest(tm
     assert not (prefix / "runtime" / "previous.json").exists()
 
 
+def test_self_update_application_runtime_activate_requires_promoted_release(tmp_path):
+    project_root = tmp_path / "hermes-agent"
+    _make_project_repo(project_root)
+    prefix = tmp_path / "zermes"
+    _make_runtime_release(prefix, "source-install", project_root)
+    release_id = "unpromoted-release"
+    release_root = prefix / "runtime" / "releases" / release_id
+    (release_root / "source").mkdir(parents=True)
+    (release_root / "venv").mkdir()
+    (release_root / "build").mkdir()
+    (release_root / "metadata.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "release_id": release_id,
+                "source_path": str(release_root / "source"),
+                "venv_path": str(release_root / "venv"),
+                "build_path": str(release_root / "build"),
+                "candidate_commit": "abcdef0",
+                "source_repo": {"path": str(project_root)},
+                "activated_at": "",
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    result = json.loads(
+        self_update_application(
+            "runtime_activate",
+            "20260516-041000-unpromoted",
+            install_prefix=str(prefix),
+            release_id=release_id,
+            approval_text="approved",
+            expected_old_release_id="source-install",
+        )
+    )
+
+    assert result["success"] is False
+    assert "must be promoted" in result["error"]
+    assert json.loads((prefix / "runtime" / "active.json").read_text(encoding="utf-8"))[
+        "release_id"
+    ] == "source-install"
+
+
 def test_self_update_application_runtime_prepare_does_not_require_audit_task(tmp_path):
     project_root = tmp_path / "hermes-agent"
     _make_project_repo(project_root)
