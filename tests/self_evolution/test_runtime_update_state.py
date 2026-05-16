@@ -24,7 +24,9 @@ from code_modification.runtime_update import (
     read_active_release_digest,
     read_active_release,
     read_previous_release,
+    read_runtime_restart_intent,
     release_runtime_update_lock,
+    request_runtime_restart,
     rollback_active_release,
     runtime_update_lock,
     run_candidate_health_checks,
@@ -449,6 +451,57 @@ def test_rollback_restores_previous_without_deleting_releases(tmp_path):
     assert read_previous_release(prefix).release_id == new_release.release_id
     assert _read_json(prefix / "runtime" / "update-state.json")["status"] == "rolled_back"
     assert (prefix / "runtime" / "releases" / new_release.release_id).exists()
+
+
+def test_request_runtime_restart_records_intent_for_active_release(tmp_path):
+    prefix = tmp_path / "zermes"
+    old_release = _make_release(prefix, "source-install", commit="1111111")
+    new_release = _make_release(prefix, "update-20260510-120000-2222222", commit="2222222")
+    _write_json(prefix / "runtime" / "active.json", _release_payload(old_release))
+    activate_release(prefix, new_release, expected_old_release_id="source-install")
+
+    intent = request_runtime_restart(
+        prefix,
+        mode="cli",
+        approval_text="approved",
+        task_id="20260516-010000-update-flow",
+        argv=["zermes", "chat", "--resume", "session-1"],
+        cwd=tmp_path,
+        profile_home=tmp_path / "profile",
+        reason="apply activated self-update",
+    )
+
+    payload = _read_json(prefix / "runtime" / "restart-intent.json")
+    assert intent.status == "requested"
+    assert intent.mode == "cli"
+    assert intent.release_id == new_release.release_id
+    assert intent.approved_by_user is True
+    assert payload["argv"] == ["zermes", "chat", "--resume", "session-1"]
+    assert read_runtime_restart_intent(prefix).active_release_digest == read_active_release_digest(prefix)
+
+
+def test_request_runtime_restart_requires_terminal_update_state(tmp_path):
+    prefix = tmp_path / "zermes"
+    release = _make_release(prefix, "source-install")
+    _write_json(prefix / "runtime" / "active.json", _release_payload(release))
+
+    with pytest.raises(RuntimeUpdateError, match="activated or rolled_back"):
+        request_runtime_restart(prefix, mode="cli", approval_text="approved")
+
+    assert not (prefix / "runtime" / "restart-intent.json").exists()
+
+
+def test_request_runtime_restart_rejects_stale_update_state(tmp_path):
+    prefix = tmp_path / "zermes"
+    release = _make_release(prefix, "source-install")
+    _write_json(prefix / "runtime" / "active.json", _release_payload(release))
+    write_runtime_update_state(
+        prefix,
+        RuntimeUpdateState(status="activated", release_id="other-release"),
+    )
+
+    with pytest.raises(RuntimeUpdateError, match="does not match the active release"):
+        request_runtime_restart(prefix, mode="cli", approval_text="approved")
 
 
 def test_promote_candidate_to_release_moves_candidate_and_writes_metadata(tmp_path):

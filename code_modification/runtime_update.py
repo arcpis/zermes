@@ -33,6 +33,7 @@ ACTIVE_STATE_FILE = "active.json"
 PREVIOUS_STATE_FILE = "previous.json"
 UPDATE_STATE_FILE = "update-state.json"
 UPDATE_LOCK_FILE = "update.lock"
+RESTART_INTENT_FILE = "restart-intent.json"
 CANDIDATES_DIR_NAME = "candidates"
 RELEASES_DIR_NAME = "releases"
 RUNTIME_SCHEMA_VERSION = 1
@@ -54,6 +55,7 @@ class RuntimePaths:
     previous_path: Path
     update_state_path: Path
     update_lock_path: Path
+    restart_intent_path: Path
     candidates_dir: Path
     releases_dir: Path
 
@@ -112,6 +114,25 @@ class RuntimeUpdateState:
 
 
 @dataclass(frozen=True)
+class RuntimeRestartIntent:
+    """A governed request for a launcher-managed runtime restart."""
+
+    status: str
+    mode: str
+    release_id: str
+    active_release_digest: str
+    task_id: str = ""
+    requested_by: str = "model"
+    approved_by_user: bool = False
+    argv: tuple[str, ...] = ()
+    cwd: str = ""
+    profile_home: str = ""
+    reason: str = ""
+    created_at: str = ""
+    schema_version: int = RUNTIME_SCHEMA_VERSION
+
+
+@dataclass(frozen=True)
 class RuntimeHealthCheckResult:
     """Result from one allow-listed candidate health check."""
 
@@ -161,6 +182,7 @@ def resolve_runtime_paths(prefix: str | Path) -> RuntimePaths:
         previous_path=runtime_dir / PREVIOUS_STATE_FILE,
         update_state_path=runtime_dir / UPDATE_STATE_FILE,
         update_lock_path=runtime_dir / UPDATE_LOCK_FILE,
+        restart_intent_path=runtime_dir / RESTART_INTENT_FILE,
         candidates_dir=runtime_dir / CANDIDATES_DIR_NAME,
         releases_dir=runtime_dir / RELEASES_DIR_NAME,
     )
@@ -215,6 +237,59 @@ def read_active_release_digest(prefix: str | Path) -> str:
     """Return a stable digest of the current active.json payload."""
     paths = resolve_runtime_paths(prefix)
     return _json_payload_digest(_read_json(paths.active_path))
+
+
+def read_runtime_restart_intent(prefix: str | Path) -> RuntimeRestartIntent | None:
+    """Read the pending restart intent if one has been requested."""
+    paths = resolve_runtime_paths(prefix)
+    if not paths.restart_intent_path.exists():
+        return None
+    return _read_restart_intent(paths.restart_intent_path)
+
+
+def request_runtime_restart(
+    prefix: str | Path,
+    *,
+    mode: str,
+    approval_text: str,
+    task_id: str = "",
+    argv: list[str] | tuple[str, ...] | None = None,
+    cwd: str | Path | None = None,
+    profile_home: str | Path | None = None,
+    reason: str = "",
+) -> RuntimeRestartIntent:
+    """Record a governed restart request for the current active release.
+
+    The function does not restart anything. It only creates a durable intent
+    that a launcher or explicit CLI command can consume after the model has
+    selected restart and the user has approved it.
+    """
+    if not str(approval_text or "").strip():
+        raise RuntimeUpdateError("explicit restart approval is required")
+    clean_mode = _normalize_restart_mode(mode)
+    paths = resolve_runtime_paths(prefix)
+    active = read_active_release(paths.prefix)
+    update_state = read_runtime_update_state(paths.prefix)
+    if update_state is None or update_state.status not in {"activated", "rolled_back"}:
+        raise RuntimeUpdateError("runtime restart requires an activated or rolled_back update state")
+    if update_state.release_id and update_state.release_id != active.release_id:
+        raise RuntimeUpdateError("runtime restart intent does not match the active release")
+    active_digest = read_active_release_digest(paths.prefix)
+    intent = RuntimeRestartIntent(
+        status="requested",
+        mode=clean_mode,
+        release_id=active.release_id,
+        active_release_digest=active_digest,
+        task_id=str(task_id or update_state.task_id or "").strip(),
+        approved_by_user=True,
+        argv=_clean_restart_argv(argv),
+        cwd=str(Path(cwd).expanduser().resolve()) if cwd else "",
+        profile_home=str(Path(profile_home).expanduser().resolve()) if profile_home else "",
+        reason=str(reason or "").strip(),
+        created_at=_utc_timestamp(),
+    )
+    _atomic_write_json(paths.restart_intent_path, _restart_intent_to_payload(intent))
+    return intent
 
 
 def write_runtime_update_state(prefix: str | Path, state: RuntimeUpdateState) -> None:
@@ -707,6 +782,25 @@ def _read_update_state(path: Path) -> RuntimeUpdateState:
     )
 
 
+def _read_restart_intent(path: Path) -> RuntimeRestartIntent:
+    payload = _read_json(path)
+    return RuntimeRestartIntent(
+        status=str(payload.get("status") or "").strip(),
+        mode=str(payload.get("mode") or "").strip(),
+        release_id=str(payload.get("release_id") or "").strip(),
+        active_release_digest=str(payload.get("active_release_digest") or "").strip(),
+        task_id=str(payload.get("task_id") or "").strip(),
+        requested_by=str(payload.get("requested_by") or "model").strip(),
+        approved_by_user=bool(payload.get("approved_by_user", False)),
+        argv=tuple(str(item) for item in payload.get("argv") or ()),
+        cwd=str(payload.get("cwd") or "").strip(),
+        profile_home=str(payload.get("profile_home") or "").strip(),
+        reason=str(payload.get("reason") or "").strip(),
+        created_at=str(payload.get("created_at") or "").strip(),
+        schema_version=int(payload.get("schema_version") or RUNTIME_SCHEMA_VERSION),
+    )
+
+
 def _read_candidate(candidate_root: Path) -> RuntimeCandidate:
     metadata = _read_json(candidate_root / "metadata.json")
     candidate_id = str(metadata.get("candidate_id") or candidate_root.name).strip()
@@ -771,6 +865,12 @@ def _state_to_payload(state: RuntimeUpdateState) -> dict[str, Any]:
     payload = asdict(state)
     payload["steps"] = list(state.steps)
     payload["health_checks"] = list(state.health_checks)
+    return payload
+
+
+def _restart_intent_to_payload(intent: RuntimeRestartIntent) -> dict[str, Any]:
+    payload = asdict(intent)
+    payload["argv"] = list(intent.argv)
     return payload
 
 
@@ -958,6 +1058,22 @@ def _record_runtime_release_state(
 
 def _clean_health_checks(health_checks: list[str]) -> tuple[str, ...]:
     return tuple(str(check).strip() for check in health_checks if str(check).strip())
+
+
+def _normalize_restart_mode(mode: str) -> str:
+    clean_mode = str(mode or "").strip().lower()
+    if clean_mode not in {"cli", "gateway", "cron", "manual"}:
+        raise RuntimeUpdateError("restart mode must be cli, gateway, cron, or manual")
+    return clean_mode
+
+
+def _clean_restart_argv(argv: list[str] | tuple[str, ...] | None) -> tuple[str, ...]:
+    if not argv:
+        return ()
+    clean = tuple(str(item).strip() for item in argv if str(item).strip())
+    if any("\x00" in item for item in clean):
+        raise RuntimeUpdateError("restart argv must not contain NUL bytes")
+    return clean
 
 
 def _normalize_health_check_names(checks: list[str] | None) -> tuple[str, ...]:
