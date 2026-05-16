@@ -895,18 +895,38 @@ def write_release_metadata(plan: InstallerPlan, *, now: datetime | None = None) 
 
 
 def posix_launcher_text(plan: InstallerPlan) -> str:
+    launcher_path = Path(plan.prefix) / "launcher" / "zermes_launcher.py"
     return (
         "#!/usr/bin/env sh\n"
-        f"export HERMES_HOME=\"{plan.data_dir}\"\n"
-        f"exec \"{plan.python_path}\" -m hermes_cli.main \"$@\"\n"
+        f"export ZERMES_INSTALL_PREFIX=\"{plan.prefix}\"\n"
+        f"exec \"{plan.python_path}\" \"{launcher_path}\" cli \"$@\"\n"
+    )
+
+
+def posix_gateway_launcher_text(plan: InstallerPlan) -> str:
+    launcher_path = Path(plan.prefix) / "launcher" / "zermes_launcher.py"
+    return (
+        "#!/usr/bin/env sh\n"
+        f"export ZERMES_INSTALL_PREFIX=\"{plan.prefix}\"\n"
+        f"exec \"{plan.python_path}\" \"{launcher_path}\" gateway \"$@\"\n"
     )
 
 
 def windows_launcher_text(plan: InstallerPlan) -> str:
+    launcher_path = Path(plan.prefix) / "launcher" / "zermes_launcher.py"
     return (
         "@echo off\r\n"
-        f"set HERMES_HOME={plan.data_dir}\r\n"
-        f"\"{plan.python_path}\" -m hermes_cli.main %*\r\n"
+        f"set ZERMES_INSTALL_PREFIX={plan.prefix}\r\n"
+        f"\"{plan.python_path}\" \"{launcher_path}\" cli %*\r\n"
+    )
+
+
+def windows_gateway_launcher_text(plan: InstallerPlan) -> str:
+    launcher_path = Path(plan.prefix) / "launcher" / "zermes_launcher.py"
+    return (
+        "@echo off\r\n"
+        f"set ZERMES_INSTALL_PREFIX={plan.prefix}\r\n"
+        f"\"{plan.python_path}\" \"{launcher_path}\" gateway %*\r\n"
     )
 
 
@@ -918,15 +938,27 @@ def create_launcher_scripts(
 ) -> tuple[Path, ...]:
     if not create_launchers:
         return ()
+    launcher_source = Path(plan.repo_root) / "launcher" / "zermes_launcher.py"
+    launcher_path = Path(plan.prefix) / "launcher" / "zermes_launcher.py"
     posix_path = Path(plan.bin_dir) / "zermes"
+    posix_gateway_path = Path(plan.bin_dir) / "zermes-gateway"
     windows_path = Path(plan.bin_dir) / "zermes.bat"
+    windows_gateway_path = Path(plan.bin_dir) / "zermes-gateway.bat"
     if dry_run:
-        return (posix_path, windows_path)
+        return (launcher_path, posix_path, posix_gateway_path, windows_path, windows_gateway_path)
+    if not launcher_source.exists():
+        raise ValueError(f"launcher source does not exist: {launcher_source}")
+    launcher_path.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(launcher_source, launcher_path)
+    launcher_path.chmod(0o755)
     posix_path.parent.mkdir(parents=True, exist_ok=True)
     posix_path.write_text(posix_launcher_text(plan), encoding="utf-8")
+    posix_gateway_path.write_text(posix_gateway_launcher_text(plan), encoding="utf-8")
     windows_path.write_text(windows_launcher_text(plan), encoding="utf-8")
+    windows_gateway_path.write_text(windows_gateway_launcher_text(plan), encoding="utf-8")
     posix_path.chmod(0o755)
-    return (posix_path, windows_path)
+    posix_gateway_path.chmod(0o755)
+    return (launcher_path, posix_path, posix_gateway_path, windows_path, windows_gateway_path)
 
 
 def verification_commands(
