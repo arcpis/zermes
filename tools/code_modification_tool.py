@@ -23,6 +23,7 @@ from code_modification.self_update import (
     SelfUpdateApplicationError,
     activate_self_update,
     describe_self_update_application,
+    mirror_runtime_update_audit,
     plan_self_update_application,
     prepare_self_update,
     record_self_update_build,
@@ -532,6 +533,14 @@ def _run_locked_runtime_update_action(
             task_id=task_id,
             old_release_id=expected_old_release_id,
         )
+        audit = _mirror_runtime_update_audit(
+            task_id,
+            project_root=root,
+            install_prefix=install_prefix,
+            runtime_status="source_synced",
+            candidate_commit=candidate.candidate_commit,
+            worktree_path=candidate.source_path,
+        )
         return tool_result(
             success=True,
             action=action,
@@ -547,6 +556,7 @@ def _run_locked_runtime_update_action(
                 / candidate.candidate_id
                 / "metadata.json"
             ),
+            **audit,
         )
     if action == "runtime_verify":
         state = mark_candidate_verified(
@@ -554,7 +564,16 @@ def _run_locked_runtime_update_action(
             candidate_id,
             health_checks=health_checks,
         )
-        return _runtime_state_result(state, action=action)
+        audit = _mirror_runtime_update_audit(
+            task_id,
+            project_root=project_root,
+            install_prefix=install_prefix,
+            runtime_status=state.status,
+            candidate_commit=state.candidate_commit,
+            health_checks=tuple(state.health_checks),
+            blocked_reason=state.error,
+        )
+        return _runtime_state_result(state, action=action, **audit)
     if action == "runtime_prepare_env":
         state, results = prepare_candidate_environment(
             install_prefix,
@@ -562,10 +581,21 @@ def _run_locked_runtime_update_action(
             install_editable=bool(install_editable),
             python_path=python_path,
         )
+        audit = _mirror_runtime_update_audit(
+            task_id,
+            project_root=project_root,
+            install_prefix=install_prefix,
+            runtime_status=state.status,
+            candidate_commit=state.candidate_commit,
+            build_summary=", ".join(_runtime_command_result_summary(result) for result in results),
+            health_checks=tuple(state.health_checks),
+            blocked_reason=state.error,
+        )
         return _runtime_state_result(
             state,
             action=action,
             command_results=[_runtime_command_result_payload(result) for result in results],
+            **audit,
         )
     if action == "runtime_run_health":
         state, results = run_candidate_health_checks(
@@ -574,10 +604,20 @@ def _run_locked_runtime_update_action(
             checks=health_checks,
             python_path=python_path,
         )
+        audit = _mirror_runtime_update_audit(
+            task_id,
+            project_root=project_root,
+            install_prefix=install_prefix,
+            runtime_status=state.status,
+            candidate_commit=state.candidate_commit,
+            health_checks=tuple(state.health_checks),
+            blocked_reason=state.error,
+        )
         return _runtime_state_result(
             state,
             action=action,
             health_results=[_runtime_health_result_payload(result) for result in results],
+            **audit,
         )
     if action == "runtime_block":
         state = mark_candidate_blocked(
@@ -586,10 +626,26 @@ def _run_locked_runtime_update_action(
             reason=reason,
             health_checks=health_checks,
         )
-        return _runtime_state_result(state, action=action)
+        audit = _mirror_runtime_update_audit(
+            task_id,
+            project_root=project_root,
+            install_prefix=install_prefix,
+            runtime_status=state.status,
+            candidate_commit=state.candidate_commit,
+            health_checks=tuple(state.health_checks),
+            blocked_reason=state.error,
+        )
+        return _runtime_state_result(state, action=action, **audit)
     if action == "runtime_promote":
         release = promote_candidate_to_release(install_prefix, candidate_id, release_id)
-        return _runtime_release_result(release, action=action, task_id=task_id)
+        audit = _mirror_runtime_update_audit(
+            task_id,
+            project_root=project_root or release.source_repo,
+            install_prefix=install_prefix,
+            runtime_status="promoted",
+            candidate_commit=release.candidate_commit,
+        )
+        return _runtime_release_result(release, action=action, task_id=task_id, **audit)
     if action == "runtime_activate":
         require_explicit_approval(approval_text)
         release = read_runtime_release(install_prefix, release_id)
@@ -605,7 +661,15 @@ def _run_locked_runtime_update_action(
             task_id=task_id,
             old_release_id=expected_old_release_id,
         )
-        return _runtime_release_result(activated, action=action, task_id=task_id)
+        audit = _mirror_runtime_update_audit(
+            task_id,
+            project_root=project_root or activated.source_repo,
+            install_prefix=install_prefix,
+            runtime_status="activated",
+            candidate_commit=activated.candidate_commit,
+            approved_by_user=True,
+        )
+        return _runtime_release_result(activated, action=action, task_id=task_id, **audit)
     if action == "runtime_rollback":
         require_explicit_approval(approval_text)
         release = rollback_active_release(install_prefix)
@@ -616,7 +680,16 @@ def _run_locked_runtime_update_action(
             task_id=task_id,
             old_release_id=release_id,
         )
-        return _runtime_release_result(release, action=action, task_id=task_id)
+        audit = _mirror_runtime_update_audit(
+            task_id,
+            project_root=project_root or release.source_repo,
+            install_prefix=install_prefix,
+            runtime_status="rolled_back",
+            candidate_commit=release.candidate_commit,
+            blocked_reason=reason,
+            approved_by_user=True,
+        )
+        return _runtime_release_result(release, action=action, task_id=task_id, **audit)
     return tool_error(
         "runtime action must be one of runtime_prepare, runtime_verify, "
         "runtime_prepare_env, runtime_run_health, runtime_status, "
@@ -814,6 +887,56 @@ def _runtime_update_payload(state) -> dict:
     }
 
 
+def _mirror_runtime_update_audit(
+    task_id: str,
+    *,
+    project_root: str | Path | None,
+    install_prefix: str,
+    runtime_status: str,
+    candidate_commit: str = "",
+    worktree_path: str = "",
+    build_summary: str = "",
+    health_checks: tuple[str, ...] = (),
+    blocked_reason: str = "",
+    approved_by_user: bool = False,
+) -> dict:
+    try:
+        root = (
+            _resolve_tool_project_root(str(project_root), install_prefix)
+            if project_root
+            else resolve_self_evolution_project_root(
+                explicit_project_root=None,
+                install_prefix=install_prefix,
+                allow_cwd=False,
+            )
+        )
+        state = mirror_runtime_update_audit(
+            task_id,
+            project_root=root,
+            runtime_status=runtime_status,
+            candidate_commit=candidate_commit,
+            worktree_path=worktree_path,
+            build_summary=build_summary,
+            health_checks=health_checks,
+            blocked_reason=blocked_reason,
+            approved_by_user=approved_by_user,
+        )
+    except (
+        GitWorkflowError,
+        ProjectRootResolutionError,
+        SelfUpdateApplicationError,
+    ) as exc:
+        return {"audit_mirror_error": str(exc)}
+    if state is None:
+        return {}
+    task_dir = Path(state.project_root).parent / "self-evolution" / "tasks" / state.task_id
+    return {
+        "audit_status": state.status,
+        "audit_update_application_path": str(task_dir / "update-application.md"),
+        "audit_update_state_path": str(task_dir / "update-state.json"),
+    }
+
+
 def _runtime_health_result_payload(result) -> dict:
     return {
         "name": result.name,
@@ -834,6 +957,10 @@ def _runtime_command_result_payload(result) -> dict:
         "stderr_summary": result.stderr_summary,
         "status": result.status,
     }
+
+
+def _runtime_command_result_summary(result) -> str:
+    return f"{result.name}: {result.status}"
 
 
 def _append_runtime_step(steps: tuple[str, ...], step: str) -> tuple[str, ...]:

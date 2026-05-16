@@ -3,7 +3,8 @@ import os
 from pathlib import Path
 
 from code_modification.approval import build_approval_plan, write_approval_documents
-from code_modification.executor import commit_task_step, start_approved_task
+from code_modification.executor import ExecutionState, commit_task_step, start_approved_task, write_state
+from code_modification.governance import build_task_record_layout
 from tools.code_modification_tool import (
     COMMIT_CODE_TASK_STEP_SCHEMA,
     COMPLETE_CODE_TASK_SCHEMA,
@@ -254,6 +255,103 @@ def test_self_update_application_runtime_actions_manage_release_switch(tmp_path)
     ] == "source-install"
 
 
+def test_self_update_application_runtime_actions_mirror_audit_state(tmp_path):
+    project_root = tmp_path / "hermes-agent"
+    _make_project_repo(project_root)
+    task_id = "20260516-030000-runtime-audit"
+    _write_integrated_state(project_root, task_id)
+    prefix = tmp_path / "zermes"
+    _make_runtime_release(prefix, "source-install", project_root)
+    candidate_id = "update-20260516-030000-abcdef0"
+    release_id = "release-abcdef0"
+
+    prepared = json.loads(
+        self_update_application(
+            "runtime_prepare",
+            task_id,
+            project_root=str(project_root),
+            install_prefix=str(prefix),
+            candidate_id=candidate_id,
+            candidate_ref="HEAD",
+            expected_old_release_id="source-install",
+        )
+    )
+    verified = json.loads(
+        self_update_application(
+            "runtime_run_health",
+            task_id,
+            install_prefix=str(prefix),
+            candidate_id=candidate_id,
+            health_checks=["python_version", "cli_help"],
+        )
+    )
+    promoted = json.loads(
+        self_update_application(
+            "runtime_promote",
+            task_id,
+            install_prefix=str(prefix),
+            candidate_id=candidate_id,
+            release_id=release_id,
+        )
+    )
+    activated = json.loads(
+        self_update_application(
+            "runtime_activate",
+            task_id,
+            install_prefix=str(prefix),
+            release_id=release_id,
+            approval_text="approved",
+            expected_old_release_id="source-install",
+        )
+    )
+    rolled_back = json.loads(
+        self_update_application(
+            "runtime_rollback",
+            task_id,
+            install_prefix=str(prefix),
+            approval_text="approved",
+            reason="test rollback",
+        )
+    )
+
+    layout = build_task_record_layout(project_root, task_id)
+    audit_payload = json.loads((layout.task_dir / "update-state.json").read_text(encoding="utf-8"))
+    audit_report = (layout.task_dir / "update-application.md").read_text(encoding="utf-8")
+    assert prepared["audit_status"] == "prepared"
+    assert verified["audit_status"] == "verified"
+    assert promoted["audit_status"] == "verified"
+    assert activated["audit_status"] == "restart_pending"
+    assert rolled_back["audit_status"] == "rolled_back"
+    assert audit_payload["status"] == "rolled_back"
+    assert audit_payload["restart_required"] is True
+    assert "Runtime release was activated" in audit_report
+    assert "Runtime rollback restored" in audit_report
+
+
+def test_self_update_application_runtime_prepare_does_not_require_audit_task(tmp_path):
+    project_root = tmp_path / "hermes-agent"
+    _make_project_repo(project_root)
+    prefix = tmp_path / "zermes"
+    _make_runtime_release(prefix, "source-install", project_root)
+    candidate_id = "update-20260516-040000-no-audit"
+
+    result = json.loads(
+        self_update_application(
+            "runtime_prepare",
+            "20260516-040000-no-audit",
+            project_root=str(project_root),
+            install_prefix=str(prefix),
+            candidate_id=candidate_id,
+            candidate_ref="HEAD",
+        )
+    )
+
+    assert result["success"] is True
+    assert result["candidate_id"] == candidate_id
+    assert "audit_status" not in result
+    assert not (project_root.parent / "self-evolution" / "tasks" / "20260516-040000-no-audit").exists()
+
+
 def test_self_update_application_runtime_run_health_can_verify_candidate(tmp_path):
     project_root = tmp_path / "hermes-agent"
     _make_project_repo(project_root)
@@ -432,6 +530,19 @@ def _make_project_repo(repo):
     _init_git_repo(repo)
 
 
+def _write_integrated_state(project_root, task_id):
+    layout = build_task_record_layout(project_root, task_id)
+    state = ExecutionState(
+        task_id=layout.task_id,
+        status="integrated",
+        project_root=str(project_root),
+        base_branch="main",
+        base_commit=_git_commit(project_root),
+        development_branch=f"self-evolution/dev/{task_id}",
+    )
+    write_state(layout.task_dir / "execution-state.json", state)
+
+
 def _init_git_repo(repo):
     import subprocess
 
@@ -464,6 +575,18 @@ def _init_git_repo(repo):
         text=True,
     )
     subprocess.run(["git", "switch", "-c", "main"], cwd=repo, check=True, capture_output=True, text=True)
+
+
+def _git_commit(repo):
+    import subprocess
+
+    return subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
 
 
 def _write_project_markers(repo):

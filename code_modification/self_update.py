@@ -237,6 +237,97 @@ def rollback_self_update(
     return updated
 
 
+def mirror_runtime_update_audit(
+    task_id: str,
+    *,
+    project_root: str | Path,
+    runtime_status: str,
+    candidate_commit: str = "",
+    worktree_path: str = "",
+    build_summary: str = "",
+    health_checks: tuple[str, ...] = (),
+    blocked_reason: str = "",
+    approved_by_user: bool = False,
+    mode: str = "manual",
+) -> SelfUpdateApplicationState | None:
+    """Mirror runtime update progress into the source-repo audit record.
+
+    Runtime update actions mutate the installation prefix, but requirement 9
+    also expects the source task audit to track the same prepare, verify,
+    activate, and rollback story. If the task has not been finalized into an
+    integrated state yet, there is no valid application audit to write, so this
+    returns None instead of blocking the runtime operation.
+    """
+    root = require_git_repository(project_root)
+    layout = build_task_record_layout(root, task_id)
+    state = _read_or_create_runtime_audit_state(
+        layout.task_dir,
+        layout.task_id,
+        root,
+        runtime_status=runtime_status,
+        candidate_commit=candidate_commit,
+        worktree_path=worktree_path,
+        mode=mode,
+    )
+    if state is None:
+        return None
+
+    clean_status = str(runtime_status or "").strip()
+    clean_checks = tuple(str(check).strip() for check in health_checks if str(check).strip())
+    clean_build = str(build_summary or "").strip()
+    clean_blocked_reason = str(blocked_reason or "").strip()
+    if clean_status in {"source_synced", "env_prepared"}:
+        updated = _replace_state(
+            state,
+            status="prepared" if clean_status == "source_synced" else "built",
+            approved_by_user=True if clean_status == "source_synced" else None,
+            worktree_path=worktree_path or None,
+            build_commands=(clean_build,) if clean_build else None,
+            event=_runtime_audit_event(clean_status),
+        )
+    elif clean_status == "verified":
+        updated = _replace_state(
+            state,
+            status="verified",
+            health_checks=clean_checks or state.health_checks,
+            blocked_reason="",
+            event=_runtime_audit_event(clean_status),
+        )
+    elif clean_status == "blocked":
+        updated = _replace_state(
+            state,
+            status="blocked",
+            health_checks=clean_checks or state.health_checks,
+            blocked_reason=clean_blocked_reason or "runtime update blocked",
+            event=_runtime_audit_event(clean_status),
+        )
+    elif clean_status in {"promoted", "activated"}:
+        updated = _replace_state(
+            state,
+            status="restart_pending" if clean_status == "activated" else state.status,
+            approved_by_user=approved_by_user if clean_status == "activated" else None,
+            restart_required=True if clean_status == "activated" else None,
+            event=_runtime_audit_event(clean_status),
+        )
+    elif clean_status == "rolled_back":
+        updated = _replace_state(
+            state,
+            status="rolled_back",
+            approved_by_user=approved_by_user,
+            restart_required=True,
+            blocked_reason=clean_blocked_reason,
+            event=_runtime_audit_event(clean_status),
+        )
+    else:
+        updated = _replace_state(
+            state,
+            status=state.status,
+            event=_runtime_audit_event(clean_status or "runtime_update"),
+        )
+    _write_update_records(layout.task_dir, updated)
+    return updated
+
+
 def describe_self_update_application(task_id: str, *, project_root: str | Path) -> dict:
     """Return self-update application audit paths and state."""
     root = require_git_repository(project_root)
@@ -306,6 +397,49 @@ def _read_update_state(task_dir: Path) -> SelfUpdateApplicationState:
         restart_required=bool(payload.get("restart_required", False)),
         history=history,
     )
+
+
+def _read_or_create_runtime_audit_state(
+    task_dir: Path,
+    task_id: str,
+    project_root: Path,
+    *,
+    runtime_status: str,
+    candidate_commit: str,
+    worktree_path: str,
+    mode: str,
+) -> SelfUpdateApplicationState | None:
+    if (task_dir / UPDATE_STATE_FILE_NAME).exists():
+        return _read_update_state(task_dir)
+    state_path = task_dir / STATE_FILE_NAME
+    if not state_path.exists():
+        return None
+    execution_state = _require_integrated_task(state_path)
+    previous_commit = current_commit(project_root)
+    clean_mode = _normalize_mode(mode)
+    state = SelfUpdateApplicationState(
+        task_id=task_id,
+        status="planned",
+        project_root=str(project_root),
+        mode=clean_mode,
+        candidate_commit=str(candidate_commit or execution_state.base_commit or previous_commit),
+        previous_active_commit=previous_commit,
+        worktree_path=str(worktree_path or ""),
+        restart_command=_restart_guidance(clean_mode),
+        rollback_command=f"restore previous active commit {previous_commit}",
+        history=(
+            UpdateEvent(
+                status="planned",
+                message=(
+                    "Runtime self-update audit created from installation-prefix "
+                    f"state while handling `{runtime_status}`."
+                ),
+                created_at=_utc_timestamp(),
+            ),
+        ),
+    )
+    _write_update_records(task_dir, state)
+    return state
 
 
 def _write_update_records(task_dir: Path, state: SelfUpdateApplicationState) -> None:
@@ -405,6 +539,19 @@ def _restart_guidance(mode: str) -> str:
     if mode == "cron":
         return "pause scheduled jobs, activate the candidate, then resume scheduling"
     return "manual restart required after activation approval"
+
+
+def _runtime_audit_event(status: str) -> str:
+    messages = {
+        "source_synced": "Runtime candidate source was prepared in the installation prefix.",
+        "env_prepared": "Runtime candidate environment/build preparation completed.",
+        "verified": "Runtime candidate health checks passed.",
+        "blocked": "Runtime candidate was blocked; active runtime was not changed.",
+        "promoted": "Runtime candidate was promoted to a release.",
+        "activated": "Runtime release was activated; restart remains pending.",
+        "rolled_back": "Runtime rollback restored the previous active release.",
+    }
+    return messages.get(status, f"Runtime update status recorded: {status}.")
 
 
 def _utc_timestamp() -> str:
