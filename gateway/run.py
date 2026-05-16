@@ -3006,6 +3006,107 @@ class GatewayRunner:
                 start_new_session=True,
             )
 
+    @staticmethod
+    def _runtime_restart_intent_path() -> Optional[Path]:
+        """Return the managed-install restart intent path for this process."""
+        prefix = os.environ.get("ZERMES_INSTALL_PREFIX")
+        if not prefix:
+            return None
+        try:
+            return Path(prefix).expanduser().resolve() / "runtime" / "restart-intent.json"
+        except (OSError, RuntimeError):
+            return None
+
+    def _has_gateway_runtime_restart_intent(self) -> bool:
+        """Return True when a governed restart intent targets this gateway.
+
+        Full policy validation stays in the stable launcher.  The gateway only
+        needs to know whether it should start its existing drain-aware restart
+        path after the current response has been delivered.
+        """
+        intent_path = self._runtime_restart_intent_path()
+        if intent_path is None or not intent_path.exists():
+            return False
+        try:
+            payload = json.loads(intent_path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+            return False
+        if not isinstance(payload, dict):
+            return False
+        return (
+            payload.get("status") == "requested"
+            and str(payload.get("mode") or "").strip().lower() == "gateway"
+        )
+
+    def _write_runtime_restart_notify_source(self, source: SessionSource) -> None:
+        """Record where the post-restart gateway notification should go."""
+        try:
+            notify_data = {
+                "platform": source.platform.value if source.platform else None,
+                "chat_id": source.chat_id,
+            }
+            if source.thread_id:
+                notify_data["thread_id"] = source.thread_id
+            atomic_json_write(
+                _hermes_home / ".restart_notify.json",
+                notify_data,
+                indent=None,
+            )
+        except Exception as exc:
+            logger.debug("Failed to write runtime restart notify file: %s", exc)
+
+    def _request_runtime_restart_intent_after_delivery(
+        self,
+        *,
+        source: SessionSource,
+        session_key: str,
+        run_generation: Optional[int],
+    ) -> bool:
+        """Schedule drain-aware gateway restart after platform delivery.
+
+        The callback is registered on the adapter's post-delivery hook so the
+        user receives the model's final update before the gateway begins
+        draining and replacing itself.
+        """
+        if self._restart_requested or self._draining:
+            return False
+        if not self._has_gateway_runtime_restart_intent():
+            return False
+
+        adapter = self.adapters.get(source.platform) if source else None
+
+        def _request_restart() -> None:
+            if self._restart_requested or self._draining:
+                return
+            self._write_runtime_restart_notify_source(source)
+            under_service = bool(os.environ.get("INVOCATION_ID"))
+            logger.info(
+                "Runtime restart intent detected; restarting gateway after delivery "
+                "(service=%s)",
+                under_service,
+            )
+            if under_service:
+                self.request_restart(detached=False, via_service=True)
+            else:
+                self.request_restart(detached=True, via_service=False)
+
+        if adapter and hasattr(adapter, "register_post_delivery_callback") and session_key:
+            try:
+                adapter.register_post_delivery_callback(
+                    session_key,
+                    _request_restart,
+                    generation=run_generation,
+                )
+                return True
+            except Exception as exc:
+                logger.debug(
+                    "Runtime restart post-delivery registration failed: %s",
+                    exc,
+                )
+
+        _request_restart()
+        return True
+
     def request_restart(self, *, detached: bool = False, via_service: bool = False) -> bool:
         if self._restart_task_started:
             return False
@@ -6055,6 +6156,14 @@ class GatewayRunner:
                         )
             except Exception as _goal_exc:
                 logger.debug("goal continuation hook failed: %s", _goal_exc)
+            try:
+                self._request_runtime_restart_intent_after_delivery(
+                    source=source,
+                    session_key=_quick_key,
+                    run_generation=_run_generation,
+                )
+            except Exception as _restart_exc:
+                logger.debug("runtime restart intent hook failed: %s", _restart_exc)
             return _agent_result
         finally:
             # If _run_agent replaced the sentinel with a real agent and

@@ -1,4 +1,5 @@
 import asyncio
+import json
 import shutil
 import subprocess
 from datetime import datetime
@@ -147,6 +148,60 @@ async def test_request_restart_is_idempotent():
     runner.stop.assert_awaited_once_with(
         restart=True, detached_restart=True, service_restart=False
     )
+
+
+def test_gateway_runtime_restart_intent_ignores_non_gateway_modes(monkeypatch, tmp_path):
+    runner, _adapter = make_restart_runner()
+    prefix = tmp_path / "install"
+    intent_path = prefix / "runtime" / "restart-intent.json"
+    intent_path.parent.mkdir(parents=True)
+    intent_path.write_text(
+        json.dumps({"status": "requested", "mode": "cli"}),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("ZERMES_INSTALL_PREFIX", str(prefix))
+
+    assert runner._has_gateway_runtime_restart_intent() is False
+
+
+def test_gateway_runtime_restart_intent_registers_after_delivery_callback(
+    monkeypatch, tmp_path
+):
+    monkeypatch.delenv("INVOCATION_ID", raising=False)
+    monkeypatch.setattr(gateway_run, "_hermes_home", tmp_path / "home")
+    runner, adapter = make_restart_runner()
+    runner.request_restart = MagicMock(return_value=True)
+    source = make_restart_source(chat_id="42", thread_id="topic-7")
+    session_key = build_session_key(source)
+    prefix = tmp_path / "install"
+    intent_path = prefix / "runtime" / "restart-intent.json"
+    intent_path.parent.mkdir(parents=True)
+    intent_path.write_text(
+        json.dumps({"status": "requested", "mode": "gateway"}),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("ZERMES_INSTALL_PREFIX", str(prefix))
+
+    assert runner._request_runtime_restart_intent_after_delivery(
+        source=source,
+        session_key=session_key,
+        run_generation=12,
+    ) is True
+    runner.request_restart.assert_not_called()
+
+    callback = adapter.pop_post_delivery_callback(session_key, generation=12)
+    assert callable(callback)
+    callback()
+
+    runner.request_restart.assert_called_once_with(detached=True, via_service=False)
+    notify = json.loads(
+        (tmp_path / "home" / ".restart_notify.json").read_text(encoding="utf-8")
+    )
+    assert notify == {
+        "platform": "telegram",
+        "chat_id": "42",
+        "thread_id": "topic-7",
+    }
 
 
 @pytest.mark.asyncio
