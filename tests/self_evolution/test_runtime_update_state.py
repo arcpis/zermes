@@ -21,6 +21,7 @@ from code_modification.runtime_update import (
     prepare_candidate_environment,
     prepare_candidate_source,
     promote_candidate_to_release,
+    read_active_release_digest,
     read_active_release,
     read_previous_release,
     release_runtime_update_lock,
@@ -389,6 +390,44 @@ def test_activate_release_rejects_stale_expected_active(tmp_path):
 
     with pytest.raises(RuntimeUpdateError, match="active release changed"):
         activate_release(prefix, new_release, expected_old_release_id="other-release")
+
+
+def test_activate_release_rejects_stale_active_digest(tmp_path):
+    prefix = tmp_path / "zermes"
+    old_release = _make_release(prefix, "source-install", commit="1111111")
+    new_release = _make_release(prefix, "update-20260510-120000-2222222", commit="2222222")
+    _write_json(prefix / "runtime" / "active.json", _release_payload(old_release))
+    expected_digest = read_active_release_digest(prefix)
+    active_payload = _read_json(prefix / "runtime" / "active.json")
+    active_payload["candidate_commit"] = "changed-after-plan"
+    _write_json(prefix / "runtime" / "active.json", active_payload)
+
+    with pytest.raises(RuntimeUpdateError, match="active release metadata changed"):
+        activate_release(
+            prefix,
+            new_release,
+            expected_old_release_id="source-install",
+            expected_old_active_digest=expected_digest,
+        )
+
+    assert read_active_release(prefix).candidate_commit == "changed-after-plan"
+    assert not (prefix / "runtime" / "previous.json").exists()
+
+
+def test_activate_release_accepts_matching_active_digest(tmp_path):
+    prefix = tmp_path / "zermes"
+    old_release = _make_release(prefix, "source-install", commit="1111111")
+    new_release = _make_release(prefix, "update-20260510-120000-2222222", commit="2222222")
+    _write_json(prefix / "runtime" / "active.json", _release_payload(old_release))
+
+    activated = activate_release(
+        prefix,
+        new_release,
+        expected_old_release_id="source-install",
+        expected_old_active_digest=read_active_release_digest(prefix),
+    )
+
+    assert activated.release_id == new_release.release_id
 
 
 def test_rollback_restores_previous_without_deleting_releases(tmp_path):

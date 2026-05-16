@@ -328,6 +328,72 @@ def test_self_update_application_runtime_actions_mirror_audit_state(tmp_path):
     assert "Runtime rollback restored" in audit_report
 
 
+def test_self_update_application_runtime_activate_rejects_stale_active_digest(tmp_path):
+    project_root = tmp_path / "hermes-agent"
+    _make_project_repo(project_root)
+    prefix = tmp_path / "zermes"
+    _make_runtime_release(prefix, "source-install", project_root)
+    candidate_id = "update-20260516-035000-digest"
+    release_id = "release-digest"
+
+    json.loads(
+        self_update_application(
+            "runtime_prepare",
+            "20260516-035000-digest",
+            project_root=str(project_root),
+            install_prefix=str(prefix),
+            candidate_id=candidate_id,
+            candidate_ref="HEAD",
+        )
+    )
+    json.loads(
+        self_update_application(
+            "runtime_verify",
+            "20260516-035000-digest",
+            install_prefix=str(prefix),
+            candidate_id=candidate_id,
+            health_checks=["cli help passed"],
+        )
+    )
+    json.loads(
+        self_update_application(
+            "runtime_promote",
+            "20260516-035000-digest",
+            install_prefix=str(prefix),
+            candidate_id=candidate_id,
+            release_id=release_id,
+        )
+    )
+    status = json.loads(
+        self_update_application(
+            "runtime_status",
+            "20260516-035000-digest",
+            install_prefix=str(prefix),
+        )
+    )
+    active_path = prefix / "runtime" / "active.json"
+    active_payload = json.loads(active_path.read_text(encoding="utf-8"))
+    active_payload["candidate_commit"] = "changed-after-status"
+    active_path.write_text(json.dumps(active_payload, indent=2) + "\n", encoding="utf-8")
+
+    activated = json.loads(
+        self_update_application(
+            "runtime_activate",
+            "20260516-035000-digest",
+            install_prefix=str(prefix),
+            release_id=release_id,
+            approval_text="approved",
+            expected_old_release_id="source-install",
+            expected_old_active_digest=status["active_release_digest"],
+        )
+    )
+
+    assert activated["success"] is False
+    assert "active release metadata changed" in activated["error"]
+    assert json.loads(active_path.read_text(encoding="utf-8"))["release_id"] == "source-install"
+    assert not (prefix / "runtime" / "previous.json").exists()
+
+
 def test_self_update_application_runtime_prepare_does_not_require_audit_task(tmp_path):
     project_root = tmp_path / "hermes-agent"
     _make_project_repo(project_root)

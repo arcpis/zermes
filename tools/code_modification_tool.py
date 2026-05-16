@@ -39,6 +39,7 @@ from code_modification.runtime_update import (
     prepare_candidate_environment,
     prepare_candidate_source,
     promote_candidate_to_release,
+    read_active_release_digest,
     read_active_release,
     read_previous_release,
     read_release as read_runtime_release,
@@ -370,6 +371,7 @@ def self_update_application(
     candidate_id: str = "",
     release_id: str = "",
     expected_old_release_id: str = "",
+    expected_old_active_digest: str = "",
     build_summary: str = "",
     health_checks: list[str] | None = None,
     conclusion: str = "",
@@ -391,6 +393,7 @@ def self_update_application(
                 candidate_id=candidate_id,
                 release_id=release_id,
                 expected_old_release_id=expected_old_release_id,
+                expected_old_active_digest=expected_old_active_digest,
                 health_checks=health_checks or [],
                 reason=reason,
                 python_path=python_path,
@@ -476,6 +479,7 @@ def _runtime_update_application_action(
     candidate_id: str,
     release_id: str,
     expected_old_release_id: str,
+    expected_old_active_digest: str,
     health_checks: list[str],
     reason: str,
     python_path: str | None,
@@ -500,6 +504,7 @@ def _runtime_update_application_action(
             candidate_id=candidate_id,
             release_id=release_id,
             expected_old_release_id=expected_old_release_id,
+            expected_old_active_digest=expected_old_active_digest,
             health_checks=health_checks,
             reason=reason,
             python_path=python_path,
@@ -518,6 +523,7 @@ def _run_locked_runtime_update_action(
     candidate_id: str,
     release_id: str,
     expected_old_release_id: str,
+    expected_old_active_digest: str,
     health_checks: list[str],
     reason: str,
     python_path: str | None,
@@ -653,6 +659,7 @@ def _run_locked_runtime_update_action(
             install_prefix,
             release,
             expected_old_release_id=expected_old_release_id or None,
+            expected_old_active_digest=expected_old_active_digest or None,
         )
         _record_runtime_terminal_state(
             install_prefix,
@@ -828,6 +835,7 @@ def _runtime_status_result(install_prefix: str, **extra) -> str:
     return tool_result(
         success=True,
         active_release=_runtime_release_payload(active),
+        active_release_digest=read_active_release_digest(install_prefix),
         previous_release=_runtime_release_payload(previous) if previous else None,
         update_state=_runtime_update_payload(update_state) if update_state else None,
         **extra,
@@ -1321,6 +1329,14 @@ SELF_UPDATE_APPLICATION_SCHEMA = {
                     "runtime_activate."
                 ),
             },
+            "expected_old_active_digest": {
+                "type": "string",
+                "description": (
+                    "Optional full active.json digest guard for runtime_activate. "
+                    "Read it from runtime_status.active_release_digest before "
+                    "activation to reject stale active pointer metadata."
+                ),
+            },
             "build_summary": {
                 "type": "string",
                 "description": "Build result or reason no build is required; commands are not run.",
@@ -1550,6 +1566,7 @@ registry.register(
         candidate_id=args.get("candidate_id", ""),
         release_id=args.get("release_id", ""),
         expected_old_release_id=args.get("expected_old_release_id", ""),
+        expected_old_active_digest=args.get("expected_old_active_digest", ""),
         build_summary=args.get("build_summary", ""),
         health_checks=args.get("health_checks"),
         conclusion=args.get("conclusion", ""),

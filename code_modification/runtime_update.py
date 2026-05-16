@@ -12,6 +12,7 @@ from __future__ import annotations
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
+import hashlib
 import io
 import json
 import os
@@ -201,6 +202,12 @@ def read_runtime_update_state(prefix: str | Path) -> RuntimeUpdateState | None:
     if not paths.update_state_path.exists():
         return None
     return _read_update_state(paths.update_state_path)
+
+
+def read_active_release_digest(prefix: str | Path) -> str:
+    """Return a stable digest of the current active.json payload."""
+    paths = resolve_runtime_paths(prefix)
+    return _json_payload_digest(_read_json(paths.active_path))
 
 
 def write_runtime_update_state(prefix: str | Path, state: RuntimeUpdateState) -> None:
@@ -578,20 +585,28 @@ def activate_release(
     release: RuntimeRelease,
     *,
     expected_old_release_id: str | None = None,
+    expected_old_active_digest: str | None = None,
 ) -> RuntimeRelease:
     """Atomically switch active.json to a validated release.
 
     ``expected_old_release_id`` is a lightweight compare-and-swap guard. It
     prevents one update process from replacing another process's newer active
-    release after planning against stale state.
+    release after planning against stale state. ``expected_old_active_digest``
+    strengthens that guard by comparing the full active.json payload.
     """
     paths = resolve_runtime_paths(prefix)
     validate_release_directory(paths, release)
     current = _read_release(paths.active_path) if paths.active_path.exists() else None
+    current_payload = _read_json(paths.active_path) if paths.active_path.exists() else None
     if expected_old_release_id and (
         current is None or current.release_id != expected_old_release_id
     ):
         raise RuntimeUpdateError("active release changed since the update was planned")
+    if expected_old_active_digest and (
+        current_payload is None
+        or _json_payload_digest(current_payload) != str(expected_old_active_digest).strip()
+    ):
+        raise RuntimeUpdateError("active release metadata changed since the update was planned")
     _refresh_stable_launcher(paths, release)
     if current is not None:
         _atomic_write_json(paths.previous_path, _release_to_payload(current))
@@ -692,6 +707,11 @@ def _read_json(path: Path) -> dict[str, Any]:
     if not isinstance(payload, dict):
         raise RuntimeUpdateError(f"JSON file must contain an object: {path}")
     return payload
+
+
+def _json_payload_digest(payload: dict[str, Any]) -> str:
+    data = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(data).hexdigest()
 
 
 def _atomic_write_json(path: Path, payload: dict[str, Any]) -> None:
