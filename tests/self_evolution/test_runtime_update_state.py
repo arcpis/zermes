@@ -3,6 +3,7 @@
 from datetime import UTC, datetime
 import json
 import os
+from pathlib import Path
 import subprocess
 
 import pytest
@@ -242,6 +243,73 @@ def test_run_candidate_health_checks_marks_verified_and_logs_results(tmp_path):
     assert state.status == "verified"
     assert [result.status for result in results] == ["passed", "passed", "passed"]
     assert log_payload["results"][1]["name"] == "cli_help"
+
+
+def test_run_candidate_health_checks_exercises_launcher_active_pointer(tmp_path):
+    source_repo = tmp_path / "source-repo"
+    _make_source_repo(source_repo)
+    prefix = tmp_path / "zermes"
+    candidate = prepare_candidate_source(
+        prefix,
+        "update-20260510-120000-abcdef0",
+        source_repo=source_repo,
+        git_ref="HEAD",
+    )
+
+    state, results = run_candidate_health_checks(
+        prefix,
+        candidate.candidate_id,
+        checks=["launcher_cli_help", "launcher_gateway_help"],
+        python_path=os.sys.executable,
+    )
+
+    probe_active = (
+        prefix
+        / "runtime"
+        / "candidates"
+        / candidate.candidate_id
+        / "logs"
+        / "launcher-probe"
+        / "runtime"
+        / "active.json"
+    )
+    assert state.status == "verified"
+    assert [result.name for result in results] == ["launcher_cli_help", "launcher_gateway_help"]
+    assert [result.status for result in results] == ["passed", "passed"]
+    assert _read_json(probe_active)["source_path"] == candidate.source_path
+
+
+def test_run_candidate_health_checks_blocks_when_launcher_is_missing(tmp_path):
+    source_repo = tmp_path / "source-repo"
+    _make_source_repo(source_repo)
+    subprocess.run(
+        ["git", "rm", "-r", "launcher"],
+        cwd=source_repo,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    subprocess.run(
+        ["git", "commit", "-m", "Remove launcher"],
+        cwd=source_repo,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    prefix = tmp_path / "zermes"
+    active_release = _make_release(prefix, "source-install")
+    _write_json(prefix / "runtime" / "active.json", _release_payload(active_release))
+    candidate = prepare_candidate_source(
+        prefix,
+        "update-20260510-120000-abcdef0",
+        source_repo=source_repo,
+        git_ref="HEAD",
+    )
+
+    with pytest.raises(RuntimeUpdateError, match="launcher/zermes_launcher.py is missing"):
+        run_candidate_health_checks(prefix, candidate.candidate_id, checks=["launcher_cli_help"])
+
+    assert read_active_release(prefix).release_id == "source-install"
 
 
 def test_run_candidate_health_checks_marks_blocked_on_failure(tmp_path):
@@ -485,6 +553,26 @@ def _make_source_repo(repo):
     (repo / "install.py").write_text("# installer\n", encoding="utf-8")
     (repo / "cli.py").write_text(
         "import argparse\nargparse.ArgumentParser().parse_args()\n",
+        encoding="utf-8",
+    )
+    (repo / "launcher").mkdir()
+    launcher_source = Path(__file__).resolve().parents[2] / "launcher" / "zermes_launcher.py"
+    (repo / "launcher" / "zermes_launcher.py").write_text(
+        launcher_source.read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    (repo / "hermes_cli").mkdir()
+    (repo / "hermes_cli" / "__init__.py").write_text("", encoding="utf-8")
+    (repo / "hermes_cli" / "main.py").write_text(
+        (
+            "import argparse\n"
+            "def main():\n"
+            "    parser = argparse.ArgumentParser()\n"
+            "    parser.add_argument('command', nargs='?')\n"
+            "    parser.parse_args()\n"
+            "if __name__ == '__main__':\n"
+            "    main()\n"
+        ),
         encoding="utf-8",
     )
     (repo / "code_modification").mkdir()

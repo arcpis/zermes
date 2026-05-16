@@ -881,7 +881,13 @@ def _clean_health_checks(health_checks: list[str]) -> tuple[str, ...]:
 def _normalize_health_check_names(checks: list[str] | None) -> tuple[str, ...]:
     names = tuple(str(check).strip() for check in (checks or []) if str(check).strip())
     selected = names or ("python_version", "cli_help", "compileall")
-    allowed = {"python_version", "cli_help", "compileall"}
+    allowed = {
+        "python_version",
+        "cli_help",
+        "compileall",
+        "launcher_cli_help",
+        "launcher_gateway_help",
+    }
     invalid = [name for name in selected if name not in allowed]
     if invalid:
         raise RuntimeUpdateError(f"unsupported runtime health check: {', '.join(invalid)}")
@@ -941,11 +947,16 @@ def _run_candidate_health_check(
     timeout_seconds: int,
 ) -> RuntimeHealthCheckResult:
     source_path = Path(candidate.source_path)
+    env = None
+    if name in {"launcher_cli_help", "launcher_gateway_help"}:
+        probe_prefix = _write_launcher_probe_prefix(candidate, python_executable)
+        env = {**os.environ, "ZERMES_INSTALL_PREFIX": str(probe_prefix)}
     command = _health_check_command(name, python_executable, source_path)
     try:
         result = subprocess.run(
             [str(part) for part in command],
             cwd=source_path,
+            env=env,
             text=True,
             capture_output=True,
             timeout=timeout_seconds,
@@ -979,7 +990,40 @@ def _health_check_command(name: str, python_executable: Path, source_path: Path)
         return (python_executable, str(cli_path), "--help")
     if name == "compileall":
         return (python_executable, "-m", "compileall", "-q", str(source_path))
+    if name == "launcher_cli_help":
+        return _launcher_health_command(python_executable, source_path, "cli")
+    if name == "launcher_gateway_help":
+        return _launcher_health_command(python_executable, source_path, "gateway")
     raise RuntimeUpdateError(f"unsupported runtime health check: {name}")
+
+
+def _launcher_health_command(
+    python_executable: Path,
+    source_path: Path,
+    mode: str,
+) -> tuple[Path | str, ...]:
+    launcher_path = source_path / "launcher" / "zermes_launcher.py"
+    if not launcher_path.exists():
+        raise RuntimeUpdateError("candidate launcher/zermes_launcher.py is missing")
+    return (python_executable, str(launcher_path), mode, "--help")
+
+
+def _write_launcher_probe_prefix(candidate: RuntimeCandidate, python_executable: Path) -> Path:
+    probe_prefix = Path(candidate.logs_path) / "launcher-probe"
+    active_payload = {
+        "schema_version": RUNTIME_SCHEMA_VERSION,
+        "release_id": candidate.candidate_id,
+        "source_path": candidate.source_path,
+        "venv_path": candidate.venv_path,
+        "build_path": candidate.build_path,
+        "python_path": str(python_executable),
+        "candidate_commit": candidate.candidate_commit,
+        "source_repo": {"path": candidate.source_repo},
+        "data_dir": str(probe_prefix / "data"),
+    }
+    _atomic_write_json(probe_prefix / RUNTIME_DIR_NAME / ACTIVE_STATE_FILE, active_payload)
+    (probe_prefix / "data").mkdir(parents=True, exist_ok=True)
+    return probe_prefix
 
 
 def _health_result_summary(result: RuntimeHealthCheckResult) -> str:
