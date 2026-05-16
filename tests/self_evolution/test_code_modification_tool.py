@@ -223,6 +223,19 @@ def test_self_update_application_runtime_actions_manage_release_switch(tmp_path)
             expected_old_release_id="source-install",
         )
     )
+    restart = json.loads(
+        self_update_application(
+            "runtime_request_restart",
+            "20260516-010000-update-flow",
+            install_prefix=str(prefix),
+            approval_text="approved",
+            mode="cli",
+            restart_argv=["zermes", "chat"],
+            restart_cwd=str(tmp_path),
+            restart_profile_home=str(tmp_path / "profile"),
+            reason="apply activated release",
+        )
+    )
     rolled_back = json.loads(
         self_update_application(
             "runtime_rollback",
@@ -244,6 +257,9 @@ def test_self_update_application_runtime_actions_manage_release_switch(tmp_path)
     assert verified["status"] == "verified"
     assert promoted["release_id"] == release_id
     assert activated["release_id"] == release_id
+    assert restart["status"] == "requested"
+    assert restart["mode"] == "cli"
+    assert restart["argv"] == ["zermes", "chat"]
     assert rolled_back["release_id"] == "source-install"
     assert status["active_release"]["release_id"] == "source-install"
     assert status["previous_release"]["release_id"] == release_id
@@ -253,6 +269,9 @@ def test_self_update_application_runtime_actions_manage_release_switch(tmp_path)
     assert json.loads((prefix / "runtime" / "active.json").read_text(encoding="utf-8"))[
         "release_id"
     ] == "source-install"
+    assert json.loads((prefix / "runtime" / "restart-intent.json").read_text(encoding="utf-8"))[
+        "release_id"
+    ] == release_id
 
 
 def test_self_update_application_runtime_actions_mirror_audit_state(tmp_path):

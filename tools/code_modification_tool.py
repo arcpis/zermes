@@ -48,6 +48,7 @@ from code_modification.runtime_update import (
     rollback_active_release,
     runtime_update_lock,
     run_candidate_health_checks,
+    request_runtime_restart,
     write_runtime_update_state,
 )
 from code_modification.token_strategy import AnalysisHints, build_analysis_context
@@ -379,6 +380,9 @@ def self_update_application(
     reason: str = "",
     python_path: str | None = None,
     install_editable: bool = False,
+    restart_argv: list[str] | None = None,
+    restart_cwd: str = "",
+    restart_profile_home: str = "",
 ) -> str:
     """Manage audited self-update application state without restarting runtime."""
     normalized = str(action or "").strip().lower()
@@ -395,10 +399,14 @@ def self_update_application(
                 release_id=release_id,
                 expected_old_release_id=expected_old_release_id,
                 expected_old_active_digest=expected_old_active_digest,
+                mode=mode,
                 health_checks=health_checks or [],
                 reason=reason,
                 python_path=python_path,
                 install_editable=install_editable,
+                restart_argv=restart_argv or [],
+                restart_cwd=restart_cwd,
+                restart_profile_home=restart_profile_home,
             )
         root = _resolve_tool_project_root(project_root, install_prefix)
         clean_task_id = str(task_id or "")
@@ -455,7 +463,7 @@ def self_update_application(
                 "record_health, activate, rollback, runtime_prepare, "
                 "runtime_status, runtime_verify, runtime_prepare_env, "
                 "runtime_run_health, runtime_block, runtime_promote, "
-                "runtime_activate, or runtime_rollback.",
+                "runtime_activate, runtime_request_restart, or runtime_rollback.",
                 success=False,
             )
     except (
@@ -481,10 +489,14 @@ def _runtime_update_application_action(
     release_id: str,
     expected_old_release_id: str,
     expected_old_active_digest: str,
+    mode: str,
     health_checks: list[str],
     reason: str,
     python_path: str | None,
     install_editable: bool,
+    restart_argv: list[str],
+    restart_cwd: str,
+    restart_profile_home: str,
 ) -> str:
     if not install_prefix:
         return tool_error("install_prefix is required for runtime update actions.", success=False)
@@ -506,10 +518,14 @@ def _runtime_update_application_action(
             release_id=release_id,
             expected_old_release_id=expected_old_release_id,
             expected_old_active_digest=expected_old_active_digest,
+            mode=mode,
             health_checks=health_checks,
             reason=reason,
             python_path=python_path,
             install_editable=install_editable,
+            restart_argv=restart_argv,
+            restart_cwd=restart_cwd,
+            restart_profile_home=restart_profile_home,
         )
 
 
@@ -525,10 +541,14 @@ def _run_locked_runtime_update_action(
     release_id: str,
     expected_old_release_id: str,
     expected_old_active_digest: str,
+    mode: str,
     health_checks: list[str],
     reason: str,
     python_path: str | None,
     install_editable: bool,
+    restart_argv: list[str],
+    restart_cwd: str,
+    restart_profile_home: str,
 ) -> str:
     if action == "runtime_prepare":
         root = _resolve_tool_project_root(project_root, install_prefix)
@@ -710,10 +730,30 @@ def _run_locked_runtime_update_action(
             approved_by_user=True,
         )
         return _runtime_release_result(release, action=action, task_id=task_id, **audit)
+    if action == "runtime_request_restart":
+        intent = request_runtime_restart(
+            install_prefix,
+            mode=mode,
+            approval_text=approval_text,
+            task_id=task_id,
+            argv=restart_argv,
+            cwd=restart_cwd or None,
+            profile_home=restart_profile_home or None,
+            reason=reason,
+        )
+        audit = _mirror_runtime_update_audit(
+            task_id,
+            project_root=project_root,
+            install_prefix=install_prefix,
+            runtime_status="restart_requested",
+            approved_by_user=True,
+        )
+        return _runtime_restart_intent_result(intent, action=action, **audit)
     return tool_error(
         "runtime action must be one of runtime_prepare, runtime_verify, "
         "runtime_prepare_env, runtime_run_health, runtime_status, "
-        "runtime_block, runtime_promote, runtime_activate, or runtime_rollback.",
+        "runtime_block, runtime_promote, runtime_activate, "
+        "runtime_request_restart, or runtime_rollback.",
         success=False,
     )
 
@@ -837,6 +877,24 @@ def _runtime_release_result(release, **extra) -> str:
         build_path=release.build_path,
         source_repo=release.source_repo,
         activated_at=release.activated_at,
+        **extra,
+    )
+
+
+def _runtime_restart_intent_result(intent, **extra) -> str:
+    return tool_result(
+        success=True,
+        status=intent.status,
+        mode=intent.mode,
+        release_id=intent.release_id,
+        active_release_digest=intent.active_release_digest,
+        task_id=intent.task_id,
+        approved_by_user=intent.approved_by_user,
+        argv=list(intent.argv),
+        cwd=intent.cwd,
+        profile_home=intent.profile_home,
+        reason=intent.reason,
+        created_at=intent.created_at,
         **extra,
     )
 
@@ -1297,7 +1355,7 @@ SELF_UPDATE_APPLICATION_SCHEMA = {
                     "activate, rollback, runtime_prepare, runtime_verify, "
                     "runtime_prepare_env, runtime_run_health, runtime_block, "
                     "runtime_promote, runtime_activate, runtime_rollback, "
-                    "or runtime_status."
+                    "runtime_request_restart, or runtime_status."
                 ),
             },
             "task_id": {
@@ -1318,7 +1376,10 @@ SELF_UPDATE_APPLICATION_SCHEMA = {
             },
             "mode": {
                 "type": "string",
-                "description": "Application mode for plan: manual, cli, gateway, or cron.",
+                "description": (
+                    "Application mode for plan or restart mode for "
+                    "runtime_request_restart: manual, cli, gateway, or cron."
+                ),
             },
             "worktree_path": {
                 "type": "string",
@@ -1376,6 +1437,26 @@ SELF_UPDATE_APPLICATION_SCHEMA = {
                 "description": (
                     "For runtime_prepare_env only: when true, run the "
                     "allow-listed candidate venv command `python -m pip install -e <source>`."
+                ),
+            },
+            "restart_argv": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": (
+                    "For runtime_request_restart only: fixed argv to preserve "
+                    "for a launcher-managed restart. This records intent; it "
+                    "does not run the argv."
+                ),
+            },
+            "restart_cwd": {
+                "type": "string",
+                "description": "For runtime_request_restart only: cwd to preserve for restart intent.",
+            },
+            "restart_profile_home": {
+                "type": "string",
+                "description": (
+                    "For runtime_request_restart only: profile/home path to "
+                    "preserve in the restart intent."
                 ),
             },
             "conclusion": {
@@ -1586,6 +1667,9 @@ registry.register(
         reason=args.get("reason", ""),
         python_path=args.get("python_path"),
         install_editable=args.get("install_editable", False),
+        restart_argv=args.get("restart_argv"),
+        restart_cwd=args.get("restart_cwd", ""),
+        restart_profile_home=args.get("restart_profile_home", ""),
     ),
     check_fn=check_code_modification_requirements,
     emoji="U",
