@@ -47,6 +47,7 @@ def _exec_active_release(
     intent: dict | None = None,
 ) -> int:
     python_path = _active_python(active)
+    venv_path = _active_venv(active)
     source_path = _required_path(active, "source_path")
     data_dir = str(active.get("data_dir") or "").strip()
     restart_cwd = _restart_cwd(intent) if intent else ""
@@ -60,6 +61,8 @@ def _exec_active_release(
     env["ZERMES_INSTALL_PREFIX"] = str(prefix)
     env["ZERMES_ACTIVE_RELEASE"] = str(active.get("release_id") or "")
     env["PYTHONPATH"] = _prepend_pythonpath(source_path, env.get("PYTHONPATH"))
+    if venv_path is not None:
+        _apply_venv_environment(env, venv_path)
 
     command = [str(python_path), "-m", "hermes_cli.main"]
     if mode == "gateway":
@@ -194,6 +197,26 @@ def _active_python(active: dict) -> Path:
     return _existing_file(candidate, "venv python")
 
 
+def _active_venv(active: dict) -> Path | None:
+    venv_path = str(active.get("venv_path") or "").strip()
+    if not venv_path:
+        return None
+    resolved = Path(venv_path).expanduser().resolve()
+    if not resolved.is_dir():
+        raise SystemExit(f"active runtime venv_path does not exist: {resolved}")
+    return resolved
+
+
+def _apply_venv_environment(env: dict[str, str], venv_path: Path) -> None:
+    env["VIRTUAL_ENV"] = str(venv_path)
+    env.pop("PYTHONHOME", None)
+    env["PATH"] = _prepend_path(str(_venv_bin_dir(venv_path)), env.get("PATH"))
+
+
+def _venv_bin_dir(venv_path: Path) -> Path:
+    return venv_path / ("Scripts" if os.name == "nt" else "bin")
+
+
 def _required_path(active: dict, field_name: str) -> str:
     value = str(active.get(field_name) or "").strip()
     if not value:
@@ -215,6 +238,18 @@ def _prepend_pythonpath(source_path: str, current: str | None) -> str:
     if not current:
         return source_path
     return os.pathsep.join((source_path, current))
+
+
+def _prepend_path(path: str, current: str | None) -> str:
+    if not current:
+        return path
+    parts = [part for part in current.split(os.pathsep) if part]
+    normalized = os.path.normcase(os.path.abspath(path))
+    filtered = [
+        part for part in parts
+        if os.path.normcase(os.path.abspath(part)) != normalized
+    ]
+    return os.pathsep.join((path, *filtered))
 
 
 if __name__ == "__main__":

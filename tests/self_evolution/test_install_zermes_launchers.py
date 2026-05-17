@@ -139,6 +139,8 @@ def test_stable_launcher_execs_active_release(monkeypatch, tmp_path):
     assert captured["cwd"] == str(source.resolve())
     assert captured["env"]["ZERMES_ACTIVE_RELEASE"] == "release-abc1234"
     assert captured["env"]["HERMES_HOME"] == str(tmp_path / "data")
+    assert captured["env"]["VIRTUAL_ENV"] == str(venv.resolve())
+    assert captured["env"]["PATH"].split(zermes_launcher.os.pathsep)[0] == str(python.parent.resolve())
     assert captured["env"]["PYTHONPATH"].split(zermes_launcher.os.pathsep)[0] == str(source.resolve())
 
 
@@ -216,6 +218,8 @@ def test_stable_launcher_execs_restart_intent(monkeypatch, tmp_path):
     assert captured["cwd"] == str(restart_cwd.resolve())
     assert captured["env"]["ZERMES_ACTIVE_RELEASE"] == "release-abc1234"
     assert captured["env"]["HERMES_HOME"] == str(restart_profile.resolve())
+    assert captured["env"]["VIRTUAL_ENV"] == str(venv.resolve())
+    assert captured["env"]["PATH"].split(zermes_launcher.os.pathsep)[0] == str(python.parent.resolve())
     consumed = json.loads((prefix / "runtime" / "restart-intent.json").read_text(encoding="utf-8"))
     assert consumed["status"] == "restarting"
     assert consumed["restarting_at"]
