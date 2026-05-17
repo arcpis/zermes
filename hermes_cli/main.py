@@ -1353,12 +1353,22 @@ def _runtime_restart_intent_path() -> Path | None:
 def _maybe_exec_runtime_restart_intent_after_cli() -> None:
     """Consume a governed restart intent at a CLI safe point.
 
-    This intentionally performs only presence detection.  The launcher owns
+    This intentionally performs only route detection.  The launcher owns
     validation of approval, active-release digests, argv, cwd, profile, and
     execution, so the chat process cannot grow a second restart policy path.
     """
     intent_path = _runtime_restart_intent_path()
     if intent_path is None or not intent_path.exists():
+        return
+    try:
+        payload = json.loads(intent_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        return
+    if not isinstance(payload, dict):
+        return
+    if payload.get("status") != "requested":
+        return
+    if str(payload.get("mode") or "").strip().lower() != "cli":
         return
 
     from launcher import zermes_launcher

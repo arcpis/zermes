@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from hermes_cli import main as hermes_main
@@ -38,7 +40,10 @@ def test_maybe_exec_runtime_restart_intent_after_cli_delegates_to_launcher(
     prefix = tmp_path / "install"
     intent_path = prefix / "runtime" / "restart-intent.json"
     intent_path.parent.mkdir(parents=True)
-    intent_path.write_text("{}", encoding="utf-8")
+    intent_path.write_text(
+        json.dumps({"status": "requested", "mode": "cli"}),
+        encoding="utf-8",
+    )
     monkeypatch.setenv("ZERMES_INSTALL_PREFIX", str(prefix))
 
     called = []
@@ -57,3 +62,32 @@ def test_maybe_exec_runtime_restart_intent_after_cli_delegates_to_launcher(
 
     assert exc_info.value.code == 0
     assert called == [["restart-intent"]]
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"status": "restarting", "mode": "cli"},
+        {"status": "requested", "mode": "gateway"},
+        {"status": "requested", "mode": "manual"},
+        ["not", "an", "object"],
+    ],
+)
+def test_maybe_exec_runtime_restart_intent_after_cli_ignores_unconsumable_intents(
+    monkeypatch, tmp_path, payload
+):
+    prefix = tmp_path / "install"
+    intent_path = prefix / "runtime" / "restart-intent.json"
+    intent_path.parent.mkdir(parents=True)
+    intent_path.write_text(json.dumps(payload), encoding="utf-8")
+    monkeypatch.setenv("ZERMES_INSTALL_PREFIX", str(prefix))
+
+    called = []
+    monkeypatch.setattr(
+        "launcher.zermes_launcher.main",
+        lambda argv: called.append(argv),
+    )
+
+    hermes_main._maybe_exec_runtime_restart_intent_after_cli()
+
+    assert called == []
