@@ -1160,6 +1160,7 @@ def _runtime_restart_intent_payload(intent) -> dict:
         "profile_home": intent.profile_home,
         "reason": intent.reason,
         "created_at": intent.created_at,
+        "restarting_at": getattr(intent, "restarting_at", ""),
     }
 
 

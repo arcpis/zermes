@@ -130,6 +130,7 @@ class RuntimeRestartIntent:
     profile_home: str = ""
     reason: str = ""
     created_at: str = ""
+    restarting_at: str = ""
     schema_version: int = RUNTIME_SCHEMA_VERSION
 
 
@@ -798,6 +799,7 @@ def _read_restart_intent(path: Path) -> RuntimeRestartIntent:
         profile_home=str(payload.get("profile_home") or "").strip(),
         reason=str(payload.get("reason") or "").strip(),
         created_at=str(payload.get("created_at") or "").strip(),
+        restarting_at=str(payload.get("restarting_at") or "").strip(),
         schema_version=int(payload.get("schema_version") or RUNTIME_SCHEMA_VERSION),
     )
 

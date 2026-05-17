@@ -543,6 +543,42 @@ def test_self_update_application_runtime_apply_update_runs_main_flow(tmp_path):
     assert status["restart_intent"]["release_id"] == result["release_id"]
 
 
+def test_self_update_application_runtime_status_reports_consumed_restart_intent(
+    tmp_path,
+):
+    project_root = tmp_path / "hermes-agent"
+    _make_project_repo(project_root)
+    prefix = tmp_path / "zermes"
+    _make_runtime_release(prefix, "source-install", project_root)
+    restart_path = prefix / "runtime" / "restart-intent.json"
+    restart_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "status": "restarting",
+                "mode": "cli",
+                "release_id": "source-install",
+                "active_release_digest": "digest",
+                "approved_by_user": True,
+                "created_at": "2026-05-16T00:00:00+00:00",
+                "restarting_at": "2026-05-16T00:01:00+00:00",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    status = json.loads(
+        self_update_application(
+            "runtime_status",
+            "20260516-050200-status",
+            install_prefix=str(prefix),
+        )
+    )
+
+    assert status["restart_intent"]["status"] == "restarting"
+    assert status["restart_intent"]["restarting_at"] == "2026-05-16T00:01:00+00:00"
+
+
 def test_self_update_application_runtime_apply_update_rejects_unconsumed_restart_mode(
     tmp_path,
 ):
