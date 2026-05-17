@@ -118,7 +118,11 @@ Update from an explicit source with `python install.py update --prefix <prefix>
 builds and verifies only. Rollback is pointer-only:
 `python install.py rollback --prefix <prefix>` points `active.json` back to
 `previous.json` and does not delete releases. Restart running processes
-manually after source-runtime update or rollback.
+manually after source-runtime update or rollback. Uninstall with
+`python install.py uninstall --prefix <prefix>`; this removes the software
+prefix and preserves the recorded user data directory unless `--remove-data` is
+passed. Use `--remove-global-command` to clean up the user-level global
+`zermes` command created by the installer.
 `setup-hermes.sh` and the existing `scripts/install.*` paths are legacy or
 developer/compatibility paths until they are wrapped by the new installer.
 When changing installer behavior, update README, README.zh-CN, website

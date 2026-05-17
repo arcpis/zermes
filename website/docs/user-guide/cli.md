@@ -24,13 +24,17 @@ python install.py install
 python install.py update --prefix <prefix> --source <source-dir>
 python install.py update --prefix <prefix> --current-source
 python install.py rollback --prefix <prefix>
+python install.py uninstall --prefix <prefix>
 ```
 
 Updates are staged under `runtime/candidates/<candidate-id>/` and recorded in
 `update-state.json` before activation changes `active.json`. `--source` names a
 checkout explicitly; `--current-source` uses the checkout containing
 `install.py`. `rollback` points `active.json` back to `previous.json` without
-deleting releases.
+deleting releases. `uninstall` removes the software prefix while preserving the
+recorded user data directory by default; use `--remove-data` and
+`--remove-global-command` when you also want to remove data and the global
+`zermes` command.
 
 ```bash
 # Start an interactive session (default)

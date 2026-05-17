@@ -45,6 +45,17 @@ If an update fails, inspect both `runtime/update-state.json` and the candidate's
 good long-term target for this flow because running code changes whenever the
 checkout changes.
 
+Uninstall a source runtime with:
+
+```bash
+python install.py uninstall --prefix <prefix>
+```
+
+Uninstall removes the software prefix and leaves the recorded user `data_dir`
+in place by default. Add `--remove-data` to delete that data directory. Add
+`--remove-global-command` to remove the user-level global `zermes` command the
+installer configured, such as the Windows user PATH entry or the POSIX symlink.
+
 ### Legacy checkout update
 
 Update to the latest version with a single command:

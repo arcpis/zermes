@@ -69,6 +69,17 @@ sessions consume it after the response is delivered and then use the existing
 drain-aware restart path. The installer still does not force-kill running
 processes.
 
+Uninstall a source runtime with:
+
+```bash
+python install.py uninstall --prefix <prefix>
+```
+
+Uninstall removes the software prefix but preserves the recorded user
+`data_dir` by default. Add `--remove-data` to delete that data directory, and
+add `--remove-global-command` to remove the user-level global `zermes` command
+created by the installer.
+
 ### Linux, macOS, WSL2, Termux
 
 ```bash

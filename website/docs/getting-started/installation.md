@@ -44,6 +44,17 @@ to `previous.json` without deleting any release. Source-runtime update does not
 force-restart running processes yet. The `installer_language` choice only
 changes installer prompts and help text; it does not change runtime language.
 
+To uninstall a source runtime:
+
+```bash
+python install.py uninstall --prefix <prefix>
+```
+
+The uninstall command removes the software prefix and preserves the recorded
+user `data_dir` by default. Use `--remove-data` to remove that data directory
+too, and `--remove-global-command` to remove the user-level global `zermes`
+command configured by the installer.
+
 ### Linux / macOS / WSL2
 
 ```bash
