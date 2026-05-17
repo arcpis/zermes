@@ -63,8 +63,11 @@ Updates first build `runtime/candidates/<candidate-id>/` and write
 `update-state.json`; after verification, `--activate` switches `active.json`.
 Use `--no-activate` to keep the candidate only. `python install.py rollback
 --prefix <prefix>` points `active.json` back to `previous.json` without deleting
-releases. The installer does not force-restart running processes yet; restart
-manually after update or rollback.
+releases. `--restart` records a governed `runtime/restart-intent.json`; managed
+CLI sessions consume it after the current chat exits, and managed gateway
+sessions consume it after the response is delivered and then use the existing
+drain-aware restart path. The installer still does not force-kill running
+processes.
 
 ### Linux, macOS, WSL2, Termux
 

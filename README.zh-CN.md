@@ -50,7 +50,7 @@ python install.py update --prefix <prefix> --source <source-dir>
 python install.py update --prefix <prefix> --current-source
 ```
 
-`--source` 指向选定的 checkout；`--current-source` 使用包含 `install.py` 的 checkout。非交互更新必须提供二者之一。更新会先构建 `runtime/candidates/<candidate-id>/` 并写入 `update-state.json`；验证通过后，`--activate` 会切换 `active.json`。使用 `--no-activate` 可以只保留候选版本。`python install.py rollback --prefix <prefix>` 会把 `active.json` 指回 `previous.json`，但不会删除 release。安装器目前不会强制重启正在运行的进程；更新或回滚后请手动重启。
+`--source` 指向选定的 checkout；`--current-source` 使用包含 `install.py` 的 checkout。非交互更新必须提供二者之一。更新会先构建 `runtime/candidates/<candidate-id>/` 并写入 `update-state.json`；验证通过后，`--activate` 会切换 `active.json`。使用 `--no-activate` 可以只保留候选版本。`python install.py rollback --prefix <prefix>` 会把 `active.json` 指回 `previous.json`，但不会删除 release。`--restart` 会写入受治理的 `runtime/restart-intent.json`；受安装器管理的 CLI 会在当前对话结束后消费它，gateway 会在回复投递后消费它并走已有 drain-aware 重启路径。安装器仍不会强杀正在运行的进程。
 
 ### Linux、macOS、WSL2、Termux
 

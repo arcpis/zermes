@@ -8,6 +8,9 @@ accurate.
 
 - Added a governed self-evolution workflow for repository improvements across
   planning, approval, execution, verification, thinking, and documentation sync.
+- Added governed self-update application for source-installed runtimes:
+  candidate preparation, health checks, active release switching, rollback,
+  restart intent recording, and managed CLI/gateway restart consumption.
 - Added repository-local low-token analysis context under `.hermes-analysis-cache/`.
 - Documented the self-evolution workflow across repository and website docs.
 
@@ -21,9 +24,14 @@ Zermes now supports a conservative self-evolution flow:
 - Commits use explicit file lists instead of broad staging.
 - Verification records gate finalization.
 - `self_evolution_thinking` creates advisory candidate reports only.
-- `self_update_application` records approved update application plans, build
-  status, health checks, activation intent, and rollback intent without
-  restarting the runtime or changing active source code.
+- `self_update_application` records approved update application plans and can
+  drive the runtime update path: prepare a candidate release, run allow-listed
+  health checks, switch `active.json`, roll back to `previous.json`, and record
+  a governed restart intent.
+- Managed source-runtime CLI sessions consume `runtime/restart-intent.json` at a
+  chat safe point; managed gateway sessions consume it after response delivery
+  and then use the existing drain-aware restart path. Consumed intents are
+  marked `restarting` to avoid repeated restarts.
 - Final reports include documentation sync status for user-visible changes.
 
 ## Low-Token Analysis
