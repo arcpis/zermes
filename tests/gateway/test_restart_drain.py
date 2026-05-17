@@ -194,6 +194,9 @@ def test_gateway_runtime_restart_intent_registers_after_delivery_callback(
     callback()
 
     runner.request_restart.assert_called_once_with(detached=True, via_service=False)
+    consumed = json.loads(intent_path.read_text(encoding="utf-8"))
+    assert consumed["status"] == "restarting"
+    assert consumed["restarting_at"]
     notify = json.loads(
         (tmp_path / "home" / ".restart_notify.json").read_text(encoding="utf-8")
     )

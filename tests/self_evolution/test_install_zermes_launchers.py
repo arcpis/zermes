@@ -216,6 +216,9 @@ def test_stable_launcher_execs_restart_intent(monkeypatch, tmp_path):
     assert captured["cwd"] == str(restart_cwd.resolve())
     assert captured["env"]["ZERMES_ACTIVE_RELEASE"] == "release-abc1234"
     assert captured["env"]["HERMES_HOME"] == str(restart_profile.resolve())
+    consumed = json.loads((prefix / "runtime" / "restart-intent.json").read_text(encoding="utf-8"))
+    assert consumed["status"] == "restarting"
+    assert consumed["restarting_at"]
 
 
 def test_stable_launcher_rejects_stale_restart_intent(monkeypatch, tmp_path):

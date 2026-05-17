@@ -3038,6 +3038,30 @@ class GatewayRunner:
             and str(payload.get("mode") or "").strip().lower() == "gateway"
         )
 
+    def _mark_gateway_runtime_restart_intent_restarting(self) -> bool:
+        """Mark the gateway restart intent as in-progress before restarting."""
+        intent_path = self._runtime_restart_intent_path()
+        if intent_path is None or not intent_path.exists():
+            return False
+        try:
+            payload = json.loads(intent_path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+            return False
+        if not isinstance(payload, dict):
+            return False
+        if payload.get("status") != "requested":
+            return False
+        if str(payload.get("mode") or "").strip().lower() != "gateway":
+            return False
+        payload["status"] = "restarting"
+        payload["restarting_at"] = datetime.now().astimezone().isoformat()
+        try:
+            atomic_json_write(intent_path, payload, indent=2)
+        except OSError as exc:
+            logger.debug("Failed to mark runtime restart intent restarting: %s", exc)
+            return False
+        return True
+
     def _write_runtime_restart_notify_source(self, source: SessionSource) -> None:
         """Record where the post-restart gateway notification should go."""
         try:
@@ -3077,6 +3101,8 @@ class GatewayRunner:
 
         def _request_restart() -> None:
             if self._restart_requested or self._draining:
+                return
+            if not self._mark_gateway_runtime_restart_intent_restarting():
                 return
             self._write_runtime_restart_notify_source(source)
             under_service = bool(os.environ.get("INVOCATION_ID"))

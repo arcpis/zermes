@@ -35,6 +35,7 @@ def _exec_restart_intent(args: list[str]) -> int:
     _validate_restart_intent(active, intent)
     mode = str(intent.get("mode") or "cli").strip().lower()
     restart_args = _restart_args(intent)
+    _mark_restart_intent_restarting(prefix, intent)
     return _exec_active_release(prefix, active, mode=mode, args=restart_args, intent=intent)
 
 
@@ -120,6 +121,14 @@ def _validate_restart_intent(active: dict, intent: dict) -> None:
         raise SystemExit("restart intent active release digest is stale")
 
 
+def _mark_restart_intent_restarting(prefix: Path, intent: dict) -> None:
+    """Mark a validated restart intent so it cannot be consumed twice."""
+    updated = dict(intent)
+    updated["status"] = "restarting"
+    updated["restarting_at"] = _utc_timestamp()
+    _write_json(prefix / "runtime" / "restart-intent.json", updated)
+
+
 def _restart_args(intent: dict) -> list[str]:
     raw = intent.get("argv") or []
     if not isinstance(raw, list):
@@ -157,6 +166,19 @@ def _restart_profile_home(intent: dict | None) -> str:
 def _json_digest(payload: dict) -> str:
     data = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return hashlib.sha256(data).hexdigest()
+
+
+def _utc_timestamp() -> str:
+    from datetime import UTC, datetime
+
+    return datetime.now(UTC).isoformat()
+
+
+def _write_json(path: Path, payload: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    os.replace(tmp, path)
 
 
 def _active_python(active: dict) -> Path:
