@@ -66,7 +66,7 @@ def test_non_interactive_requires_explicit_command():
         raise AssertionError("expected parser failure")
 
 
-def test_parser_supports_install_update_and_rollback_commands(tmp_path):
+def test_parser_supports_install_update_rollback_and_uninstall_commands(tmp_path):
     parser = install_zermes.build_parser()
 
     install_args = parser.parse_args(["install", "--prefix", str(tmp_path / "app")])
@@ -84,6 +84,15 @@ def test_parser_supports_install_update_and_rollback_commands(tmp_path):
         ]
     )
     rollback_args = parser.parse_args(["rollback", "--prefix", str(tmp_path / "app")])
+    uninstall_args = parser.parse_args(
+        [
+            "uninstall",
+            "--prefix",
+            str(tmp_path / "app"),
+            "--remove-data",
+            "--remove-global-command",
+        ]
+    )
 
     assert install_args.command == "install"
     assert update_args.command == "update"
@@ -92,6 +101,9 @@ def test_parser_supports_install_update_and_rollback_commands(tmp_path):
     assert update_args.activate is False
     assert update_args.restart is True
     assert rollback_args.command == "rollback"
+    assert uninstall_args.command == "uninstall"
+    assert uninstall_args.remove_data is True
+    assert uninstall_args.remove_global_command is True
 
 # From test_plan.py
 

@@ -54,6 +54,119 @@ def test_rollback_release_does_not_delete_release_directories(tmp_path):
     assert new_marker.read_text(encoding="utf-8") == "new"
 
 
+def test_uninstall_runtime_removes_prefix_but_preserves_data_by_default(tmp_path):
+    prefix = tmp_path / "app"
+    data_dir = tmp_path / "data"
+    marker = prefix / "runtime" / "releases" / "source-install" / "keep.txt"
+    marker.parent.mkdir(parents=True)
+    marker.write_text("runtime", encoding="utf-8")
+    data_dir.mkdir()
+    (data_dir / "keep.txt").write_text("data", encoding="utf-8")
+    install_zermes.atomic_write_json(
+        install_zermes.active_metadata_path(prefix),
+        {"release_id": "source-install", "data_dir": str(data_dir)},
+    )
+
+    state = install_zermes.uninstall_runtime(prefix)
+
+    assert state["status"] == "uninstalled"
+    assert state["removed_data"] is False
+    assert not prefix.exists()
+    assert (data_dir / "keep.txt").read_text(encoding="utf-8") == "data"
+
+
+def test_uninstall_runtime_can_remove_data_dir(tmp_path):
+    prefix = tmp_path / "app"
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    install_zermes.atomic_write_json(
+        install_zermes.active_metadata_path(prefix),
+        {"release_id": "source-install", "data_dir": str(data_dir)},
+    )
+
+    state = install_zermes.uninstall_runtime(prefix, remove_data=True)
+
+    assert state["removed_data"] is True
+    assert not prefix.exists()
+    assert not data_dir.exists()
+
+
+def test_uninstall_runtime_requires_active_metadata(tmp_path):
+    with pytest.raises(ValueError, match="active.json"):
+        install_zermes.uninstall_runtime(tmp_path / "app")
+
+
+def test_uninstall_runtime_dry_run_does_not_delete(tmp_path):
+    prefix = tmp_path / "app"
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    install_zermes.atomic_write_json(
+        install_zermes.active_metadata_path(prefix),
+        {"release_id": "source-install", "data_dir": str(data_dir)},
+    )
+
+    state = install_zermes.uninstall_runtime(prefix, remove_data=True, dry_run=True)
+
+    assert state["removed_data"] is True
+    assert prefix.exists()
+    assert data_dir.exists()
+
+
+def test_remove_global_command_removes_matching_posix_symlink(tmp_path):
+    prefix = tmp_path / "app"
+    launcher = prefix / "bin" / "zermes"
+    launcher.parent.mkdir(parents=True)
+    launcher.write_text("#!/usr/bin/env sh\n", encoding="utf-8")
+    global_bin_dir = tmp_path / "user-bin"
+    global_bin_dir.mkdir()
+    link_path = global_bin_dir / "zermes"
+    link_path.symlink_to(launcher)
+
+    result = install_zermes.remove_global_command(
+        prefix,
+        global_bin_dir=global_bin_dir,
+        platform="posix",
+    )
+
+    assert result.status == "removed"
+    assert not link_path.exists()
+
+
+def test_remove_global_command_keeps_unrelated_posix_symlink(tmp_path):
+    prefix = tmp_path / "app"
+    other = tmp_path / "other" / "zermes"
+    other.parent.mkdir()
+    other.write_text("#!/usr/bin/env sh\n", encoding="utf-8")
+    global_bin_dir = tmp_path / "user-bin"
+    global_bin_dir.mkdir()
+    link_path = global_bin_dir / "zermes"
+    link_path.symlink_to(other)
+
+    result = install_zermes.remove_global_command(
+        prefix,
+        global_bin_dir=global_bin_dir,
+        platform="posix",
+    )
+
+    assert result.status == "skipped"
+    assert link_path.is_symlink()
+
+
+def test_remove_global_command_removes_windows_user_path(tmp_path):
+    prefix = tmp_path / "app"
+    writes: list[str] = []
+
+    result = install_zermes.remove_global_command(
+        prefix,
+        platform="windows",
+        env_path=f"C:\\Tools;{prefix / 'bin'};C:\\Other",
+        windows_path_writer=writes.append,
+    )
+
+    assert result.status == "removed"
+    assert writes == ["C:\\Tools;C:\\Other"]
+
+
 
 # From test_update_activate.py
 

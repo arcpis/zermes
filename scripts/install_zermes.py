@@ -146,6 +146,38 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Print rollback intent without writing files.",
     )
+    uninstall_parser = subparsers.add_parser(
+        "uninstall",
+        help="Remove an installed Zermes runtime.",
+        description="Remove an installed Zermes runtime while preserving user data by default.",
+    )
+    uninstall_parser.add_argument(
+        "--prefix",
+        type=Path,
+        default=None,
+        help="Software installation directory.",
+    )
+    uninstall_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Print uninstall intent without deleting files.",
+    )
+    uninstall_parser.add_argument(
+        "--remove-data",
+        action="store_true",
+        help="Also remove the data directory recorded in active.json.",
+    )
+    uninstall_parser.add_argument(
+        "--remove-global-command",
+        action="store_true",
+        help="Remove the user-level global zermes command created by the installer.",
+    )
+    uninstall_parser.add_argument(
+        "--global-bin-dir",
+        type=Path,
+        default=None,
+        help="User-level directory used for the global zermes command.",
+    )
     return parser
 
 
@@ -368,6 +400,12 @@ def rollback_state_path(prefix: Path) -> Path:
     return prefix.expanduser().resolve() / "runtime" / "rollback-state.json"
 
 
+def uninstall_state_path(prefix: Path) -> Path:
+    """Return the uninstall audit state path for a software prefix."""
+
+    return prefix.expanduser().resolve() / "runtime" / "uninstall-state.json"
+
+
 def read_active_metadata(prefix: Path) -> dict | None:
     """Read active release metadata when an installed runtime exists."""
 
@@ -402,6 +440,138 @@ def rollback_release(prefix: Path, *, dry_run: bool = False) -> dict:
         return state
     atomic_write_json(rollback_state_path(resolved_prefix), state)
     atomic_write_json(active_path, previous_payload)
+    return state
+
+
+def _remove_path_entry(path_value: str, directory: Path, *, platform: str) -> str:
+    separator = ";" if platform == "windows" else os.pathsep
+    target = os.path.normcase(os.path.normpath(str(directory.expanduser())))
+    if platform == "windows":
+        target = target.lower()
+    kept: list[str] = []
+    for entry in path_value.split(separator):
+        if not entry:
+            continue
+        candidate = os.path.normcase(os.path.normpath(str(Path(entry).expanduser())))
+        if platform == "windows":
+            candidate = candidate.lower()
+        if candidate != target:
+            kept.append(entry)
+    return separator.join(kept)
+
+
+def remove_global_command(
+    prefix: Path,
+    *,
+    global_bin_dir: Path | None = None,
+    platform: str | None = None,
+    env_path: str | None = None,
+    dry_run: bool = False,
+    windows_path_writer=None,
+) -> GlobalCommandResult:
+    """Remove user-level global command configuration owned by this installer."""
+
+    resolved_prefix = prefix.expanduser().resolve()
+    current_platform = platform or ("windows" if os.name == "nt" else "posix")
+    if current_platform == "windows":
+        path_dir = (global_bin_dir or (resolved_prefix / "bin")).expanduser()
+        current_path = read_user_windows_path() if env_path is None else env_path
+        if not _path_contains(path_dir, current_path, platform="windows"):
+            return GlobalCommandResult(
+                status="skipped",
+                method="user-path",
+                path=str(path_dir),
+                message="The zermes launcher directory was not present on the user PATH.",
+            )
+        new_path = _remove_path_entry(current_path, path_dir, platform="windows")
+        if not dry_run:
+            if windows_path_writer is None:
+                windows_path_writer = write_user_windows_path
+            windows_path_writer(new_path)
+        return GlobalCommandResult(
+            status="removed",
+            method="user-path",
+            path=str(path_dir),
+            message="Removed the zermes launcher directory from the user PATH.",
+        )
+
+    path_dir = (global_bin_dir or (Path.home() / ".local" / "bin")).expanduser()
+    link_path = path_dir / "zermes"
+    expected_launcher = resolved_prefix / "bin" / "zermes"
+    if not link_path.is_symlink():
+        return GlobalCommandResult(
+            status="skipped",
+            method="symlink",
+            path=str(link_path),
+            message="No installer-owned zermes symlink was found.",
+        )
+    try:
+        target = link_path.resolve(strict=False)
+    except OSError:
+        target = Path(os.readlink(link_path))
+        if not target.is_absolute():
+            target = (link_path.parent / target).resolve(strict=False)
+    if target != expected_launcher:
+        return GlobalCommandResult(
+            status="skipped",
+            method="symlink",
+            path=str(link_path),
+            message="Existing zermes symlink points outside this installation.",
+        )
+    if not dry_run:
+        link_path.unlink()
+    return GlobalCommandResult(
+        status="removed",
+        method="symlink",
+        path=str(link_path),
+        message="Removed the user-level zermes symlink.",
+    )
+
+
+def uninstall_runtime(
+    prefix: Path,
+    *,
+    remove_data: bool = False,
+    remove_global: bool = False,
+    global_bin_dir: Path | None = None,
+    dry_run: bool = False,
+) -> dict:
+    """Remove an installed runtime while preserving user data by default."""
+
+    resolved_prefix = prefix.expanduser().resolve()
+    active_metadata = read_active_metadata(resolved_prefix)
+    if active_metadata is None:
+        raise ValueError(f"cannot uninstall because active.json does not exist under {resolved_prefix}")
+    data_dir_value = active_metadata.get("data_dir")
+    data_dir = Path(data_dir_value).expanduser().resolve() if data_dir_value else None
+    global_command = (
+        remove_global_command(
+            resolved_prefix,
+            global_bin_dir=global_bin_dir,
+            dry_run=dry_run,
+        )
+        if remove_global
+        else GlobalCommandResult(
+            status="skipped",
+            method="none",
+            path=None,
+            message="Global zermes command removal was not requested.",
+        )
+    )
+    state = {
+        "mode": "uninstall",
+        "status": "uninstalled",
+        "install_prefix": str(resolved_prefix),
+        "data_dir": str(data_dir) if data_dir is not None else None,
+        "removed_data": bool(remove_data and data_dir is not None),
+        "global_command": asdict(global_command),
+    }
+    if dry_run:
+        return state
+    atomic_write_json(uninstall_state_path(resolved_prefix), state)
+    if remove_data and data_dir is not None and data_dir.exists():
+        shutil.rmtree(data_dir)
+    shutil.rmtree(resolved_prefix)
     return state
 
 
@@ -1428,7 +1598,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     command = getattr(args, "command", None)
     if command is None and getattr(args, "non_interactive", False):
-        parser.error("non-interactive mode requires install, update, or rollback")
+        parser.error("non-interactive mode requires install, update, rollback, or uninstall")
     if command is None:
         args.command = "install"
     repo_root = Path(__file__).resolve().parents[1]
@@ -1448,6 +1618,19 @@ def main(argv: list[str] | None = None) -> int:
         except ValueError as exc:
             parser.error(str(exc))
         print(json.dumps(rollback_state, ensure_ascii=False, indent=2))
+        return 0
+    if args.command == "uninstall":
+        try:
+            uninstall_state = uninstall_runtime(
+                args.prefix or default_prefix(),
+                remove_data=bool(args.remove_data),
+                remove_global=bool(args.remove_global_command),
+                global_bin_dir=args.global_bin_dir,
+                dry_run=bool(args.dry_run),
+            )
+        except ValueError as exc:
+            parser.error(str(exc))
+        print(json.dumps(uninstall_state, ensure_ascii=False, indent=2))
         return 0
     try:
         args = prepare_interactive_install_args(args)
