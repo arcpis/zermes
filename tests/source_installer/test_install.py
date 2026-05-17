@@ -298,6 +298,8 @@ def _args_install_workflow(tmp_path, **overrides):
         "python": None,
         "install_deps": True,
         "create_launchers": True,
+        "global_command": False,
+        "global_bin_dir": None,
         "skip_verify": False,
         "start": False,
     }
@@ -312,6 +314,7 @@ def test_prepare_interactive_install_args_prompts_for_missing_options(tmp_path):
         no_venv=False,
         install_deps=True,
         create_launchers=True,
+        global_command=None,
         non_interactive=False,
         dry_run=False,
     )
@@ -337,6 +340,26 @@ def test_prepare_interactive_install_args_prompts_for_missing_options(tmp_path):
     assert result.create_launchers is False
 
 
+def test_prepare_interactive_install_args_prompts_for_global_command(tmp_path):
+    args = argparse.Namespace(
+        prefix=tmp_path / "app",
+        data_dir=tmp_path / "data",
+        no_venv=True,
+        install_deps=False,
+        create_launchers=True,
+        global_command=None,
+        non_interactive=False,
+        dry_run=False,
+    )
+
+    result = install_zermes.prepare_interactive_install_args(
+        args,
+        input_fn=lambda _prompt: "y",
+    )
+
+    assert result.global_command is True
+
+
 def test_run_install_workflow_runs_steps_in_order(monkeypatch, tmp_path):
     args = _args_install_workflow(tmp_path)
     calls: list[str] = []
@@ -352,6 +375,13 @@ def test_run_install_workflow_runs_steps_in_order(monkeypatch, tmp_path):
                 return {"release_id": "source-install"}
             if name == "launchers":
                 return (tmp_path / "app" / "bin" / "zermes",)
+            if name == "global":
+                return install_zermes.GlobalCommandResult(
+                    status="skipped",
+                    method="none",
+                    path=None,
+                    message="skipped",
+                )
             if name == "verify":
                 return ()
             return install_zermes.CommandResult(command=(), returncode=0)
@@ -365,6 +395,7 @@ def test_run_install_workflow_runs_steps_in_order(monkeypatch, tmp_path):
     monkeypatch.setattr(install_zermes, "install_python_dependencies", record("deps"))
     monkeypatch.setattr(install_zermes, "write_release_metadata", record("metadata"))
     monkeypatch.setattr(install_zermes, "create_launcher_scripts", record("launchers"))
+    monkeypatch.setattr(install_zermes, "configure_global_command", record("global"))
     monkeypatch.setattr(install_zermes, "verify_installed_runtime", record("verify"))
 
     result = install_zermes.run_install_workflow(args, repo_root=tmp_path / "repo")
@@ -377,6 +408,7 @@ def test_run_install_workflow_runs_steps_in_order(monkeypatch, tmp_path):
         "deps",
         "metadata",
         "launchers",
+        "global",
         "verify",
     ]
     assert result["status"] == "installed"
@@ -388,8 +420,10 @@ def test_run_install_workflow_runs_steps_in_order(monkeypatch, tmp_path):
         "install-python-dependencies",
         "write-release-metadata",
         "create-launchers",
+        "configure-global-command",
         "verify-runtime",
     ]
+    assert result["global_command"]["status"] == "skipped"
 
 
 def test_run_install_workflow_dry_run_only_returns_plan(monkeypatch, tmp_path):
@@ -552,6 +586,103 @@ def test_create_launcher_scripts_dry_run_does_not_write(tmp_path):
         Path(plan.bin_dir) / "zermes-gateway.bat",
     )
     assert not Path(plan.bin_dir).exists()
+
+
+def test_configure_global_command_skips_when_disabled(tmp_path):
+    plan = _plan_launchers(tmp_path)
+
+    result = install_zermes.configure_global_command(plan, enabled=False)
+
+    assert result.status == "skipped"
+    assert result.path is None
+
+
+def test_configure_global_command_creates_posix_symlink_when_path_is_ready(tmp_path):
+    plan = _plan_launchers(tmp_path)
+    Path(plan.bin_dir).mkdir(parents=True)
+    launcher = Path(plan.bin_dir) / "zermes"
+    launcher.write_text("#!/usr/bin/env sh\n", encoding="utf-8")
+    global_bin_dir = tmp_path / "user-bin"
+
+    result = install_zermes.configure_global_command(
+        plan,
+        enabled=True,
+        global_bin_dir=global_bin_dir,
+        platform="posix",
+        env_path=str(global_bin_dir),
+    )
+
+    assert result.status == "enabled"
+    assert result.method == "symlink"
+    assert (global_bin_dir / "zermes").is_symlink()
+    assert (global_bin_dir / "zermes").readlink() == launcher
+
+
+def test_configure_global_command_reports_manual_action_when_posix_path_is_missing(tmp_path):
+    plan = _plan_launchers(tmp_path)
+    Path(plan.bin_dir).mkdir(parents=True)
+    (Path(plan.bin_dir) / "zermes").write_text("#!/usr/bin/env sh\n", encoding="utf-8")
+    global_bin_dir = tmp_path / "user-bin"
+
+    result = install_zermes.configure_global_command(
+        plan,
+        enabled=True,
+        global_bin_dir=global_bin_dir,
+        platform="posix",
+        env_path=str(tmp_path / "other-bin"),
+    )
+
+    assert result.status == "manual_action_required"
+    assert (global_bin_dir / "zermes").is_symlink()
+
+
+def test_configure_global_command_does_not_duplicate_windows_path(tmp_path):
+    plan = _plan_launchers(tmp_path)
+    writes: list[str] = []
+
+    result = install_zermes.configure_global_command(
+        plan,
+        enabled=True,
+        platform="windows",
+        env_path=f"C:\\Tools;{plan.bin_dir}",
+        windows_path_writer=writes.append,
+    )
+
+    assert result.status == "already_configured"
+    assert writes == []
+
+
+def test_configure_global_command_appends_windows_user_path(tmp_path):
+    plan = _plan_launchers(tmp_path)
+    writes: list[str] = []
+
+    result = install_zermes.configure_global_command(
+        plan,
+        enabled=True,
+        platform="windows",
+        env_path="C:\\Tools",
+        windows_path_writer=writes.append,
+    )
+
+    assert result.status == "enabled"
+    assert writes == [f"C:\\Tools;{plan.bin_dir}"]
+
+
+def test_configure_global_command_dry_run_does_not_write(tmp_path):
+    plan = _plan_launchers(tmp_path)
+    global_bin_dir = tmp_path / "user-bin"
+
+    result = install_zermes.configure_global_command(
+        plan,
+        enabled=True,
+        global_bin_dir=global_bin_dir,
+        platform="posix",
+        env_path=str(global_bin_dir),
+        dry_run=True,
+    )
+
+    assert result.status == "enabled"
+    assert not global_bin_dir.exists()
 
 
 def _write_launcher_source(plan):

@@ -67,6 +67,16 @@ class CommandResult:
 
 
 @dataclass(frozen=True)
+class GlobalCommandResult:
+    """Result from making the zermes command visible on PATH."""
+
+    status: str
+    method: str
+    path: str | None
+    message: str
+
+
+@dataclass(frozen=True)
 class UpdateSource:
     """Resolved source checkout for an update candidate."""
 
@@ -207,6 +217,26 @@ def _add_install_options(parser: argparse.ArgumentParser) -> None:
         dest="create_launchers",
         action="store_false",
         help="Skip command-line launcher script creation.",
+    )
+    global_group = parser.add_mutually_exclusive_group()
+    global_group.add_argument(
+        "--global-command",
+        dest="global_command",
+        action="store_true",
+        default=None,
+        help="Configure the current user environment so zermes is available from any directory.",
+    )
+    global_group.add_argument(
+        "--no-global-command",
+        dest="global_command",
+        action="store_false",
+        help="Do not configure a global zermes command.",
+    )
+    parser.add_argument(
+        "--global-bin-dir",
+        type=Path,
+        default=None,
+        help="User-level directory used for the global zermes command.",
     )
     parser.add_argument(
         "--skip-verify",
@@ -724,6 +754,12 @@ def prepare_interactive_install_args(
             default=True,
             input_fn=input_fn,
         )
+    if getattr(args, "create_launchers", True) and getattr(args, "global_command", None) is None:
+        args.global_command = prompt_yes_no(
+            "Enable the global zermes command for this user? [Y/n] ",
+            default=True,
+            input_fn=input_fn,
+        )
     return args
 
 
@@ -1028,6 +1064,120 @@ def create_launcher_scripts(
     return (launcher_path, posix_path, posix_gateway_path, windows_path, windows_gateway_path)
 
 
+def _path_contains(directory: Path, path_value: str, *, platform: str) -> bool:
+    separator = ";" if platform == "windows" else os.pathsep
+    target = os.path.normcase(os.path.normpath(str(directory.expanduser())))
+    if platform == "windows":
+        target = target.lower()
+    for entry in path_value.split(separator):
+        if not entry:
+            continue
+        candidate = os.path.normcase(os.path.normpath(str(Path(entry).expanduser())))
+        if platform == "windows":
+            candidate = candidate.lower()
+        if candidate == target:
+            return True
+    return False
+
+
+def _append_path_entry(path_value: str, directory: Path, *, platform: str) -> str:
+    separator = ";" if platform == "windows" else os.pathsep
+    if not path_value:
+        return str(directory)
+    return f"{path_value}{separator}{directory}"
+
+
+def read_user_windows_path() -> str:
+    """Read the current user's persistent Windows PATH value."""
+
+    if os.name != "nt":
+        return ""
+    import winreg
+
+    with winreg.OpenKey(winreg.HKEY_CURRENT_USER, "Environment") as key:
+        try:
+            value, _value_type = winreg.QueryValueEx(key, "Path")
+        except FileNotFoundError:
+            return ""
+    return str(value)
+
+
+def write_user_windows_path(path_value: str) -> None:
+    """Persist the current user's Windows PATH value."""
+
+    if os.name != "nt":
+        return
+    import winreg
+
+    with winreg.OpenKey(winreg.HKEY_CURRENT_USER, "Environment", 0, winreg.KEY_SET_VALUE) as key:
+        winreg.SetValueEx(key, "Path", 0, winreg.REG_EXPAND_SZ, path_value)
+
+
+def configure_global_command(
+    plan: InstallerPlan,
+    *,
+    enabled: bool = False,
+    global_bin_dir: Path | None = None,
+    platform: str | None = None,
+    env_path: str | None = None,
+    dry_run: bool = False,
+    windows_path_writer=write_user_windows_path,
+) -> GlobalCommandResult:
+    """Make the installed zermes launcher discoverable from arbitrary directories."""
+
+    if not enabled:
+        return GlobalCommandResult(
+            status="skipped",
+            method="none",
+            path=None,
+            message="Global zermes command was not requested.",
+        )
+
+    current_platform = platform or ("windows" if os.name == "nt" else "posix")
+    if current_platform == "windows":
+        path_dir = (global_bin_dir or Path(plan.bin_dir)).expanduser()
+        current_path = read_user_windows_path() if env_path is None else env_path
+        if _path_contains(path_dir, current_path, platform="windows"):
+            return GlobalCommandResult(
+                status="already_configured",
+                method="user-path",
+                path=str(path_dir),
+                message="The zermes launcher directory is already on the user PATH.",
+            )
+        if not dry_run:
+            windows_path_writer(_append_path_entry(current_path, path_dir, platform="windows"))
+        return GlobalCommandResult(
+            status="enabled",
+            method="user-path",
+            path=str(path_dir),
+            message="Added the zermes launcher directory to the user PATH. Open a new terminal before running zermes.",
+        )
+
+    path_dir = (global_bin_dir or (Path.home() / ".local" / "bin")).expanduser()
+    link_path = path_dir / "zermes"
+    launcher_path = Path(plan.bin_dir) / "zermes"
+    current_path = os.environ.get("PATH", "") if env_path is None else env_path
+    path_ready = _path_contains(path_dir, current_path, platform="posix")
+    if not dry_run:
+        path_dir.mkdir(parents=True, exist_ok=True)
+        if link_path.exists() or link_path.is_symlink():
+            link_path.unlink()
+        link_path.symlink_to(launcher_path)
+    if path_ready:
+        return GlobalCommandResult(
+            status="enabled",
+            method="symlink",
+            path=str(link_path),
+            message="Created a user-level zermes command on PATH.",
+        )
+    return GlobalCommandResult(
+        status="manual_action_required",
+        method="symlink",
+        path=str(link_path),
+        message=f"Created {link_path}; add {path_dir} to PATH or open a shell where it is already configured.",
+    )
+
+
 def verification_commands(
     plan: InstallerPlan,
     *,
@@ -1249,6 +1399,13 @@ def run_install_workflow(
         create_launchers=getattr(args, "create_launchers", True),
     )
     mark("create-launchers", [str(path) for path in launchers])
+    announce("Configuring global zermes command...")
+    global_command = configure_global_command(
+        plan,
+        enabled=bool(getattr(args, "global_command", False)),
+        global_bin_dir=getattr(args, "global_bin_dir", None),
+    )
+    mark("configure-global-command", asdict(global_command))
     announce("Verifying the installed runtime...")
     verification_results = verify_installed_runtime(
         plan,
@@ -1262,6 +1419,7 @@ def run_install_workflow(
         "steps": steps,
         "metadata": metadata,
         "launchers": [str(path) for path in launchers],
+        "global_command": asdict(global_command),
     }
 
 
