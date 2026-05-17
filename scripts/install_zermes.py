@@ -41,6 +41,8 @@ class InstallerPlan:
     repo_root: str
     prefix: str
     data_dir: str
+    install_data_dir: str
+    self_evolution_data_dir: str
     release_id: str
     runtime_dir: str
     release_dir: str
@@ -604,6 +606,8 @@ def build_update_candidate_plan(
         repo_root=str(Path(update_source.path).resolve()),
         prefix=str(prefix.resolve()),
         data_dir=str(data_dir.resolve()),
+        install_data_dir=str((prefix / "data").resolve()),
+        self_evolution_data_dir=str((prefix / "data" / "self-evolution").resolve()),
         release_id=str(release_id),
         runtime_dir=str(runtime_dir.resolve()),
         release_dir=str(candidate_dir.resolve()),
@@ -632,6 +636,8 @@ def release_plan_from_candidate(plan: InstallerPlan) -> InstallerPlan:
         repo_root=plan.repo_root,
         prefix=plan.prefix,
         data_dir=plan.data_dir,
+        install_data_dir=plan.install_data_dir,
+        self_evolution_data_dir=plan.self_evolution_data_dir,
         release_id=plan.release_id,
         runtime_dir=plan.runtime_dir,
         release_dir=str(release_dir.resolve()),
@@ -1090,6 +1096,8 @@ def release_metadata(plan: InstallerPlan, *, now: datetime | None = None) -> dic
         "release_id": plan.release_id,
         "install_prefix": plan.prefix,
         "data_dir": plan.data_dir,
+        "install_data_dir": plan.install_data_dir,
+        "self_evolution_data_dir": plan.self_evolution_data_dir,
         "source_path": plan.source_dir,
         "venv_path": plan.venv_dir,
         "build_path": plan.build_dir,
@@ -1392,6 +1400,22 @@ def create_data_directory(plan: InstallerPlan, *, dry_run: bool = False) -> Path
     return data_dir
 
 
+def install_data_directories(plan: InstallerPlan) -> tuple[Path, ...]:
+    """Return install-local runtime data directories owned by the installer."""
+
+    self_evolution_data_dir = Path(plan.self_evolution_data_dir)
+    return (
+        Path(plan.install_data_dir),
+        self_evolution_data_dir,
+        self_evolution_data_dir / "tasks",
+        self_evolution_data_dir / "candidates",
+        self_evolution_data_dir / "locks",
+        self_evolution_data_dir / "locks" / "repositories",
+        self_evolution_data_dir / "reports",
+        Path(plan.install_data_dir) / "tmp",
+    )
+
+
 def install_directories(plan: InstallerPlan) -> tuple[Path, ...]:
     return (
         Path(plan.prefix) / "launcher",
@@ -1401,6 +1425,7 @@ def install_directories(plan: InstallerPlan) -> tuple[Path, ...]:
         Path(plan.build_dir),
         Path(plan.bin_dir),
         Path(plan.prefix) / "logs",
+        *install_data_directories(plan),
     )
 
 
@@ -1489,6 +1514,8 @@ def build_plan(args: argparse.Namespace, *, repo_root: Path) -> InstallerPlan:
     venv_dir = release_dir / "venv"
     build_dir = release_dir / "build"
     bin_dir = prefix / "bin"
+    install_data_dir = prefix / "data"
+    self_evolution_data_dir = install_data_dir / "self-evolution"
     selected_python = getattr(args, "python", None)
     python_path = venv_python_path(venv_dir) if use_venv else Path(selected_python or sys.executable)
     resolved_python_path = python_path.expanduser()
@@ -1498,6 +1525,8 @@ def build_plan(args: argparse.Namespace, *, repo_root: Path) -> InstallerPlan:
         repo_root=str(repo_root.resolve()),
         prefix=str(prefix.resolve()),
         data_dir=str(data_dir.resolve()),
+        install_data_dir=str(install_data_dir.resolve()),
+        self_evolution_data_dir=str(self_evolution_data_dir.resolve()),
         release_id=str(args.release_id),
         runtime_dir=str(runtime_dir.resolve()),
         release_dir=str(release_dir.resolve()),

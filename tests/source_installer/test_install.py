@@ -251,6 +251,13 @@ def test_create_install_directories(tmp_path):
     assert Path(plan.source_dir).is_dir()
     assert Path(plan.build_dir).is_dir()
     assert Path(plan.bin_dir).is_dir()
+    assert Path(plan.install_data_dir).is_dir()
+    assert Path(plan.self_evolution_data_dir).is_dir()
+    assert (Path(plan.self_evolution_data_dir) / "tasks").is_dir()
+    assert (Path(plan.self_evolution_data_dir) / "candidates").is_dir()
+    assert (Path(plan.self_evolution_data_dir) / "locks" / "repositories").is_dir()
+    assert (Path(plan.self_evolution_data_dir) / "reports").is_dir()
+    assert (Path(plan.install_data_dir) / "tmp").is_dir()
 
 
 def test_create_install_directories_is_idempotent(tmp_path):
@@ -263,6 +270,12 @@ def test_create_install_directories_is_idempotent(tmp_path):
     install_zermes.create_install_directories(plan)
 
     assert unknown_file.read_text(encoding="utf-8") == "do not delete"
+    audit_file = Path(plan.self_evolution_data_dir) / "tasks" / "keep.md"
+    audit_file.write_text("do not delete", encoding="utf-8")
+
+    install_zermes.create_install_directories(plan)
+
+    assert audit_file.read_text(encoding="utf-8") == "do not delete"
 
 
 def test_create_install_directories_dry_run_does_not_write(tmp_path):
@@ -725,6 +738,8 @@ def test_release_metadata_contains_runtime_fields(tmp_path):
         "release_id": "source-install",
         "install_prefix": plan.prefix,
         "data_dir": plan.data_dir,
+        "install_data_dir": plan.install_data_dir,
+        "self_evolution_data_dir": plan.self_evolution_data_dir,
         "source_path": plan.source_dir,
         "venv_path": plan.venv_dir,
         "build_path": plan.build_dir,

@@ -165,6 +165,10 @@ def test_plan_computes_runtime_release_paths(tmp_path):
         prefix / "runtime" / "releases" / "source-install" / "build"
     ).resolve()
     assert Path(plan.bin_dir) == (prefix / "bin").resolve()
+    assert Path(plan.install_data_dir) == (prefix / "data").resolve()
+    assert Path(plan.self_evolution_data_dir) == (
+        prefix / "data" / "self-evolution"
+    ).resolve()
     assert Path(plan.active_path) == (prefix / "runtime" / "active.json").resolve()
     assert Path(plan.previous_path) == (prefix / "runtime" / "previous.json").resolve()
 
