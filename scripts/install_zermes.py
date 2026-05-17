@@ -1402,16 +1402,8 @@ def create_data_directory(plan: InstallerPlan, *, dry_run: bool = False) -> Path
 def install_data_directories(plan: InstallerPlan) -> tuple[Path, ...]:
     """Return install-local runtime data directories owned by the installer."""
 
-    self_evolution_data_dir = Path(plan.self_evolution_data_dir)
     return (
         Path(plan.install_data_dir),
-        self_evolution_data_dir,
-        self_evolution_data_dir / "tasks",
-        self_evolution_data_dir / "candidates",
-        self_evolution_data_dir / "locks",
-        self_evolution_data_dir / "locks" / "repositories",
-        self_evolution_data_dir / "reports",
-        Path(plan.install_data_dir) / "tmp",
     )
 
 

@@ -252,12 +252,8 @@ def test_create_install_directories(tmp_path):
     assert Path(plan.build_dir).is_dir()
     assert Path(plan.bin_dir).is_dir()
     assert Path(plan.install_data_dir).is_dir()
-    assert Path(plan.self_evolution_data_dir).is_dir()
-    assert (Path(plan.self_evolution_data_dir) / "tasks").is_dir()
-    assert (Path(plan.self_evolution_data_dir) / "candidates").is_dir()
-    assert (Path(plan.self_evolution_data_dir) / "locks" / "repositories").is_dir()
-    assert (Path(plan.self_evolution_data_dir) / "reports").is_dir()
-    assert (Path(plan.install_data_dir) / "tmp").is_dir()
+    assert not Path(plan.self_evolution_data_dir).exists()
+    assert not (Path(plan.install_data_dir) / "tmp").exists()
 
 
 def test_create_install_directories_is_idempotent(tmp_path):
@@ -271,6 +267,7 @@ def test_create_install_directories_is_idempotent(tmp_path):
 
     assert unknown_file.read_text(encoding="utf-8") == "do not delete"
     audit_file = Path(plan.self_evolution_data_dir) / "tasks" / "keep.md"
+    audit_file.parent.mkdir(parents=True)
     audit_file.write_text("do not delete", encoding="utf-8")
 
     install_zermes.create_install_directories(plan)
