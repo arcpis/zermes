@@ -35,7 +35,6 @@ def _exec_restart_intent(args: list[str]) -> int:
     _validate_restart_intent(active, intent)
     mode = str(intent.get("mode") or "cli").strip().lower()
     restart_args = _restart_args(intent)
-    _mark_restart_intent_restarting(prefix, intent)
     return _exec_active_release(prefix, active, mode=mode, args=restart_args, intent=intent)
 
 
@@ -67,6 +66,8 @@ def _exec_active_release(
         command.append("gateway")
     command.extend(args)
     os.chdir(restart_cwd or source_path)
+    if intent is not None:
+        _mark_restart_intent_restarting(prefix, intent)
     os.execve(str(python_path), command, env)
     return 127
 

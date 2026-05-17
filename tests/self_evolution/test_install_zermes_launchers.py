@@ -271,6 +271,63 @@ def test_stable_launcher_rejects_stale_restart_intent(monkeypatch, tmp_path):
         raise AssertionError("Expected SystemExit for stale restart intent")
 
 
+def test_stable_launcher_does_not_consume_restart_intent_when_context_invalid(
+    monkeypatch, tmp_path
+):
+    from launcher import zermes_launcher
+
+    prefix = tmp_path / "install"
+    source = tmp_path / "active-source"
+    venv = tmp_path / "active-venv"
+    python = venv / ("Scripts/python.exe" if zermes_launcher.os.name == "nt" else "bin/python")
+    source.mkdir()
+    python.parent.mkdir(parents=True)
+    python.write_text("", encoding="utf-8")
+    active = {
+        "release_id": "release-abc1234",
+        "source_path": str(source),
+        "venv_path": str(venv),
+    }
+    active_path = prefix / "runtime" / "active.json"
+    active_path.parent.mkdir(parents=True)
+    active_path.write_text(json.dumps(active), encoding="utf-8")
+    digest = hashlib.sha256(
+        json.dumps(active, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+    intent_path = prefix / "runtime" / "restart-intent.json"
+    intent_path.write_text(
+        json.dumps(
+            {
+                "status": "requested",
+                "mode": "cli",
+                "release_id": "release-abc1234",
+                "active_release_digest": digest,
+                "approved_by_user": True,
+                "cwd": str(tmp_path / "missing-cwd"),
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setenv("ZERMES_INSTALL_PREFIX", str(prefix))
+    monkeypatch.setattr(
+        zermes_launcher.os,
+        "execve",
+        lambda *_args: (_ for _ in ()).throw(AssertionError("execve should not run")),
+    )
+
+    try:
+        zermes_launcher.main(["restart-intent"])
+    except SystemExit as exc:
+        assert "cwd does not exist" in str(exc)
+    else:
+        raise AssertionError("Expected SystemExit for invalid restart cwd")
+
+    intent = json.loads(intent_path.read_text(encoding="utf-8"))
+    assert intent["status"] == "requested"
+    assert "restarting_at" not in intent
+
+
 def _install_args(tmp_path):
     return Namespace(
         dry_run=False,
