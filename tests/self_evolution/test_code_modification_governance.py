@@ -17,11 +17,41 @@ from code_modification.governance import (
 )
 
 
-def test_evolution_workspace_is_next_to_project_root(tmp_path):
+def test_evolution_workspace_uses_install_data_dir(tmp_path):
+    project_root = tmp_path / "hermes-agent"
+    project_root.mkdir()
+    prefix = tmp_path / "zermes"
+
+    assert get_evolution_workspace(project_root, install_prefix=prefix) == (
+        prefix / "data" / "self-evolution"
+    )
+
+
+def test_evolution_workspace_requires_install_prefix(tmp_path):
     project_root = tmp_path / "hermes-agent"
     project_root.mkdir()
 
-    assert get_evolution_workspace(project_root) == tmp_path / "self-evolution"
+    try:
+        get_evolution_workspace(project_root)
+    except ProjectRootResolutionError as exc:
+        assert "install_prefix is required" in str(exc)
+    else:
+        raise AssertionError("Expected missing install_prefix to fail")
+
+
+def test_evolution_workspace_reads_active_metadata(tmp_path):
+    project_root = tmp_path / "hermes-agent"
+    project_root.mkdir()
+    prefix = tmp_path / "zermes"
+    configured_workspace = tmp_path / "runtime-data" / "self-evolution"
+    active_path = prefix / "runtime" / "active.json"
+    active_path.parent.mkdir(parents=True)
+    active_path.write_text(
+        json.dumps({"self_evolution_data_dir": str(configured_workspace)}),
+        encoding="utf-8",
+    )
+
+    assert get_evolution_workspace(project_root, install_prefix=prefix) == configured_workspace
 
 
 def test_task_id_is_timestamped_and_readable():
@@ -39,12 +69,17 @@ def test_development_branch_uses_self_evolution_namespace():
 def test_task_record_layout_defines_audit_and_temp_paths(tmp_path):
     project_root = tmp_path / "hermes-agent"
     project_root.mkdir()
+    prefix = tmp_path / "zermes"
 
-    layout = build_task_record_layout(project_root, "20260502-030405-add-tool")
+    layout = build_task_record_layout(
+        project_root,
+        "20260502-030405-add-tool",
+        install_prefix=prefix,
+    )
 
-    task_dir = tmp_path / "self-evolution" / "tasks" / "20260502-030405-add-tool"
+    task_dir = prefix / "data" / "self-evolution" / "tasks" / "20260502-030405-add-tool"
     assert layout.task_id == "20260502-030405-add-tool"
-    assert layout.workspace_dir == tmp_path / "self-evolution"
+    assert layout.workspace_dir == prefix / "data" / "self-evolution"
     assert layout.task_dir == task_dir
     assert layout.temp_dir == task_dir / "temp"
     assert layout.thinking_path == task_dir / "thinking.md"

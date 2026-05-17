@@ -75,10 +75,17 @@ def plan_task_verification(
     task_id: str,
     *,
     project_root: str | Path,
+    install_prefix: str | Path | None = None,
+    workspace_dir: str | Path | None = None,
     include_full_suite: bool = False,
 ) -> VerificationState:
     root = require_git_repository(project_root)
-    layout = build_task_record_layout(root, task_id)
+    layout = build_task_record_layout(
+        root,
+        task_id,
+        install_prefix=install_prefix,
+        workspace_dir=workspace_dir,
+    )
     execution_state = read_state(layout.task_dir / "execution-state.json")
     require_verifiable_execution_state(execution_state.status, bool(execution_state.commits))
     require_task_branch(root, execution_state.development_branch)
@@ -126,9 +133,16 @@ def run_task_verification(
     *,
     commands: list[str] | None = None,
     project_root: str | Path,
+    install_prefix: str | Path | None = None,
+    workspace_dir: str | Path | None = None,
 ) -> VerificationState:
     root = require_git_repository(project_root)
-    layout = build_task_record_layout(root, task_id)
+    layout = build_task_record_layout(
+        root,
+        task_id,
+        install_prefix=install_prefix,
+        workspace_dir=workspace_dir,
+    )
     execution_state = read_state(layout.task_dir / "execution-state.json")
     require_verifiable_execution_state(execution_state.status, bool(execution_state.commits))
     require_task_branch(root, execution_state.development_branch)
@@ -137,6 +151,8 @@ def run_task_verification(
     state = read_verification_state(state_path) if state_path.exists() else plan_task_verification(
         task_id,
         project_root=root,
+        install_prefix=install_prefix,
+        workspace_dir=workspace_dir,
     )
     planned_commands = tuple(parse_user_command(command) for command in commands) if commands else state.planned_commands
     if not planned_commands:
@@ -183,9 +199,16 @@ def record_task_safety_review(
     answers: list[str] | None = None,
     conclusion: str = "",
     project_root: str | Path,
+    install_prefix: str | Path | None = None,
+    workspace_dir: str | Path | None = None,
 ) -> VerificationState:
     root = require_git_repository(project_root)
-    layout = build_task_record_layout(root, task_id)
+    layout = build_task_record_layout(
+        root,
+        task_id,
+        install_prefix=install_prefix,
+        workspace_dir=workspace_dir,
+    )
     execution_state = read_state(layout.task_dir / "execution-state.json")
     require_task_branch(root, execution_state.development_branch)
     clean_questions = tuple(item.strip() for item in questions if item.strip())
@@ -233,9 +256,20 @@ def record_task_safety_review(
     return updated
 
 
-def describe_task_verification(task_id: str, *, project_root: str | Path) -> dict:
+def describe_task_verification(
+    task_id: str,
+    *,
+    project_root: str | Path,
+    install_prefix: str | Path | None = None,
+    workspace_dir: str | Path | None = None,
+) -> dict:
     root = require_git_repository(project_root)
-    layout = build_task_record_layout(root, task_id)
+    layout = build_task_record_layout(
+        root,
+        task_id,
+        install_prefix=install_prefix,
+        workspace_dir=workspace_dir,
+    )
     state_path = layout.task_dir / VERIFICATION_STATE_FILE_NAME
     state = read_verification_state(state_path) if state_path.exists() else None
     return {

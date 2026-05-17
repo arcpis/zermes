@@ -53,8 +53,8 @@ The `code_modification` toolset is designed for governed repository changes, not
 - **Explicit-file commits:** `commit_code_task_step` requires explicit file paths; broad staging is not allowed.
 - **Allow-listed verification:** `verifier.py` runs only supported verification commands and records results before finalization.
 - **Read-only thinking:** `self_evolution_thinking` writes advisory candidate reports and schedule/config metadata only.
-- **Repository-local analysis:** `token_strategy.py` builds low-token context from files inside the repository root only and writes generated summaries under `.hermes-analysis-cache/`.
-- **Generated cache:** `.hermes-analysis-cache/` is analysis state, not a trust boundary or audit record, and should not be committed.
+- **Repository-local analysis:** `token_strategy.py` builds low-token context from files inside the repository root only and writes generated summaries under `<install_prefix>/data/self-evolution/analysis-cache/`.
+- **Generated cache:** Analysis-cache content is install-local runtime state, not a trust boundary, and should not be committed.
 
 ---
 

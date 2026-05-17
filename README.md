@@ -211,10 +211,10 @@ Zermes includes a governed self-evolution workflow for improving its own codebas
 - Commits must stage explicit file lists, not broad working-tree changes.
 - Verification plans and results are recorded before final integration.
 - `self_evolution_thinking` can create advisory candidate reports, but it never executes code changes.
-- Low-token analysis context is built from files inside this repository only and cached under `.hermes-analysis-cache/`.
+- Low-token analysis context is built from files inside this repository only and cached under `<install_prefix>/data/self-evolution/analysis-cache/`.
 - Approval plans and final reports track documentation sync candidates so user-visible changes can be reflected in repository docs.
 
-Generated `.hermes-analysis-cache/` content is local analysis state and is ignored by git.
+Generated analysis-cache content is install-local runtime state under the self-evolution data directory and is not committed to git.
 
 ---
 

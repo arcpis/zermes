@@ -146,9 +146,9 @@ Stage summary:
 4. Verification: tests, compile checks, and safety review records gate finalization.
 5. Prompt routing: clear improvement requests route to approval planning.
 6. Read-only thinking: scheduled or manual candidate reports remain advisory.
-7. Low-token analysis: repository-local summaries are reused across a task.
+7. Low-token analysis: summaries are built from repository files and stored with the task audit data.
 
-`token_strategy.py` writes reusable summaries under `.hermes-analysis-cache/`:
+`token_strategy.py` writes reusable summaries under `<install_prefix>/data/self-evolution/analysis-cache/`:
 
 - `runs/<context_run_id>/task-context-summary.md` for later steps in the same task.
 - `runs/<context_run_id>/docs-summary.json` for cached documentation summaries.

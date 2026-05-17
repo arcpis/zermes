@@ -24,7 +24,6 @@ import tarfile
 EXCLUDED_SOURCE_DIR_NAMES = frozenset(
     {
         ".git",
-        ".hermes-analysis-cache",
         ".pytest_cache",
         ".venv",
         "__pycache__",

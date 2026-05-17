@@ -46,6 +46,8 @@ def build_approval_plan(
     requirement: str,
     project_root: str | Path,
     *,
+    install_prefix: str | Path | None = None,
+    workspace_dir: str | Path | None = None,
     context: str = "",
     affected_areas: tuple[str, ...] = (),
     context_state_path: str = "",
@@ -57,7 +59,12 @@ def build_approval_plan(
     """Build a review plan and audit layout for a change request."""
     clean_requirement = requirement.strip()
     task_id = make_task_id(clean_requirement, now=now)
-    layout = build_task_record_layout(project_root, task_id)
+    layout = build_task_record_layout(
+        project_root,
+        task_id,
+        install_prefix=install_prefix,
+        workspace_dir=workspace_dir,
+    )
     open_questions = _find_open_questions(clean_requirement)
     recommend_execution = not open_questions
     boundary = (

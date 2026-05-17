@@ -18,6 +18,7 @@ from code_modification.executor import (
 from code_modification.git_workflow import GitWorkflowError
 from code_modification.governance import (
     ProjectRootResolutionError,
+    get_evolution_workspace,
     resolve_self_evolution_project_root,
 )
 from code_modification.self_update import (
@@ -88,33 +89,36 @@ def complete_code_task(
 
     clean_affected_areas = _clean_affected_areas(affected_areas)
     try:
+        _require_install_prefix(install_prefix)
         root = _resolve_tool_project_root(project_root, install_prefix)
+        analysis_context = build_analysis_context(
+            root,
+            purpose="approval",
+            install_prefix=install_prefix,
+            hints=AnalysisHints(
+                requirement=clean_requirement,
+                explicit_paths=tuple(clean_affected_areas),
+            ),
+        )
+        enriched_context = _merge_context_summary(
+            str(context or ""),
+            analysis_context.task_context_summary_path,
+        )
+
+        plan, layout = build_approval_plan(
+            clean_requirement,
+            root,
+            context=enriched_context,
+            affected_areas=tuple(clean_affected_areas),
+            install_prefix=install_prefix,
+            context_state_path=analysis_context.context_state_path,
+            task_context_summary_path=analysis_context.task_context_summary_path,
+            docs_summary_path=analysis_context.docs_summary_path,
+            documentation_updates=analysis_context.documentation_updates,
+        )
+        write_approval_documents(plan, layout)
     except ProjectRootResolutionError as exc:
         return tool_error(str(exc), success=False)
-    analysis_context = build_analysis_context(
-        root,
-        purpose="approval",
-        hints=AnalysisHints(
-            requirement=clean_requirement,
-            explicit_paths=tuple(clean_affected_areas),
-        ),
-    )
-    enriched_context = _merge_context_summary(
-        str(context or ""),
-        analysis_context.task_context_summary_path,
-    )
-
-    plan, layout = build_approval_plan(
-        clean_requirement,
-        root,
-        context=enriched_context,
-        affected_areas=tuple(clean_affected_areas),
-        context_state_path=analysis_context.context_state_path,
-        task_context_summary_path=analysis_context.task_context_summary_path,
-        docs_summary_path=analysis_context.docs_summary_path,
-        documentation_updates=analysis_context.documentation_updates,
-    )
-    write_approval_documents(plan, layout)
 
     return tool_result(
         success=True,
@@ -156,11 +160,13 @@ def start_approved_code_task(
 ) -> str:
     """Start an approved task by creating its dedicated development branch."""
     try:
+        _require_install_prefix(install_prefix)
         root = _resolve_tool_project_root(project_root, install_prefix)
         state = start_approved_task(
             str(task_id or ""),
             approval_text=str(approval_text or ""),
             project_root=root,
+            install_prefix=install_prefix,
             base_branch=str(base_branch).strip() if base_branch else None,
         )
     except (
@@ -170,7 +176,7 @@ def start_approved_code_task(
         ProjectRootResolutionError,
     ) as exc:
         return tool_error(str(exc), success=False)
-    return _execution_state_result(state)
+    return _execution_state_result(state, install_prefix=install_prefix)
 
 
 def commit_code_task_step(
@@ -185,6 +191,7 @@ def commit_code_task_step(
 ) -> str:
     """Commit one explicit implementation step for an approved task."""
     try:
+        _require_install_prefix(install_prefix)
         root = _resolve_tool_project_root(project_root, install_prefix)
         state, commit_hash = commit_task_step(
             str(task_id or ""),
@@ -193,10 +200,11 @@ def commit_code_task_step(
             verification_summary=str(verification_summary or ""),
             plan_step_index=plan_step_index,
             project_root=root,
+            install_prefix=install_prefix,
         )
     except (CodeTaskExecutionError, GitWorkflowError, ProjectRootResolutionError) as exc:
         return tool_error(str(exc), success=False)
-    return _execution_state_result(state, commit_hash=commit_hash)
+    return _execution_state_result(state, install_prefix=install_prefix, commit_hash=commit_hash)
 
 
 def finalize_code_task_branch(
@@ -207,11 +215,12 @@ def finalize_code_task_branch(
 ) -> str:
     """Merge an approved task branch into the self-evolution integration branch."""
     try:
+        _require_install_prefix(install_prefix)
         root = _resolve_tool_project_root(project_root, install_prefix)
-        state = finalize_task_branch(str(task_id or ""), project_root=root)
+        state = finalize_task_branch(str(task_id or ""), project_root=root, install_prefix=install_prefix)
     except (CodeTaskExecutionError, GitWorkflowError, ProjectRootResolutionError) as exc:
         return tool_error(str(exc), success=False)
-    return _execution_state_result(state)
+    return _execution_state_result(state, install_prefix=install_prefix)
 
 
 def get_code_task_status(
@@ -222,9 +231,10 @@ def get_code_task_status(
 ) -> str:
     """Return the audit and execution state for an approved code task."""
     try:
+        _require_install_prefix(install_prefix)
         root = _resolve_tool_project_root(project_root, install_prefix)
-        status = describe_task_execution(str(task_id or ""), project_root=root)
-        status.update(describe_task_verification(str(task_id or ""), project_root=root))
+        status = describe_task_execution(str(task_id or ""), project_root=root, install_prefix=install_prefix)
+        status.update(describe_task_verification(str(task_id or ""), project_root=root, install_prefix=install_prefix))
     except (CodeTaskExecutionError, GitWorkflowError, ProjectRootResolutionError) as exc:
         return tool_error(str(exc), success=False)
     return tool_result(success=True, **status)
@@ -239,10 +249,12 @@ def plan_code_task_verification(
 ) -> str:
     """Create a verification plan for an approved task branch."""
     try:
+        _require_install_prefix(install_prefix)
         root = _resolve_tool_project_root(project_root, install_prefix)
         state = plan_task_verification(
             str(task_id or ""),
             project_root=root,
+            install_prefix=install_prefix,
             include_full_suite=bool(include_full_suite),
         )
     except (
@@ -252,7 +264,7 @@ def plan_code_task_verification(
         ProjectRootResolutionError,
     ) as exc:
         return tool_error(str(exc), success=False)
-    return _verification_state_result(state)
+    return _verification_state_result(state, install_prefix=install_prefix)
 
 
 def run_code_task_verification(
@@ -264,11 +276,13 @@ def run_code_task_verification(
 ) -> str:
     """Run planned or explicit verification commands for an approved task."""
     try:
+        _require_install_prefix(install_prefix)
         root = _resolve_tool_project_root(project_root, install_prefix)
         state = run_task_verification(
             str(task_id or ""),
             commands=commands,
             project_root=root,
+            install_prefix=install_prefix,
         )
     except (
         CodeTaskExecutionError,
@@ -277,7 +291,7 @@ def run_code_task_verification(
         ProjectRootResolutionError,
     ) as exc:
         return tool_error(str(exc), success=False)
-    return _verification_state_result(state)
+    return _verification_state_result(state, install_prefix=install_prefix)
 
 
 def record_code_task_safety_review(
@@ -291,6 +305,7 @@ def record_code_task_safety_review(
 ) -> str:
     """Record the isolated safety review result for an approved task."""
     try:
+        _require_install_prefix(install_prefix)
         root = _resolve_tool_project_root(project_root, install_prefix)
         state = record_task_safety_review(
             str(task_id or ""),
@@ -298,6 +313,7 @@ def record_code_task_safety_review(
             answers=answers,
             conclusion=str(conclusion or ""),
             project_root=root,
+            install_prefix=install_prefix,
         )
     except (
         CodeTaskExecutionError,
@@ -306,7 +322,7 @@ def record_code_task_safety_review(
         ProjectRootResolutionError,
     ) as exc:
         return tool_error(str(exc), success=False)
-    return _verification_state_result(state)
+    return _verification_state_result(state, install_prefix=install_prefix)
 
 
 def self_evolution_thinking(
@@ -320,12 +336,13 @@ def self_evolution_thinking(
     """Manage read-only self-evolution thinking and candidate reports."""
     normalized = str(action or "").strip().lower()
     try:
+        _require_install_prefix(install_prefix)
         root = _resolve_tool_project_root(project_root, install_prefix)
         if normalized == "status":
             return tool_result(
                 success=True,
                 action=normalized,
-                **describe_self_evolution_thinking(root),
+                **describe_self_evolution_thinking(root, install_prefix=install_prefix),
             )
         if normalized == "enable":
             return tool_result(
@@ -344,7 +361,7 @@ def self_evolution_thinking(
                 **disable_self_evolution_thinking(),
             )
         if normalized == "run_once":
-            report = run_self_evolution_thinking(root, trigger="manual")
+            report = run_self_evolution_thinking(root, trigger="manual", install_prefix=install_prefix)
             return tool_result(
                 success=True,
                 action=normalized,
@@ -414,13 +431,14 @@ def self_update_application(
                 restart_profile_home=restart_profile_home,
                 request_restart=bool(request_restart),
             )
+        _require_install_prefix(install_prefix)
         root = _resolve_tool_project_root(project_root, install_prefix)
         clean_task_id = str(task_id or "")
         if normalized == "status":
             return tool_result(
                 success=True,
                 action=normalized,
-                **describe_self_update_application(clean_task_id, project_root=root),
+                **describe_self_update_application(clean_task_id, project_root=root, install_prefix=install_prefix),
             )
         if normalized == "plan":
             state = plan_self_update_application(
@@ -429,6 +447,7 @@ def self_update_application(
                 candidate_ref=candidate_ref,
                 previous_active_ref=previous_active_ref,
                 mode=mode,
+                install_prefix=install_prefix,
             )
         elif normalized == "prepare":
             state = prepare_self_update(
@@ -436,12 +455,14 @@ def self_update_application(
                 approval_text=approval_text,
                 project_root=root,
                 worktree_path=worktree_path,
+                install_prefix=install_prefix,
             )
         elif normalized == "record_build":
             state = record_self_update_build(
                 clean_task_id,
                 project_root=root,
                 build_summary=build_summary,
+                install_prefix=install_prefix,
             )
         elif normalized == "record_health":
             state = record_self_update_health_check(
@@ -449,12 +470,14 @@ def self_update_application(
                 project_root=root,
                 checks=health_checks or [],
                 conclusion=conclusion,  # type: ignore[arg-type]
+                install_prefix=install_prefix,
             )
         elif normalized == "activate":
             state = activate_self_update(
                 clean_task_id,
                 approval_text=approval_text,
                 project_root=root,
+                install_prefix=install_prefix,
             )
         elif normalized == "rollback":
             state = rollback_self_update(
@@ -462,6 +485,7 @@ def self_update_application(
                 approval_text=approval_text,
                 project_root=root,
                 reason=reason,
+                install_prefix=install_prefix,
             )
         else:
             return tool_error(
@@ -481,7 +505,7 @@ def self_update_application(
         RuntimeUpdateError,
     ) as exc:
         return tool_error(str(exc), success=False)
-    return _self_update_state_result(state, action=normalized)
+    return _self_update_state_result(state, install_prefix=install_prefix, action=normalized)
 
 
 def _runtime_update_application_action(
@@ -947,37 +971,36 @@ def _resolve_tool_project_root(
     )
 
 
-def _execution_state_result(state, **extra) -> str:
+def _require_install_prefix(install_prefix: str | None) -> None:
+    if not str(install_prefix or "").strip():
+        raise ProjectRootResolutionError(
+            "install_prefix is required for self-evolution runtime data paths."
+        )
+
+
+def _execution_state_result(state, *, install_prefix: str | None, **extra) -> str:
     # The result includes the audit path so callers can show the user exactly
     # where the approved execution record was updated.
+    task_dir = (
+        get_evolution_workspace(state.project_root, install_prefix=install_prefix)
+        / "tasks"
+        / state.task_id
+    )
     return tool_result(
         success=True,
         task_id=state.task_id,
         status=state.status,
         development_branch=state.development_branch,
         integration_branch=state.integration_branch,
-        change_log_path=str(
-            Path(state.project_root).parent
-            / "self-evolution"
-            / "tasks"
-            / state.task_id
-            / "change-log.md"
-        ),
-        final_report_path=str(
-            Path(state.project_root).parent
-            / "self-evolution"
-            / "tasks"
-            / state.task_id
-            / "final-report.md"
-        ),
+        change_log_path=str(task_dir / "change-log.md"),
+        final_report_path=str(task_dir / "final-report.md"),
         **extra,
     )
 
 
-def _verification_state_result(state, **extra) -> str:
+def _verification_state_result(state, *, install_prefix: str | None, **extra) -> str:
     verification_path = (
-        Path(state.project_root).parent
-        / "self-evolution"
+        get_evolution_workspace(state.project_root, install_prefix=install_prefix)
         / "tasks"
         / state.task_id
         / "verification.md"
@@ -1006,10 +1029,9 @@ def _verification_state_result(state, **extra) -> str:
     )
 
 
-def _self_update_state_result(state, **extra) -> str:
+def _self_update_state_result(state, *, install_prefix: str | None, **extra) -> str:
     task_dir = (
-        Path(state.project_root).parent
-        / "self-evolution"
+        get_evolution_workspace(state.project_root, install_prefix=install_prefix)
         / "tasks"
         / state.task_id
     )
@@ -1197,6 +1219,7 @@ def _mirror_runtime_update_audit(
             health_checks=health_checks,
             blocked_reason=blocked_reason,
             approved_by_user=approved_by_user,
+            install_prefix=install_prefix,
         )
     except (
         GitWorkflowError,
@@ -1206,7 +1229,8 @@ def _mirror_runtime_update_audit(
         return {"audit_mirror_error": str(exc)}
     if state is None:
         return {}
-    task_dir = Path(state.project_root).parent / "self-evolution" / "tasks" / state.task_id
+    workspace_dir = get_evolution_workspace(root, install_prefix=install_prefix)
+    task_dir = workspace_dir / "tasks" / state.task_id
     return {
         "audit_status": state.status,
         "audit_update_application_path": str(task_dir / "update-application.md"),
@@ -1287,7 +1311,7 @@ COMPLETE_CODE_TASK_SCHEMA = {
                 "type": "string",
                 "description": (
                     "Optional project root. Defaults to the current working directory; "
-                    "the self-evolution workspace is placed next to this root."
+                    "self-evolution runtime data is written under install_prefix/data."
                 ),
             },
         },
@@ -1696,7 +1720,8 @@ def _add_install_prefix_to_schema(schema: dict) -> None:
     properties["install_prefix"] = {
         "type": "string",
         "description": (
-            "Optional Zermes install prefix. When project_root is omitted, "
+            "Required Zermes install prefix for self-evolution runtime data. "
+            "When project_root is omitted, "
             "runtime/install-state.json or runtime/active.json source_repo.path "
             "can identify the development source repository. Runtime release "
             "or candidate source copies are rejected."

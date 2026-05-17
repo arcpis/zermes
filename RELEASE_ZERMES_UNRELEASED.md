@@ -11,7 +11,7 @@ accurate.
 - Added governed self-update application for source-installed runtimes:
   candidate preparation, health checks, active release switching, rollback,
   restart intent recording, and managed CLI/gateway restart consumption.
-- Added repository-local low-token analysis context under `.hermes-analysis-cache/`.
+- Added low-token analysis context under `<install_prefix>/data/self-evolution/analysis-cache/`.
 - Documented the self-evolution workflow across repository and website docs.
 
 ## Self-Evolution Workflow
@@ -39,8 +39,8 @@ Zermes now supports a conservative self-evolution flow:
 - Added `code_modification/token_strategy.py`.
 - Analysis input is limited to files inside the repository root.
 - Reusable task context, documentation summaries, and context state are written
-  under `.hermes-analysis-cache/`.
-- Generated analysis cache files are ignored by git.
+  under `<install_prefix>/data/self-evolution/analysis-cache/`.
+- Generated analysis cache files are install-local runtime state and are not committed.
 
 ## Documentation
 

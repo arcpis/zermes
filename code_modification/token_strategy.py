@@ -15,8 +15,9 @@ import re
 import subprocess
 from typing import Any, Literal
 
+from code_modification.governance import get_evolution_workspace
 
-ANALYSIS_CACHE_DIR_NAME = ".hermes-analysis-cache"
+
 DEFAULT_MAX_TEXT_FILE_BYTES = 40_000
 DEFAULT_RELEASE_SUMMARY_COUNT = 2
 DOCUMENTATION_PATHS = (
@@ -129,16 +130,30 @@ DEFAULT_APPROVAL_BUDGET = AnalysisBudget(
 )
 
 
-def get_analysis_cache_dir(project_root: str | Path) -> Path:
-    """Return the repository-local directory used for reusable summaries."""
+def get_analysis_cache_dir(
+    project_root: str | Path,
+    *,
+    install_prefix: str | Path | None = None,
+    workspace_dir: str | Path | None = None,
+) -> Path:
+    """Return the install-local directory used for reusable summaries."""
     root = _resolve_project_root(project_root)
-    return root / ANALYSIS_CACHE_DIR_NAME
+    return (
+        get_evolution_workspace(
+            root,
+            install_prefix=install_prefix,
+            workspace_dir=workspace_dir,
+        )
+        / "analysis-cache"
+    )
 
 
 def build_analysis_context(
     project_root: str | Path,
     *,
     purpose: Literal["thinking", "approval"],
+    install_prefix: str | Path | None = None,
+    workspace_dir: str | Path | None = None,
     hints: AnalysisHints | None = None,
     budget: AnalysisBudget | None = None,
 ) -> AnalysisContext:
@@ -146,7 +161,11 @@ def build_analysis_context(
     root = _resolve_project_root(project_root)
     active_hints = hints or AnalysisHints()
     active_budget = budget or _default_budget_for_purpose(purpose)
-    cache_root = get_analysis_cache_dir(root)
+    cache_root = get_analysis_cache_dir(
+        root,
+        install_prefix=install_prefix,
+        workspace_dir=workspace_dir,
+    )
     context_run_id = f"context-{datetime.now(UTC).strftime('%Y%m%d-%H%M%S-%f')}"
     run_dir = cache_root / "runs" / context_run_id
     run_dir.mkdir(parents=True, exist_ok=True)
@@ -244,8 +263,6 @@ def collect_structure_sources(
     thinking_test = root / "tests" / "self_evolution" / "test_self_evolution_thinking.py"
     if thinking_test.exists():
         candidates.append(_source_candidate(root, thinking_test, "test_file", 60, "thinking test"))
-    if active_hints.include_git_history:
-        candidates.extend(_git_status_candidates(root))
     return _deduplicate_candidates(candidates)
 
 
@@ -279,12 +296,22 @@ def summarize_repository_file(
     project_root: str | Path,
     cache_root: str | Path | None = None,
     *,
+    install_prefix: str | Path | None = None,
+    workspace_dir: str | Path | None = None,
     source_type: str = "source_file",
 ) -> dict[str, Any]:
     """Summarize a repository-local file and reuse the cache when it is current."""
     root = _resolve_project_root(project_root)
     path = _resolve_inside_root(file_path, root)
-    active_cache_root = Path(cache_root) if cache_root else get_analysis_cache_dir(root)
+    active_cache_root = (
+        Path(cache_root)
+        if cache_root
+        else get_analysis_cache_dir(
+            root,
+            install_prefix=install_prefix,
+            workspace_dir=workspace_dir,
+        )
+    )
     summary_dir = active_cache_root / "files"
     summary_dir.mkdir(parents=True, exist_ok=True)
     relative_path = _to_posix_relative(path, root)
@@ -344,8 +371,6 @@ def _explicit_path_candidates(root: Path, hints: AnalysisHints) -> list[SourceCa
             path = _resolve_inside_root(root / raw_path, root)
         except ValueError:
             continue
-        if ANALYSIS_CACHE_DIR_NAME in path.relative_to(root).parts:
-            continue
         if path.exists() and path.is_file() and _is_safe_text_path(path):
             candidates.append(_source_candidate(root, path, "explicit_path", 100, "explicit user hint"))
     return candidates
@@ -366,28 +391,6 @@ def _glob_candidates(root: Path, pattern: str, source_type: str, priority: int) 
         for path in sorted(root.glob(pattern))
         if path.is_file() and _is_safe_text_path(path)
     ]
-
-
-def _git_status_candidates(root: Path) -> list[SourceCandidate]:
-    # Git output is converted into a cache file so the rest of the pipeline only
-    # needs to process repository-local paths.
-    try:
-        result = subprocess.run(
-            ["git", "status", "--short"],
-            cwd=root,
-            text=True,
-            capture_output=True,
-            check=False,
-            timeout=10,
-        )
-    except (OSError, subprocess.TimeoutExpired):
-        return []
-    if not result.stdout.strip():
-        return []
-    status_path = root / ANALYSIS_CACHE_DIR_NAME / "git-status.txt"
-    status_path.parent.mkdir(parents=True, exist_ok=True)
-    status_path.write_text(result.stdout, encoding="utf-8")
-    return [_source_candidate(root, status_path, "git_status", 80, "dirty worktree status")]
 
 
 def _source_candidate(

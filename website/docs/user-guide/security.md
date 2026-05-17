@@ -603,7 +603,7 @@ The `code_modification` toolset is designed for governed repository changes:
 - Approved execution uses a dedicated task branch and explicit file lists for commits.
 - Verification plans and results must be recorded before finalization.
 - `self_evolution_thinking` writes advisory candidate reports and schedule/config metadata only.
-- Low-token analysis context is built from repository-local files and cached under `.hermes-analysis-cache/`.
+- Low-token analysis context is built from repository-local files and cached under `<install_prefix>/data/self-evolution/analysis-cache/`.
 - Final reports include documentation sync status for user-visible behavior, tool schema, configuration, and workflow changes.
 
-The generated `.hermes-analysis-cache/` directory is local analysis state. It should be ignored by git and should not be treated as a security boundary or permanent audit record.
+The generated analysis-cache directory is install-local runtime state. It should not be committed and should not be treated as a security boundary.

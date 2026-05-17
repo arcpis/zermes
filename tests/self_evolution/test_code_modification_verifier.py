@@ -39,14 +39,24 @@ def init_repo(tmp_path):
     return repo
 
 
+def install_prefix_for(repo):
+    return repo.parent / "zermes"
+
+
 def create_committed_task(repo, affected_areas=("code_modification",)):
     plan, layout = build_approval_plan(
         "Add verification workflow support",
         repo,
+        install_prefix=install_prefix_for(repo),
         affected_areas=affected_areas,
     )
     write_approval_documents(plan, layout)
-    start_approved_task(plan.task_id, approval_text="approved", project_root=repo)
+    start_approved_task(
+        plan.task_id,
+        approval_text="approved",
+        project_root=repo,
+        install_prefix=install_prefix_for(repo),
+    )
     (repo / "code_modification").mkdir(exist_ok=True)
     (repo / "code_modification" / "marker.py").write_text("VALUE = 1\n", encoding="utf-8")
     state, commit_hash = commit_task_step(
@@ -55,6 +65,7 @@ def create_committed_task(repo, affected_areas=("code_modification",)):
         files=["code_modification/marker.py"],
         verification_summary="not run",
         project_root=repo,
+        install_prefix=install_prefix_for(repo),
     )
     return plan, layout, state, commit_hash
 
@@ -63,7 +74,11 @@ def test_plan_task_verification_writes_plan_and_state(tmp_path):
     repo = init_repo(tmp_path)
     plan, layout, _state, commit_hash = create_committed_task(repo)
 
-    verification = plan_task_verification(plan.task_id, project_root=repo)
+    verification = plan_task_verification(
+        plan.task_id,
+        project_root=repo,
+        install_prefix=install_prefix_for(repo),
+    )
 
     assert verification.status == "verification_planned"
     assert verification.development_branch == plan.development_branch
@@ -79,7 +94,7 @@ def test_plan_task_verification_requires_task_branch(tmp_path):
     run_git(repo, "switch", "main")
 
     try:
-        plan_task_verification(plan.task_id, project_root=repo)
+        plan_task_verification(plan.task_id, project_root=repo, install_prefix=install_prefix_for(repo))
     except CodeTaskExecutionError as exc:
         assert "current branch must be" in str(exc)
     else:
@@ -88,12 +103,21 @@ def test_plan_task_verification_requires_task_branch(tmp_path):
 
 def test_plan_task_verification_requires_commits(tmp_path):
     repo = init_repo(tmp_path)
-    plan, layout = build_approval_plan("Add verification workflow support", repo)
+    plan, layout = build_approval_plan(
+        "Add verification workflow support",
+        repo,
+        install_prefix=install_prefix_for(repo),
+    )
     write_approval_documents(plan, layout)
-    start_approved_task(plan.task_id, approval_text="approved", project_root=repo)
+    start_approved_task(
+        plan.task_id,
+        approval_text="approved",
+        project_root=repo,
+        install_prefix=install_prefix_for(repo),
+    )
 
     try:
-        plan_task_verification(plan.task_id, project_root=repo)
+        plan_task_verification(plan.task_id, project_root=repo, install_prefix=install_prefix_for(repo))
     except CodeTaskVerificationError as exc:
         assert "at least one task commit is required" in str(exc)
     else:
@@ -108,6 +132,7 @@ def test_run_task_verification_records_passed_command(tmp_path):
         plan.task_id,
         commands=["python -m compileall code_modification/marker.py"],
         project_root=repo,
+        install_prefix=install_prefix_for(repo),
     )
 
     assert verification.status == "verification_passed"
@@ -127,6 +152,7 @@ def test_run_task_verification_records_failed_command(tmp_path):
             plan.task_id,
             commands=["python -m compileall code_modification/broken.py"],
             project_root=repo,
+            install_prefix=install_prefix_for(repo),
         )
     except CodeTaskVerificationError as exc:
         assert "verification failed" in str(exc)
@@ -143,7 +169,12 @@ def test_run_task_verification_rejects_unsafe_command(tmp_path):
     plan, _layout, _state, _commit_hash = create_committed_task(repo)
 
     try:
-        run_task_verification(plan.task_id, commands=["git reset --hard"], project_root=repo)
+        run_task_verification(
+            plan.task_id,
+            commands=["git reset --hard"],
+            project_root=repo,
+            install_prefix=install_prefix_for(repo),
+        )
     except CodeTaskVerificationError as exc:
         assert "verification command is not allowed" in str(exc)
     else:
@@ -157,9 +188,14 @@ def test_describe_task_verification_reports_latest_state(tmp_path):
         plan.task_id,
         commands=["python -m compileall code_modification/marker.py"],
         project_root=repo,
+        install_prefix=install_prefix_for(repo),
     )
 
-    status = describe_task_verification(plan.task_id, project_root=repo)
+    status = describe_task_verification(
+        plan.task_id,
+        project_root=repo,
+        install_prefix=install_prefix_for(repo),
+    )
 
     assert status["has_verification"] is True
     assert status["verification_status"] == "verification_passed"
@@ -186,7 +222,11 @@ def test_non_required_failed_command_is_recorded_without_failing_state(tmp_path)
     )
     write_verification_state(layout.task_dir / "verification-state.json", state)
 
-    verified = run_task_verification(plan.task_id, project_root=repo)
+    verified = run_task_verification(
+        plan.task_id,
+        project_root=repo,
+        install_prefix=install_prefix_for(repo),
+    )
 
     assert verified.status == "verification_passed"
     assert verified.command_results[0].status == "failed"
@@ -203,6 +243,7 @@ def test_record_task_safety_review_rejects_unknown_conclusion(tmp_path):
             questions=["Was the safety boundary reviewed?"],
             conclusion="maybe",
             project_root=repo,
+            install_prefix=install_prefix_for(repo),
         )
     except CodeTaskVerificationError as exc:
         assert "safety review conclusion must be" in str(exc)
@@ -220,6 +261,7 @@ def test_record_task_safety_review_writes_questions_and_conclusion(tmp_path):
         answers=["Yes, only explicit files are staged."],
         conclusion="passed",
         project_root=repo,
+        install_prefix=install_prefix_for(repo),
     )
 
     assert review.status == "safety_reviewed"

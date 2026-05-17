@@ -221,7 +221,7 @@ Hermes can plan and execute governed improvements to this repository through the
 4. **Verification** — verification plans, allow-listed command execution, and safety review records gate finalization.
 5. **Prompt routing** — clear repository-improvement requests route to approval planning instead of direct edits.
 6. **Read-only thinking** — `self_evolution_thinking` can generate advisory candidates and manage its schedule.
-7. **Low-token analysis** — `token_strategy.py` summarizes repository-local documents and files into `.hermes-analysis-cache/`.
+7. **Low-token analysis** — `token_strategy.py` summarizes repository-local documents and files into `<install_prefix>/data/self-evolution/analysis-cache/`.
 
 ### Safety rules
 
@@ -229,7 +229,7 @@ Hermes can plan and execute governed improvements to this repository through the
 - Do not turn `verifier.py` into a general command runner.
 - Do not turn `thinking.py` into an executor; candidates must go back through `complete_code_task`.
 - Do not read sibling workspaces or parent directories for stage 7 context. Analysis input must stay inside `project_root`.
-- Keep `.hermes-analysis-cache/` out of commits; it is generated analysis state.
+- Keep generated analysis-cache content out of commits; it is install-local runtime state.
 - If a change affects user-visible behavior, tool schemas, configuration, test commands, or self-evolution flow, update the relevant repository documentation and let the final report record documentation sync status.
 
 ### Focused self-evolution tests

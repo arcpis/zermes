@@ -16,6 +16,7 @@ def test_build_approval_plan_for_clear_requirement(tmp_path):
     plan, layout = build_approval_plan(
         "Add a new terminal safety check",
         project_root,
+        install_prefix=tmp_path / "zermes",
         affected_areas=("tools/terminal_tool.py",),
         now=now,
     )
@@ -36,7 +37,7 @@ def test_build_approval_plan_for_vague_requirement_requests_clarification(tmp_pa
     project_root = tmp_path / "hermes-agent"
     project_root.mkdir()
 
-    plan, _ = build_approval_plan("Improve", project_root)
+    plan, _ = build_approval_plan("Improve", project_root, install_prefix=tmp_path / "zermes")
 
     assert plan.recommend_execution is False
     assert plan.open_questions == (
@@ -49,7 +50,11 @@ def test_render_plan_contains_required_sections(tmp_path):
     project_root = tmp_path / "hermes-agent"
     project_root.mkdir()
 
-    plan, _ = build_approval_plan("Fix the flaky retry behavior", project_root)
+    plan, _ = build_approval_plan(
+        "Fix the flaky retry behavior",
+        project_root,
+        install_prefix=tmp_path / "zermes",
+    )
     rendered = render_plan_markdown(plan)
 
     for heading in (
@@ -70,7 +75,11 @@ def test_render_approval_forbids_code_changes_before_approval(tmp_path):
     project_root = tmp_path / "hermes-agent"
     project_root.mkdir()
 
-    plan, _ = build_approval_plan("Fix the flaky retry behavior", project_root)
+    plan, _ = build_approval_plan(
+        "Fix the flaky retry behavior",
+        project_root,
+        install_prefix=tmp_path / "zermes",
+    )
     rendered = render_approval_markdown(plan)
 
     assert "Product code changes before approval: `forbidden`" in rendered
@@ -81,7 +90,11 @@ def test_write_approval_documents_only_writes_audit_files(tmp_path):
     project_root = tmp_path / "hermes-agent"
     project_root.mkdir()
 
-    plan, layout = build_approval_plan("Fix the flaky retry behavior", project_root)
+    plan, layout = build_approval_plan(
+        "Fix the flaky retry behavior",
+        project_root,
+        install_prefix=tmp_path / "zermes",
+    )
     write_approval_documents(plan, layout)
 
     assert layout.plan_path.exists()

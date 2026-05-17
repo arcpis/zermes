@@ -18,37 +18,43 @@ from tools.code_modification_tool import self_update_application
 def test_self_update_application_records_restart_pending_flow(tmp_path):
     project_root = tmp_path / "hermes-agent"
     _make_project_repo(project_root)
+    prefix = tmp_path / "zermes"
     task_id = "20260516-010000-update-flow"
-    _write_integrated_state(project_root, task_id)
+    _write_integrated_state(project_root, task_id, prefix)
 
     planned = plan_self_update_application(
         task_id,
         project_root=project_root,
+        install_prefix=prefix,
         mode="cli",
     )
     prepared = prepare_self_update(
         task_id,
         approval_text="approved",
         project_root=project_root,
+        install_prefix=prefix,
     )
     built = record_self_update_build(
         task_id,
         project_root=project_root,
         build_summary="python source only; no build required",
+        install_prefix=prefix,
     )
     verified = record_self_update_health_check(
         task_id,
         project_root=project_root,
         checks=["focused self-evolution tests passed"],
         conclusion="passed",
+        install_prefix=prefix,
     )
     activated = activate_self_update(
         task_id,
         approval_text="approved",
         project_root=project_root,
+        install_prefix=prefix,
     )
 
-    layout = build_task_record_layout(project_root, task_id)
+    layout = build_task_record_layout(project_root, task_id, install_prefix=prefix)
     payload = json.loads((layout.task_dir / "update-state.json").read_text(encoding="utf-8"))
     report = (layout.task_dir / "update-application.md").read_text(encoding="utf-8")
 
@@ -65,14 +71,16 @@ def test_self_update_application_records_restart_pending_flow(tmp_path):
 def test_self_update_application_tool_exposes_paths(tmp_path):
     project_root = tmp_path / "hermes-agent"
     _make_project_repo(project_root)
+    prefix = tmp_path / "zermes"
     task_id = "20260516-020000-tool-flow"
-    _write_integrated_state(project_root, task_id)
+    _write_integrated_state(project_root, task_id, prefix)
 
     planned = json.loads(
         self_update_application(
             "plan",
             task_id,
             project_root=str(project_root),
+            install_prefix=str(prefix),
             mode="manual",
         )
     )
@@ -81,11 +89,17 @@ def test_self_update_application_tool_exposes_paths(tmp_path):
             "prepare",
             task_id,
             project_root=str(project_root),
+            install_prefix=str(prefix),
             approval_text="approved",
         )
     )
     status = json.loads(
-        self_update_application("status", task_id, project_root=str(project_root))
+        self_update_application(
+            "status",
+            task_id,
+            project_root=str(project_root),
+            install_prefix=str(prefix),
+        )
     )
 
     assert planned["success"] is True
@@ -97,8 +111,8 @@ def test_self_update_application_tool_exposes_paths(tmp_path):
     assert status["state"]["status"] == "prepared"
 
 
-def _write_integrated_state(project_root, task_id):
-    layout = build_task_record_layout(project_root, task_id)
+def _write_integrated_state(project_root, task_id, install_prefix):
+    layout = build_task_record_layout(project_root, task_id, install_prefix=install_prefix)
     state = ExecutionState(
         task_id=layout.task_id,
         status="integrated",

@@ -228,11 +228,11 @@ Central tool registry (`tools/registry.py`) with 61 registered tools across 52 t
 
 The `code_modification` package supports approval-first repository improvements:
 
-- `complete_code_task` writes a pre-change plan, approval request, and repository-local analysis context.
+- `complete_code_task` writes a pre-change plan, approval request, and install-local analysis context.
 - Approved execution uses dedicated task branches and explicit-file commits.
 - Verification plans and command results are recorded before finalization.
 - `self_evolution_thinking` creates advisory candidates and never executes code changes.
-- `.hermes-analysis-cache/` stores generated task summaries, documentation summaries, and context state inside the repository root.
+- `<install_prefix>/data/self-evolution/analysis-cache/` stores generated task summaries, documentation summaries, and context state.
 
 Final reports include documentation sync status so user-visible changes can be reflected in repository docs.
 

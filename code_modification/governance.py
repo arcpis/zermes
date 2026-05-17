@@ -83,10 +83,23 @@ class GovernancePolicy:
         return violations
 
 
-def get_evolution_workspace(project_root: str | Path) -> Path:
-    """Return the self-evolution workspace beside the project root."""
-    root = Path(project_root).resolve()
-    return root.parent / EVOLUTION_WORKSPACE_NAME
+def get_evolution_workspace(
+    project_root: str | Path,
+    *,
+    install_prefix: str | Path | None = None,
+    workspace_dir: str | Path | None = None,
+) -> Path:
+    """Return the self-evolution audit workspace for a source repository."""
+    if workspace_dir:
+        return Path(workspace_dir).expanduser().resolve()
+    prefix = Path(install_prefix).expanduser().resolve() if install_prefix else None
+    for candidate in _installer_self_evolution_workspace_candidates(prefix):
+        return candidate
+    if prefix is not None:
+        return prefix / "data" / EVOLUTION_WORKSPACE_NAME
+    raise ProjectRootResolutionError(
+        "install_prefix is required to resolve the self-evolution audit workspace."
+    )
 
 
 def resolve_self_evolution_project_root(
@@ -173,18 +186,28 @@ def build_development_branch_name(task_id: str) -> str:
     return f"{DEFAULT_DEVELOPMENT_BRANCH_PREFIX}/{_slugify(task_id, max_length=80)}"
 
 
-def build_task_record_layout(project_root: str | Path, task_id: str) -> TaskRecordLayout:
+def build_task_record_layout(
+    project_root: str | Path,
+    task_id: str,
+    *,
+    install_prefix: str | Path | None = None,
+    workspace_dir: str | Path | None = None,
+) -> TaskRecordLayout:
     """Return the audit file layout for a self-evolution task.
 
     The function only describes paths. It does not create files or directories.
     """
-    workspace_dir = get_evolution_workspace(project_root)
+    resolved_workspace_dir = get_evolution_workspace(
+        project_root,
+        install_prefix=install_prefix,
+        workspace_dir=workspace_dir,
+    )
     safe_task_id = _slugify(task_id, max_length=80)
-    task_dir = workspace_dir / TASKS_DIR_NAME / safe_task_id
+    task_dir = resolved_workspace_dir / TASKS_DIR_NAME / safe_task_id
     temp_dir = task_dir / TEMP_DIR_NAME
     return TaskRecordLayout(
         task_id=safe_task_id,
-        workspace_dir=workspace_dir,
+        workspace_dir=resolved_workspace_dir,
         task_dir=task_dir,
         temp_dir=temp_dir,
         thinking_path=task_dir / AUDIT_FILE_NAMES["thinking"],
@@ -209,6 +232,24 @@ def _installer_source_repo_candidates(install_prefix: Path | None) -> list[Path]
     active_path = _source_repo_path_from_payload(active_state)
     if active_path:
         candidates.append(active_path)
+    return candidates
+
+
+def _installer_self_evolution_workspace_candidates(install_prefix: Path | None) -> list[Path]:
+    if install_prefix is None:
+        return []
+    runtime_dir = install_prefix / "runtime"
+    candidates: list[Path] = []
+    active_workspace = _self_evolution_workspace_from_payload(
+        _read_json_file(runtime_dir / "active.json")
+    )
+    if active_workspace:
+        candidates.append(active_workspace)
+    install_workspace = _self_evolution_workspace_from_payload(
+        _read_json_file(runtime_dir / "install-state.json")
+    )
+    if install_workspace:
+        candidates.append(install_workspace)
     return candidates
 
 
@@ -239,6 +280,13 @@ def _source_repo_path_from_payload(payload: dict[str, Any] | None) -> Path | Non
         return None
     path = source_repo.get("path")
     return Path(path) if isinstance(path, str) and path.strip() else None
+
+
+def _self_evolution_workspace_from_payload(payload: dict[str, Any] | None) -> Path | None:
+    if not isinstance(payload, dict):
+        return None
+    path = payload.get("self_evolution_data_dir")
+    return Path(path).expanduser().resolve() if isinstance(path, str) and path.strip() else None
 
 
 def _read_json_file(path: Path) -> dict[str, Any] | None:

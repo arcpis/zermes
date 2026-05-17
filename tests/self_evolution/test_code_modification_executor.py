@@ -37,6 +37,10 @@ def init_repo(tmp_path):
     return repo
 
 
+def install_prefix_for(repo):
+    return repo.parent / "zermes"
+
+
 def create_approval_record(
     repo,
     requirement="Add approved workflow support",
@@ -46,6 +50,7 @@ def create_approval_record(
     plan, layout = build_approval_plan(
         requirement,
         repo,
+        install_prefix=install_prefix_for(repo),
         affected_areas=affected_areas,
         documentation_updates=documentation_updates,
     )
@@ -57,7 +62,12 @@ def test_start_approved_task_requires_approval_record(tmp_path):
     repo = init_repo(tmp_path)
 
     try:
-        start_approved_task("missing-task", approval_text="approved", project_root=repo)
+        start_approved_task(
+            "missing-task",
+            approval_text="approved",
+            project_root=repo,
+            install_prefix=install_prefix_for(repo),
+        )
     except CodeTaskExecutionError as exc:
         assert "approval record is missing" in str(exc)
     else:
@@ -69,7 +79,12 @@ def test_start_approved_task_requires_explicit_approval(tmp_path):
     plan, _layout = create_approval_record(repo)
 
     try:
-        start_approved_task(plan.task_id, approval_text="please wait", project_root=repo)
+        start_approved_task(
+            plan.task_id,
+            approval_text="please wait",
+            project_root=repo,
+            install_prefix=install_prefix_for(repo),
+        )
     except CodeTaskExecutionError as exc:
         assert "explicit user approval is required" in str(exc)
     else:
@@ -80,7 +95,12 @@ def test_start_commit_and_finalize_approved_task(tmp_path):
     repo = init_repo(tmp_path)
     plan, layout = create_approval_record(repo)
 
-    state = start_approved_task(plan.task_id, approval_text="approved", project_root=repo)
+    state = start_approved_task(
+        plan.task_id,
+        approval_text="approved",
+        project_root=repo,
+        install_prefix=install_prefix_for(repo),
+    )
 
     assert state.status == "branch_created"
     assert current_branch(repo) == plan.development_branch
@@ -95,6 +115,7 @@ def test_start_commit_and_finalize_approved_task(tmp_path):
         files=["workflow.txt"],
         verification_summary="not run",
         project_root=repo,
+        install_prefix=install_prefix_for(repo),
     )
 
     assert committed.status == "committed"
@@ -109,9 +130,14 @@ def test_start_commit_and_finalize_approved_task(tmp_path):
         plan.task_id,
         commands=["python -m compileall workflow.txt"],
         project_root=repo,
+        install_prefix=install_prefix_for(repo),
     )
 
-    integrated = finalize_task_branch(plan.task_id, project_root=repo)
+    integrated = finalize_task_branch(
+        plan.task_id,
+        project_root=repo,
+        install_prefix=install_prefix_for(repo),
+    )
 
     assert integrated.status == "integrated"
     assert current_branch(repo) == DEFAULT_INTEGRATION_BRANCH
@@ -128,7 +154,12 @@ def test_final_report_records_documentation_sync_status(tmp_path):
         requirement="Update command behavior and document it",
         documentation_updates=("README.md", "AGENTS.md"),
     )
-    state = start_approved_task(plan.task_id, approval_text="approved", project_root=repo)
+    state = start_approved_task(
+        plan.task_id,
+        approval_text="approved",
+        project_root=repo,
+        install_prefix=install_prefix_for(repo),
+    )
 
     assert state.documentation_updates == ("README.md", "AGENTS.md")
 
@@ -139,6 +170,7 @@ def test_final_report_records_documentation_sync_status(tmp_path):
         files=["README.md"],
         verification_summary="not run",
         project_root=repo,
+        install_prefix=install_prefix_for(repo),
     )
 
     assert committed.documentation_updates == ("README.md", "AGENTS.md")
@@ -147,8 +179,9 @@ def test_final_report_records_documentation_sync_status(tmp_path):
         plan.task_id,
         commands=["python -m compileall README.md"],
         project_root=repo,
+        install_prefix=install_prefix_for(repo),
     )
-    finalize_task_branch(plan.task_id, project_root=repo)
+    finalize_task_branch(plan.task_id, project_root=repo, install_prefix=install_prefix_for(repo))
 
     report = layout.final_report_path.read_text(encoding="utf-8")
     assert "## Documentation Sync" in report
@@ -161,15 +194,28 @@ def test_describe_task_execution_returns_state_and_audit_paths(tmp_path):
     repo = init_repo(tmp_path)
     plan, layout = create_approval_record(repo)
 
-    status_before_start = describe_task_execution(plan.task_id, project_root=repo)
+    status_before_start = describe_task_execution(
+        plan.task_id,
+        project_root=repo,
+        install_prefix=install_prefix_for(repo),
+    )
 
     assert status_before_start["has_plan"] is True
     assert status_before_start["has_approval"] is True
     assert status_before_start["has_change_log"] is False
     assert status_before_start["state"] is None
 
-    state = start_approved_task(plan.task_id, approval_text="approved", project_root=repo)
-    status_after_start = describe_task_execution(plan.task_id, project_root=repo)
+    state = start_approved_task(
+        plan.task_id,
+        approval_text="approved",
+        project_root=repo,
+        install_prefix=install_prefix_for(repo),
+    )
+    status_after_start = describe_task_execution(
+        plan.task_id,
+        project_root=repo,
+        install_prefix=install_prefix_for(repo),
+    )
 
     assert status_after_start["state"]["status"] == state.status
     assert status_after_start["state"]["plan_steps"]
@@ -179,10 +225,15 @@ def test_describe_task_execution_returns_state_and_audit_paths(tmp_path):
 def test_finalize_task_branch_requires_at_least_one_commit(tmp_path):
     repo = init_repo(tmp_path)
     plan, _layout = create_approval_record(repo)
-    start_approved_task(plan.task_id, approval_text="approved", project_root=repo)
+    start_approved_task(
+        plan.task_id,
+        approval_text="approved",
+        project_root=repo,
+        install_prefix=install_prefix_for(repo),
+    )
 
     try:
-        finalize_task_branch(plan.task_id, project_root=repo)
+        finalize_task_branch(plan.task_id, project_root=repo, install_prefix=install_prefix_for(repo))
     except CodeTaskExecutionError as exc:
         assert "at least one task commit is required" in str(exc)
     else:
@@ -192,17 +243,23 @@ def test_finalize_task_branch_requires_at_least_one_commit(tmp_path):
 def test_finalize_task_branch_requires_passed_verification(tmp_path):
     repo = init_repo(tmp_path)
     plan, _layout = create_approval_record(repo)
-    start_approved_task(plan.task_id, approval_text="approved", project_root=repo)
+    start_approved_task(
+        plan.task_id,
+        approval_text="approved",
+        project_root=repo,
+        install_prefix=install_prefix_for(repo),
+    )
     (repo / "workflow.txt").write_text("workflow\n", encoding="utf-8")
     commit_task_step(
         plan.task_id,
         summary="Add workflow marker",
         files=["workflow.txt"],
         project_root=repo,
+        install_prefix=install_prefix_for(repo),
     )
 
     try:
-        finalize_task_branch(plan.task_id, project_root=repo)
+        finalize_task_branch(plan.task_id, project_root=repo, install_prefix=install_prefix_for(repo))
     except CodeTaskExecutionError as exc:
         assert "stage 4 verification must pass before finalizing" in str(exc)
     else:
@@ -212,13 +269,19 @@ def test_finalize_task_branch_requires_passed_verification(tmp_path):
 def test_finalize_task_branch_rejects_failed_verification(tmp_path):
     repo = init_repo(tmp_path)
     plan, _layout = create_approval_record(repo)
-    start_approved_task(plan.task_id, approval_text="approved", project_root=repo)
+    start_approved_task(
+        plan.task_id,
+        approval_text="approved",
+        project_root=repo,
+        install_prefix=install_prefix_for(repo),
+    )
     (repo / "workflow.txt").write_text("workflow\n", encoding="utf-8")
     commit_task_step(
         plan.task_id,
         summary="Add workflow marker",
         files=["workflow.txt"],
         project_root=repo,
+        install_prefix=install_prefix_for(repo),
     )
     (repo / "broken.py").write_text("def broken(:\n", encoding="utf-8")
     try:
@@ -226,12 +289,13 @@ def test_finalize_task_branch_rejects_failed_verification(tmp_path):
             plan.task_id,
             commands=["python -m compileall broken.py"],
             project_root=repo,
+            install_prefix=install_prefix_for(repo),
         )
     except Exception:
         pass
 
     try:
-        finalize_task_branch(plan.task_id, project_root=repo)
+        finalize_task_branch(plan.task_id, project_root=repo, install_prefix=install_prefix_for(repo))
     except CodeTaskExecutionError as exc:
         assert "stage 4 verification must pass before finalizing" in str(exc)
     else:
@@ -241,7 +305,12 @@ def test_finalize_task_branch_rejects_failed_verification(tmp_path):
 def test_commit_task_step_requires_task_branch(tmp_path):
     repo = init_repo(tmp_path)
     plan, _layout = create_approval_record(repo)
-    start_approved_task(plan.task_id, approval_text="approved", project_root=repo)
+    start_approved_task(
+        plan.task_id,
+        approval_text="approved",
+        project_root=repo,
+        install_prefix=install_prefix_for(repo),
+    )
     run_git(repo, "switch", "main")
 
     try:
@@ -250,6 +319,7 @@ def test_commit_task_step_requires_task_branch(tmp_path):
             summary="Add workflow marker",
             files=["README.md"],
             project_root=repo,
+            install_prefix=install_prefix_for(repo),
         )
     except CodeTaskExecutionError as exc:
         assert "current branch must be" in str(exc)
@@ -260,7 +330,12 @@ def test_commit_task_step_requires_task_branch(tmp_path):
 def test_commit_task_step_rejects_files_outside_approved_areas(tmp_path):
     repo = init_repo(tmp_path)
     plan, _layout = create_approval_record(repo, affected_areas=("allowed",))
-    start_approved_task(plan.task_id, approval_text="approved", project_root=repo)
+    start_approved_task(
+        plan.task_id,
+        approval_text="approved",
+        project_root=repo,
+        install_prefix=install_prefix_for(repo),
+    )
     (repo / "outside.txt").write_text("outside\n", encoding="utf-8")
 
     try:
@@ -269,6 +344,7 @@ def test_commit_task_step_rejects_files_outside_approved_areas(tmp_path):
             summary="Add outside file",
             files=["outside.txt"],
             project_root=repo,
+            install_prefix=install_prefix_for(repo),
         )
     except CodeTaskExecutionError as exc:
         assert "outside the approved areas" in str(exc)
@@ -279,7 +355,12 @@ def test_commit_task_step_rejects_files_outside_approved_areas(tmp_path):
 def test_commit_task_step_can_mark_explicit_plan_step(tmp_path):
     repo = init_repo(tmp_path)
     plan, _layout = create_approval_record(repo)
-    start_approved_task(plan.task_id, approval_text="approved", project_root=repo)
+    start_approved_task(
+        plan.task_id,
+        approval_text="approved",
+        project_root=repo,
+        install_prefix=install_prefix_for(repo),
+    )
     (repo / "workflow.txt").write_text("workflow\n", encoding="utf-8")
 
     committed, _commit_hash = commit_task_step(
@@ -288,6 +369,7 @@ def test_commit_task_step_can_mark_explicit_plan_step(tmp_path):
         files=["workflow.txt"],
         plan_step_index=1,
         project_root=repo,
+        install_prefix=install_prefix_for(repo),
     )
 
     assert committed.plan_steps[0].status == "pending"

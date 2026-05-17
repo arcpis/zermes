@@ -28,6 +28,7 @@ from tools.code_modification_tool import (
 def test_complete_code_task_writes_plan_and_approval_for_clear_requirement(tmp_path):
     project_root = tmp_path / "hermes-agent"
     _make_project_repo(project_root)
+    prefix = tmp_path / "zermes"
 
     result = json.loads(
         complete_code_task(
@@ -35,6 +36,7 @@ def test_complete_code_task_writes_plan_and_approval_for_clear_requirement(tmp_p
             context="Terminal commands are handled by tools/terminal_tool.py.",
             affected_areas=["tools/terminal_tool.py"],
             project_root=str(project_root),
+            install_prefix=str(prefix),
         )
     )
 
@@ -43,8 +45,8 @@ def test_complete_code_task_writes_plan_and_approval_for_clear_requirement(tmp_p
     assert result["open_questions"] == []
     assert result["development_branch"].startswith("self-evolution/dev/")
 
-    plan_path = project_root.parent / "self-evolution" / "tasks" / result["task_id"] / "plan.md"
-    approval_path = project_root.parent / "self-evolution" / "tasks" / result["task_id"] / "approval.md"
+    plan_path = prefix / "data" / "self-evolution" / "tasks" / result["task_id"] / "plan.md"
+    approval_path = prefix / "data" / "self-evolution" / "tasks" / result["task_id"] / "approval.md"
     assert result["plan_path"] == str(plan_path)
     assert result["approval_path"] == str(approval_path)
     assert result["context_state_path"].endswith("context-state.json")
@@ -58,6 +60,7 @@ def test_complete_code_task_writes_plan_and_approval_for_clear_requirement(tmp_p
 def test_complete_code_task_reports_documentation_update_candidates(tmp_path):
     project_root = tmp_path / "hermes-agent"
     _make_project_repo(project_root)
+    prefix = tmp_path / "zermes"
     (project_root / "AGENTS.md").write_text("# Rules\n", encoding="utf-8")
     (project_root / "README.md").write_text("# Hermes\n", encoding="utf-8")
 
@@ -65,6 +68,7 @@ def test_complete_code_task_reports_documentation_update_candidates(tmp_path):
         complete_code_task(
             "Update the tool schema and document the user-facing command",
             project_root=str(project_root),
+            install_prefix=str(prefix),
         )
     )
 
@@ -75,36 +79,44 @@ def test_complete_code_task_reports_documentation_update_candidates(tmp_path):
 def test_complete_code_task_for_vague_requirement_requests_clarification(tmp_path):
     project_root = tmp_path / "hermes-agent"
     _make_project_repo(project_root)
+    prefix = tmp_path / "zermes"
 
-    result = json.loads(complete_code_task("Improve", project_root=str(project_root)))
+    result = json.loads(
+        complete_code_task("Improve", project_root=str(project_root), install_prefix=str(prefix))
+    )
 
     assert result["success"] is True
     assert result["recommend_execution"] is False
     assert result["open_questions"] == [
         "Please describe the target behavior and expected outcome.",
     ]
-    assert (project_root.parent / "self-evolution" / "tasks" / result["task_id"] / "plan.md").exists()
+    assert (prefix / "data" / "self-evolution" / "tasks" / result["task_id"] / "plan.md").exists()
 
 
 def test_complete_code_task_requires_requirement_and_does_not_create_records(tmp_path):
     project_root = tmp_path / "hermes-agent"
     _make_project_repo(project_root)
+    prefix = tmp_path / "zermes"
 
-    result = json.loads(complete_code_task("  ", project_root=str(project_root)))
+    result = json.loads(
+        complete_code_task("  ", project_root=str(project_root), install_prefix=str(prefix))
+    )
 
     assert "error" in result
-    assert not (project_root.parent / "self-evolution").exists()
+    assert not (prefix / "data" / "self-evolution").exists()
 
 
 def test_complete_code_task_rejects_non_list_affected_areas(tmp_path):
     project_root = tmp_path / "hermes-agent"
     _make_project_repo(project_root)
+    prefix = tmp_path / "zermes"
 
     try:
         complete_code_task(
             "Fix the flaky retry behavior",
             affected_areas="tools/retry.py",  # type: ignore[arg-type]
             project_root=str(project_root),
+            install_prefix=str(prefix),
         )
     except TypeError as exc:
         assert "affected_areas must be a list of strings" in str(exc)
@@ -115,13 +127,20 @@ def test_complete_code_task_rejects_non_list_affected_areas(tmp_path):
 def test_verification_tools_return_structured_results(tmp_path):
     project_root = tmp_path / "hermes-agent"
     _make_project_repo(project_root)
+    prefix = tmp_path / "zermes"
     plan, layout = build_approval_plan(
         "Add verification workflow support",
         project_root,
+        install_prefix=prefix,
         affected_areas=("code_modification",),
     )
     write_approval_documents(plan, layout)
-    start_approved_task(plan.task_id, approval_text="approved", project_root=project_root)
+    start_approved_task(
+        plan.task_id,
+        approval_text="approved",
+        project_root=project_root,
+        install_prefix=prefix,
+    )
     (project_root / "code_modification").mkdir(exist_ok=True)
     (project_root / "code_modification" / "marker.py").write_text("VALUE = 1\n", encoding="utf-8")
     commit_task_step(
@@ -129,10 +148,15 @@ def test_verification_tools_return_structured_results(tmp_path):
         summary="Add verification marker",
         files=["code_modification/marker.py"],
         project_root=project_root,
+        install_prefix=prefix,
     )
 
     planned = json.loads(
-        plan_code_task_verification(plan.task_id, project_root=str(project_root))
+        plan_code_task_verification(
+            plan.task_id,
+            project_root=str(project_root),
+            install_prefix=str(prefix),
+        )
     )
     assert planned["success"] is True
     assert planned["status"] == "verification_planned"
@@ -143,6 +167,7 @@ def test_verification_tools_return_structured_results(tmp_path):
             plan.task_id,
             commands=["python -m compileall code_modification/marker.py"],
             project_root=str(project_root),
+            install_prefix=str(prefix),
         )
     )
     assert verified["success"] is True
@@ -158,6 +183,7 @@ def test_verification_tools_return_structured_results(tmp_path):
             answers=["Yes."],
             conclusion="passed",
             project_root=str(project_root),
+            install_prefix=str(prefix),
         )
     )
     assert reviewed["success"] is True
@@ -167,9 +193,14 @@ def test_verification_tools_return_structured_results(tmp_path):
 def test_self_evolution_thinking_tool_rejects_unknown_action(tmp_path):
     project_root = tmp_path / "hermes-agent"
     _make_project_repo(project_root)
+    prefix = tmp_path / "zermes"
 
     result = json.loads(
-        self_evolution_thinking("unknown", project_root=str(project_root))
+        self_evolution_thinking(
+            "unknown",
+            project_root=str(project_root),
+            install_prefix=str(prefix),
+        )
     )
 
     assert result["success"] is False
@@ -280,8 +311,8 @@ def test_self_update_application_runtime_actions_mirror_audit_state(tmp_path):
     project_root = tmp_path / "hermes-agent"
     _make_project_repo(project_root)
     task_id = "20260516-030000-runtime-audit"
-    _write_integrated_state(project_root, task_id)
     prefix = tmp_path / "zermes"
+    _write_integrated_state(project_root, task_id, prefix)
     _make_runtime_release(prefix, "source-install", project_root)
     candidate_id = "update-20260516-030000-abcdef0"
     release_id = "release-abcdef0"
@@ -346,7 +377,7 @@ def test_self_update_application_runtime_actions_mirror_audit_state(tmp_path):
         )
     )
 
-    layout = build_task_record_layout(project_root, task_id)
+    layout = build_task_record_layout(project_root, task_id, install_prefix=prefix)
     audit_payload = json.loads((layout.task_dir / "update-state.json").read_text(encoding="utf-8"))
     audit_report = (layout.task_dir / "update-application.md").read_text(encoding="utf-8")
     assert prepared["audit_status"] == "prepared"
@@ -495,15 +526,21 @@ def test_self_update_application_runtime_prepare_does_not_require_audit_task(tmp
     assert result["success"] is True
     assert result["candidate_id"] == candidate_id
     assert "audit_status" not in result
-    assert not (project_root.parent / "self-evolution" / "tasks" / "20260516-040000-no-audit").exists()
+    assert not (
+        prefix
+        / "data"
+        / "self-evolution"
+        / "tasks"
+        / "20260516-040000-no-audit"
+    ).exists()
 
 
 def test_self_update_application_runtime_apply_update_runs_main_flow(tmp_path):
     project_root = tmp_path / "hermes-agent"
     _make_project_repo(project_root)
     task_id = "20260516-050000-apply-update"
-    _write_integrated_state(project_root, task_id)
     prefix = tmp_path / "zermes"
+    _write_integrated_state(project_root, task_id, prefix)
     _make_runtime_release(prefix, "source-install", project_root)
     restart_cwd = tmp_path / "restart-cwd"
     restart_profile = tmp_path / "restart-profile"
@@ -585,8 +622,8 @@ def test_self_update_application_runtime_apply_update_rejects_unconsumed_restart
     project_root = tmp_path / "hermes-agent"
     _make_project_repo(project_root)
     task_id = "20260516-050100-apply-update-cron"
-    _write_integrated_state(project_root, task_id)
     prefix = tmp_path / "zermes"
+    _write_integrated_state(project_root, task_id, prefix)
     _make_runtime_release(prefix, "source-install", project_root)
 
     result = json.loads(
@@ -785,8 +822,8 @@ def _make_project_repo(repo):
     _init_git_repo(repo)
 
 
-def _write_integrated_state(project_root, task_id):
-    layout = build_task_record_layout(project_root, task_id)
+def _write_integrated_state(project_root, task_id, install_prefix):
+    layout = build_task_record_layout(project_root, task_id, install_prefix=install_prefix)
     state = ExecutionState(
         task_id=layout.task_id,
         status="integrated",

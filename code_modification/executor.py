@@ -64,10 +64,17 @@ def start_approved_task(
     *,
     approval_text: str,
     project_root: str | Path,
+    install_prefix: str | Path | None = None,
+    workspace_dir: str | Path | None = None,
     base_branch: str | None = None,
 ) -> ExecutionState:
     root = require_git_repository(project_root)
-    layout = build_task_record_layout(root, task_id)
+    layout = build_task_record_layout(
+        root,
+        task_id,
+        install_prefix=install_prefix,
+        workspace_dir=workspace_dir,
+    )
     # Execution only continues records produced by the approval planner; it
     # never creates a fresh task record while preparing git changes.
     require_approval_record(layout.plan_path, layout.approval_path)
@@ -122,9 +129,16 @@ def commit_task_step(
     verification_summary: str = "",
     plan_step_index: int | None = None,
     project_root: str | Path,
+    install_prefix: str | Path | None = None,
+    workspace_dir: str | Path | None = None,
 ) -> tuple[ExecutionState, str]:
     root = require_git_repository(project_root)
-    layout = build_task_record_layout(root, task_id)
+    layout = build_task_record_layout(
+        root,
+        task_id,
+        install_prefix=install_prefix,
+        workspace_dir=workspace_dir,
+    )
     state = read_state(layout.task_dir / STATE_FILE_NAME)
     # Commits are only valid from the task branch; this prevents a delayed tool
     # call from committing unrelated changes on the user's current branch.
@@ -171,9 +185,16 @@ def finalize_task_branch(
     task_id: str,
     *,
     project_root: str | Path,
+    install_prefix: str | Path | None = None,
+    workspace_dir: str | Path | None = None,
 ) -> ExecutionState:
     root = require_git_repository(project_root)
-    layout = build_task_record_layout(root, task_id)
+    layout = build_task_record_layout(
+        root,
+        task_id,
+        install_prefix=install_prefix,
+        workspace_dir=workspace_dir,
+    )
     state = read_state(layout.task_dir / STATE_FILE_NAME)
     require_task_branch(root, state.development_branch)
     require_open_state(state)
@@ -209,9 +230,20 @@ def finalize_task_branch(
     return integrated
 
 
-def describe_task_execution(task_id: str, *, project_root: str | Path) -> dict:
+def describe_task_execution(
+    task_id: str,
+    *,
+    project_root: str | Path,
+    install_prefix: str | Path | None = None,
+    workspace_dir: str | Path | None = None,
+) -> dict:
     root = require_git_repository(project_root)
-    layout = build_task_record_layout(root, task_id)
+    layout = build_task_record_layout(
+        root,
+        task_id,
+        install_prefix=install_prefix,
+        workspace_dir=workspace_dir,
+    )
     state_path = layout.task_dir / STATE_FILE_NAME
     state = read_state(state_path) if state_path.exists() else None
     verification_status = read_latest_verification_status(layout.verification_path)

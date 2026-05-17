@@ -102,7 +102,7 @@ The `code_modification` toolset is for audited repository improvements, not unat
 - Approved work starts on a dedicated task branch and commits explicit file lists only.
 - Verification and safety review records gate finalization.
 - `self_evolution_thinking` creates advisory candidates but does not execute changes.
-- `token_strategy.py` summarizes files inside the repository root only and writes generated context under `.hermes-analysis-cache/`.
+- `token_strategy.py` summarizes files inside the repository root only and writes generated context under `<install_prefix>/data/self-evolution/analysis-cache/`.
 - If a change affects user-visible behavior, tool schemas, configuration, testing instructions, or the self-evolution flow, update the relevant repository documentation and let the final report record documentation sync status.
 
 Focused regression command:

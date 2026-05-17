@@ -79,11 +79,18 @@ def plan_self_update_application(
     candidate_ref: str | None = None,
     previous_active_ref: str | None = None,
     mode: str = "manual",
+    install_prefix: str | Path | None = None,
+    workspace_dir: str | Path | None = None,
 ) -> SelfUpdateApplicationState:
     """Create the audited self-update plan for an integrated task."""
     root = require_git_repository(project_root)
     clean_mode = _normalize_mode(mode)
-    layout = build_task_record_layout(root, task_id)
+    layout = build_task_record_layout(
+        root,
+        task_id,
+        install_prefix=install_prefix,
+        workspace_dir=workspace_dir,
+    )
     _require_integrated_task(layout.task_dir / STATE_FILE_NAME)
     candidate_commit = _resolve_commit(root, candidate_ref or "HEAD")
     previous_active_commit = _resolve_commit(root, previous_active_ref) if previous_active_ref else current_commit(root)
@@ -116,11 +123,18 @@ def prepare_self_update(
     approval_text: str,
     project_root: str | Path,
     worktree_path: str | None = None,
+    install_prefix: str | Path | None = None,
+    workspace_dir: str | Path | None = None,
 ) -> SelfUpdateApplicationState:
     """Record user approval and candidate preparation intent."""
     require_explicit_approval(approval_text)
     root = require_git_repository(project_root)
-    layout = build_task_record_layout(root, task_id)
+    layout = build_task_record_layout(
+        root,
+        task_id,
+        install_prefix=install_prefix,
+        workspace_dir=workspace_dir,
+    )
     state = _read_update_state(layout.task_dir)
     _require_status(state, {"planned"})
     candidate_path = str(Path(worktree_path).expanduser()) if worktree_path else str(layout.temp_dir / "update-candidate")
@@ -140,10 +154,17 @@ def record_self_update_build(
     *,
     project_root: str | Path,
     build_summary: str = "No build required for Python source update.",
+    install_prefix: str | Path | None = None,
+    workspace_dir: str | Path | None = None,
 ) -> SelfUpdateApplicationState:
     """Record a build result without executing build commands."""
     root = require_git_repository(project_root)
-    layout = build_task_record_layout(root, task_id)
+    layout = build_task_record_layout(
+        root,
+        task_id,
+        install_prefix=install_prefix,
+        workspace_dir=workspace_dir,
+    )
     state = _read_update_state(layout.task_dir)
     _require_status(state, {"prepared"})
     updated = _replace_state(
@@ -162,10 +183,17 @@ def record_self_update_health_check(
     project_root: str | Path,
     checks: list[str],
     conclusion: Literal["passed", "failed", "inconclusive"],
+    install_prefix: str | Path | None = None,
+    workspace_dir: str | Path | None = None,
 ) -> SelfUpdateApplicationState:
     """Record health-check evidence for the prepared candidate."""
     root = require_git_repository(project_root)
-    layout = build_task_record_layout(root, task_id)
+    layout = build_task_record_layout(
+        root,
+        task_id,
+        install_prefix=install_prefix,
+        workspace_dir=workspace_dir,
+    )
     state = _read_update_state(layout.task_dir)
     _require_status(state, {"built", "verified", "blocked"})
     clean_checks = tuple(str(check).strip() for check in checks if str(check).strip())
@@ -192,11 +220,18 @@ def activate_self_update(
     *,
     approval_text: str,
     project_root: str | Path,
+    install_prefix: str | Path | None = None,
+    workspace_dir: str | Path | None = None,
 ) -> SelfUpdateApplicationState:
     """Record activation approval and leave runtime restart pending."""
     require_explicit_approval(approval_text)
     root = require_git_repository(project_root)
-    layout = build_task_record_layout(root, task_id)
+    layout = build_task_record_layout(
+        root,
+        task_id,
+        install_prefix=install_prefix,
+        workspace_dir=workspace_dir,
+    )
     state = _read_update_state(layout.task_dir)
     _require_status(state, {"verified"})
     updated = _replace_state(
@@ -216,11 +251,18 @@ def rollback_self_update(
     approval_text: str,
     project_root: str | Path,
     reason: str = "",
+    install_prefix: str | Path | None = None,
+    workspace_dir: str | Path | None = None,
 ) -> SelfUpdateApplicationState:
     """Record rollback approval for the previously active commit."""
     require_explicit_approval(approval_text)
     root = require_git_repository(project_root)
-    layout = build_task_record_layout(root, task_id)
+    layout = build_task_record_layout(
+        root,
+        task_id,
+        install_prefix=install_prefix,
+        workspace_dir=workspace_dir,
+    )
     state = _read_update_state(layout.task_dir)
     clean_reason = str(reason or "").strip()
     updated = _replace_state(
@@ -249,6 +291,8 @@ def mirror_runtime_update_audit(
     blocked_reason: str = "",
     approved_by_user: bool = False,
     mode: str = "manual",
+    install_prefix: str | Path | None = None,
+    workspace_dir: str | Path | None = None,
 ) -> SelfUpdateApplicationState | None:
     """Mirror runtime update progress into the source-repo audit record.
 
@@ -259,7 +303,12 @@ def mirror_runtime_update_audit(
     returns None instead of blocking the runtime operation.
     """
     root = require_git_repository(project_root)
-    layout = build_task_record_layout(root, task_id)
+    layout = build_task_record_layout(
+        root,
+        task_id,
+        install_prefix=install_prefix,
+        workspace_dir=workspace_dir,
+    )
     state = _read_or_create_runtime_audit_state(
         layout.task_dir,
         layout.task_id,
@@ -336,10 +385,21 @@ def mirror_runtime_update_audit(
     return updated
 
 
-def describe_self_update_application(task_id: str, *, project_root: str | Path) -> dict:
+def describe_self_update_application(
+    task_id: str,
+    *,
+    project_root: str | Path,
+    install_prefix: str | Path | None = None,
+    workspace_dir: str | Path | None = None,
+) -> dict:
     """Return self-update application audit paths and state."""
     root = require_git_repository(project_root)
-    layout = build_task_record_layout(root, task_id)
+    layout = build_task_record_layout(
+        root,
+        task_id,
+        install_prefix=install_prefix,
+        workspace_dir=workspace_dir,
+    )
     state_path = layout.task_dir / UPDATE_STATE_FILE_NAME
     application_path = layout.task_dir / UPDATE_APPLICATION_FILE_NAME
     state = _read_update_state(layout.task_dir) if state_path.exists() else None

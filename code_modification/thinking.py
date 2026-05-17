@@ -120,6 +120,8 @@ def run_self_evolution_thinking(
     project_root: str | Path,
     *,
     trigger: str = "manual",
+    install_prefix: str | Path | None = None,
+    workspace_dir: str | Path | None = None,
     config: ThinkingConfig | None = None,
 ) -> ThinkingReport:
     """Generate a read-only candidate report for the given project root."""
@@ -127,7 +129,12 @@ def run_self_evolution_thinking(
     thinking_config = config or load_thinking_config()
     started_at = _utc_timestamp()
     run_id = f"thinking-{datetime.now(UTC).strftime('%Y%m%d-%H%M%S-%f')}"
-    run_dir = get_candidates_dir(root) / run_id
+    candidates_dir = get_candidates_dir(
+        root,
+        install_prefix=install_prefix,
+        workspace_dir=workspace_dir,
+    )
+    run_dir = candidates_dir / run_id
     run_dir.mkdir(parents=True, exist_ok=True)
 
     sources_read: list[str] = []
@@ -136,6 +143,8 @@ def run_self_evolution_thinking(
     analysis_context = build_analysis_context(
         root,
         purpose="thinking",
+        install_prefix=install_prefix,
+        workspace_dir=workspace_dir,
         hints=AnalysisHints(include_git_history=thinking_config.include_git_history),
     )
     sources_read.extend(source.relative_path for source in analysis_context.selected_sources)
@@ -143,6 +152,8 @@ def run_self_evolution_thinking(
     candidates = _discover_candidates(
         root,
         thinking_config,
+        install_prefix=install_prefix,
+        workspace_dir=workspace_dir,
         sources_read=sources_read,
         sources_skipped=sources_skipped,
     )
@@ -173,23 +184,33 @@ def run_self_evolution_thinking(
         report_path=run_dir / "thinking-report.md",
         candidates_path=run_dir / "candidates.json",
         state_path=run_dir / "run-state.json",
-        index_path=get_candidates_dir(root) / "index.md",
+        index_path=candidates_dir / "index.md",
     )
     write_thinking_report(report)
     return report
 
 
-def describe_self_evolution_thinking(project_root: str | Path) -> dict[str, Any]:
+def describe_self_evolution_thinking(
+    project_root: str | Path,
+    *,
+    install_prefix: str | Path | None = None,
+    workspace_dir: str | Path | None = None,
+) -> dict[str, Any]:
     """Return config, cron job state, and the latest local thinking run."""
     root = Path(project_root).expanduser().resolve()
-    latest = _latest_run_dir(get_candidates_dir(root))
+    candidates_dir = get_candidates_dir(
+        root,
+        install_prefix=install_prefix,
+        workspace_dir=workspace_dir,
+    )
+    latest = _latest_run_dir(candidates_dir)
     job = find_thinking_job()
     config = load_thinking_config()
     return {
         "config": asdict(config),
         "job": _summarize_job(job) if job else None,
         "latest_run": str(latest) if latest else None,
-        "candidates_dir": str(get_candidates_dir(root)),
+        "candidates_dir": str(candidates_dir),
     }
 
 
@@ -299,20 +320,38 @@ def write_thinking_report(report: ThinkingReport) -> None:
         )
 
 
-def get_candidates_dir(project_root: str | Path) -> Path:
+def get_candidates_dir(
+    project_root: str | Path,
+    *,
+    install_prefix: str | Path | None = None,
+    workspace_dir: str | Path | None = None,
+) -> Path:
     """Return the directory that stores self-evolution thinking candidates."""
-    return get_evolution_workspace(project_root) / CANDIDATES_DIR_NAME
+    return (
+        get_evolution_workspace(
+            project_root,
+            install_prefix=install_prefix,
+            workspace_dir=workspace_dir,
+        )
+        / CANDIDATES_DIR_NAME
+    )
 
 
 def _discover_candidates(
     project_root: Path,
     config: ThinkingConfig,
     *,
+    install_prefix: str | Path | None,
+    workspace_dir: str | Path | None,
     sources_read: list[str],
     sources_skipped: list[str],
 ) -> list[ImprovementCandidate]:
     candidates: list[ImprovementCandidate] = []
-    workspace = get_evolution_workspace(project_root)
+    workspace = get_evolution_workspace(
+        project_root,
+        install_prefix=install_prefix,
+        workspace_dir=workspace_dir,
+    )
 
     if config.include_test_failures:
         candidates.extend(_candidates_from_verification_records(workspace, sources_read))

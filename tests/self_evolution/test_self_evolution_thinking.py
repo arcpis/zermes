@@ -26,9 +26,11 @@ def test_run_once_writes_no_candidate_report(tmp_path):
     """A run with no signal still writes a traceable local report."""
     project_root = tmp_path / "hermes-agent"
     project_root.mkdir()
+    prefix = tmp_path / "zermes"
 
     report = run_self_evolution_thinking(
         project_root,
+        install_prefix=prefix,
         config=ThinkingConfig(include_git_history=False),
     )
 
@@ -47,8 +49,10 @@ def test_run_once_finds_failed_verification_candidate(tmp_path):
     """Existing verification failures become advisory candidates, not changes."""
     project_root = tmp_path / "hermes-agent"
     project_root.mkdir()
+    prefix = tmp_path / "zermes"
     verification_path = (
-        project_root.parent
+        prefix
+        / "data"
         / "self-evolution"
         / "tasks"
         / "task-1"
@@ -59,6 +63,7 @@ def test_run_once_finds_failed_verification_candidate(tmp_path):
 
     report = run_self_evolution_thinking(
         project_root,
+        install_prefix=prefix,
         config=ThinkingConfig(include_git_history=False),
     )
 
@@ -74,9 +79,15 @@ def test_tool_run_once_returns_report_paths(tmp_path):
     """The tool wrapper should expose the generated report paths as JSON."""
     project_root = tmp_path / "hermes-agent"
     _make_project_repo(project_root)
+    prefix = tmp_path / "zermes"
+    _make_runtime_state(prefix, project_root)
 
     result = json.loads(
-        self_evolution_thinking("run_once", project_root=str(project_root))
+        self_evolution_thinking(
+            "run_once",
+            project_root=str(project_root),
+            install_prefix=str(prefix),
+        )
     )
 
     assert result["success"] is True
@@ -90,6 +101,8 @@ def test_enable_updates_single_cron_job_and_disable_pauses_it(tmp_path, monkeypa
     _redirect_cron_storage(tmp_path, monkeypatch)
     project_root = tmp_path / "hermes-agent"
     _make_project_repo(project_root)
+    prefix = tmp_path / "zermes"
+    _make_runtime_state(prefix, project_root)
 
     first = json.loads(
         self_evolution_thinking(
@@ -97,6 +110,7 @@ def test_enable_updates_single_cron_job_and_disable_pauses_it(tmp_path, monkeypa
             schedule="every 2h",
             max_candidates=2,
             project_root=str(project_root),
+            install_prefix=str(prefix),
         )
     )
     second = json.loads(
@@ -104,6 +118,7 @@ def test_enable_updates_single_cron_job_and_disable_pauses_it(tmp_path, monkeypa
             "enable",
             schedule="every 3h",
             project_root=str(project_root),
+            install_prefix=str(prefix),
         )
     )
     job = find_thinking_job()
@@ -115,7 +130,13 @@ def test_enable_updates_single_cron_job_and_disable_pauses_it(tmp_path, monkeypa
     assert job["name"] == THINKING_JOB_NAME
     assert job["schedule_display"] == "every 180m"
 
-    disabled = json.loads(self_evolution_thinking("disable", project_root=str(project_root)))
+    disabled = json.loads(
+        self_evolution_thinking(
+            "disable",
+            project_root=str(project_root),
+            install_prefix=str(prefix),
+        )
+    )
 
     assert disabled["success"] is True
     assert disabled["config"]["enabled"] is False
@@ -143,3 +164,18 @@ def _make_project_repo(repo):
     tools_dir.mkdir(exist_ok=True)
     (tools_dir / "code_modification_tool.py").write_text("# tool\n", encoding="utf-8")
     subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True, text=True)
+
+
+def _make_runtime_state(prefix, project_root):
+    active_path = prefix / "runtime" / "active.json"
+    active_path.parent.mkdir(parents=True)
+    active_path.write_text(
+        json.dumps(
+            {
+                "source_repo": {"path": str(project_root)},
+                "self_evolution_data_dir": str(prefix / "data" / "self-evolution"),
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )

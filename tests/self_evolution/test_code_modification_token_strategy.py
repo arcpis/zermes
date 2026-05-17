@@ -1,4 +1,4 @@
-"""Tests for repository-local low-token analysis context building."""
+"""Tests for install-local low-token analysis context building."""
 
 import json
 
@@ -12,12 +12,15 @@ from code_modification.token_strategy import (
 )
 
 
-def test_analysis_cache_stays_inside_project_root(tmp_path):
-    """The stage 7 cache must not depend on sibling workspaces."""
+def test_analysis_cache_uses_install_data_workspace(tmp_path):
+    """The stage 7 cache belongs to install-local runtime data."""
     project_root = tmp_path / "hermes-agent"
     project_root.mkdir()
+    prefix = tmp_path / "zermes"
 
-    assert get_analysis_cache_dir(project_root) == project_root / ".hermes-analysis-cache"
+    assert get_analysis_cache_dir(project_root, install_prefix=prefix) == (
+        prefix / "data" / "self-evolution" / "analysis-cache"
+    )
 
 
 def test_collect_structure_sources_uses_repository_documents(tmp_path):
@@ -44,15 +47,16 @@ def test_build_analysis_context_writes_reusable_task_summaries(tmp_path):
     context = build_analysis_context(
         project_root,
         purpose="approval",
+        install_prefix=tmp_path / "zermes",
         hints=AnalysisHints(
             requirement="Update a tool schema and document the user-facing command.",
             explicit_paths=("tools/code_modification_tool.py",),
         ),
     )
 
-    assert context.context_state_path.startswith(str(project_root))
-    assert context.task_context_summary_path.startswith(str(project_root))
-    assert context.docs_summary_path.startswith(str(project_root))
+    assert context.context_state_path.startswith(str(tmp_path / "zermes" / "data"))
+    assert context.task_context_summary_path.startswith(str(tmp_path / "zermes" / "data"))
+    assert context.docs_summary_path.startswith(str(tmp_path / "zermes" / "data"))
     assert "README.md" in context.documentation_updates
     assert "AGENTS.md" in context.documentation_updates
     assert json.loads(_read(context.docs_summary_path))
@@ -63,7 +67,7 @@ def test_summary_cache_is_reused_for_unchanged_file(tmp_path):
     project_root = tmp_path / "hermes-agent"
     target = project_root / "README.md"
     _write(target, "# Hermes\nReusable summary.\n")
-    cache_root = get_analysis_cache_dir(project_root)
+    cache_root = get_analysis_cache_dir(project_root, install_prefix=tmp_path / "zermes")
 
     first = summarize_repository_file(target, project_root, cache_root, source_type="documentation")
     second = summarize_repository_file(target, project_root, cache_root, source_type="documentation")
@@ -82,6 +86,7 @@ def test_context_rejects_paths_outside_project_root(tmp_path):
     context = build_analysis_context(
         project_root,
         purpose="thinking",
+        install_prefix=tmp_path / "zermes",
         hints=AnalysisHints(explicit_paths=("../README.md",)),
         budget=AnalysisBudget(
             max_sources=5,
@@ -102,4 +107,3 @@ def _write(path, text):
 
 def _read(path):
     return open(path, encoding="utf-8").read()
-
