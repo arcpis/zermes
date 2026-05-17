@@ -1,0 +1,4 @@
+interface:
+  display_name: "Self Evolution"
+  short_description: "Governed Hermes self-evolution workflow."
+  default_prompt: "Use self-evolution to plan, approve, execute, verify, and report a governed Hermes code change."
