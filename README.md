@@ -225,7 +225,7 @@ We welcome contributions! See the [Contributing Guide](https://hermes-agent.nous
 Quick start for contributors — clone and go with `setup-hermes.sh`:
 
 ```bash
-git clone https://github.com/arcpis/zerme.git zermes
+git clone https://github.com/arcpis/zerme.git
 cd zermes
 ./setup-hermes.sh     # installs uv, creates venv, installs .[all], symlinks ~/.local/bin/hermes
 ./hermes              # auto-detects the venv, no need to `source` first
