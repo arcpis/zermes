@@ -65,6 +65,7 @@ class TestResolveToolset:
             "plan_code_task_verification",
             "record_code_task_safety_review",
             "run_code_task_verification",
+            "self_evolution_repo_lock",
             "self_evolution_thinking",
             "self_update_application",
             "start_approved_code_task",

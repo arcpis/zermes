@@ -13,9 +13,11 @@ from tools.code_modification_tool import (
     PLAN_CODE_TASK_VERIFICATION_SCHEMA,
     RECORD_CODE_TASK_SAFETY_REVIEW_SCHEMA,
     RUN_CODE_TASK_VERIFICATION_SCHEMA,
+    SELF_EVOLUTION_REPO_LOCK_SCHEMA,
     SELF_EVOLUTION_THINKING_SCHEMA,
     SELF_UPDATE_APPLICATION_SCHEMA,
     START_APPROVED_CODE_TASK_SCHEMA,
+    self_evolution_repo_lock,
     complete_code_task,
     plan_code_task_verification,
     record_code_task_safety_review,
@@ -205,6 +207,88 @@ def test_self_evolution_thinking_tool_rejects_unknown_action(tmp_path):
 
     assert result["success"] is False
     assert "status, enable, disable, or run_once" in result["error"]
+
+
+def test_self_evolution_repo_lock_tool_status_acquire_and_release(tmp_path):
+    project_root = tmp_path / "hermes-agent"
+    _make_project_repo(project_root)
+    prefix = tmp_path / "zermes"
+
+    acquired = json.loads(
+        self_evolution_repo_lock(
+            "acquire",
+            task_id="20260518-010000-lock-test",
+            development_branch="self-evolution/dev/20260518-010000-lock-test",
+            project_root=str(project_root),
+            install_prefix=str(prefix),
+        )
+    )
+    status = json.loads(
+        self_evolution_repo_lock(
+            "status",
+            project_root=str(project_root),
+            install_prefix=str(prefix),
+        )
+    )
+    released = json.loads(
+        self_evolution_repo_lock(
+            "release",
+            task_id="20260518-010000-lock-test",
+            project_root=str(project_root),
+            install_prefix=str(prefix),
+        )
+    )
+
+    assert acquired["success"] is True
+    assert acquired["locked"] is True
+    assert acquired["lock"]["task_id"] == "20260518-010000-lock-test"
+    assert status["locked"] is True
+    assert status["lock"]["development_branch"] == "self-evolution/dev/20260518-010000-lock-test"
+    assert released["success"] is True
+    assert released["locked"] is False
+    assert not Path(acquired["lock_path"]).exists()
+    assert Path(acquired["history_path"]).exists()
+
+
+def test_self_evolution_repo_lock_tool_reports_conflict_and_force_release(tmp_path):
+    project_root = tmp_path / "hermes-agent"
+    _make_project_repo(project_root)
+    prefix = tmp_path / "zermes"
+
+    first = json.loads(
+        self_evolution_repo_lock(
+            "acquire",
+            task_id="20260518-010000-first",
+            development_branch="self-evolution/dev/20260518-010000-first",
+            project_root=str(project_root),
+            install_prefix=str(prefix),
+        )
+    )
+    conflict = json.loads(
+        self_evolution_repo_lock(
+            "acquire",
+            task_id="20260518-010000-second",
+            development_branch="self-evolution/dev/20260518-010000-second",
+            project_root=str(project_root),
+            install_prefix=str(prefix),
+        )
+    )
+    forced = json.loads(
+        self_evolution_repo_lock(
+            "force_release",
+            approval_text="I approve force release",
+            reason="test cleanup after abandoned task",
+            project_root=str(project_root),
+            install_prefix=str(prefix),
+        )
+    )
+
+    assert first["success"] is True
+    assert conflict["success"] is False
+    assert "already locked" in conflict["error"]
+    assert "20260518-010000-first" in conflict["error"]
+    assert forced["success"] is True
+    assert forced["locked"] is False
 
 
 def test_self_update_application_runtime_actions_manage_release_switch(tmp_path):
@@ -801,6 +885,7 @@ def test_code_modification_tool_schemas_include_install_prefix():
         RUN_CODE_TASK_VERIFICATION_SCHEMA,
         RECORD_CODE_TASK_SAFETY_REVIEW_SCHEMA,
         SELF_EVOLUTION_THINKING_SCHEMA,
+        SELF_EVOLUTION_REPO_LOCK_SCHEMA,
         SELF_UPDATE_APPLICATION_SCHEMA,
     ]
 

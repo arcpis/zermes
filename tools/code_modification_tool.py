@@ -56,6 +56,15 @@ from code_modification.runtime_update import (
     request_runtime_restart,
     write_runtime_update_state,
 )
+from code_modification.repo_lock import (
+    RepoLockError,
+    acquire_repo_lock,
+    force_release_repo_lock,
+    heartbeat_repo_lock,
+    release_repo_lock,
+    repo_lock_status,
+    repo_lock_status_to_dict,
+)
 from code_modification.token_strategy import AnalysisHints, build_analysis_context
 from code_modification.thinking import (
     SelfEvolutionThinkingError,
@@ -378,6 +387,62 @@ def self_evolution_thinking(
         "action must be one of status, enable, disable, or run_once.",
         success=False,
     )
+
+
+def self_evolution_repo_lock(
+    action: str,
+    *,
+    task_id: str = "",
+    development_branch: str = "",
+    project_root: str | None = None,
+    install_prefix: str | None = None,
+    approval_text: str = "",
+    reason: str = "",
+) -> str:
+    """Inspect or manage the repository-level self-evolution lock."""
+    normalized = str(action or "").strip().lower()
+    try:
+        _require_install_prefix(install_prefix)
+        root = _resolve_tool_project_root(project_root, install_prefix)
+        if normalized == "status":
+            status = repo_lock_status(root, install_prefix=install_prefix)
+        elif normalized == "acquire":
+            status = acquire_repo_lock(
+                root,
+                task_id=str(task_id or ""),
+                development_branch=str(development_branch or ""),
+                install_prefix=install_prefix,
+                holder="self_evolution_repo_lock",
+            )
+        elif normalized == "release":
+            status = release_repo_lock(
+                root,
+                task_id=str(task_id or ""),
+                install_prefix=install_prefix,
+            )
+        elif normalized == "force_release":
+            status = force_release_repo_lock(
+                root,
+                approval_text=str(approval_text or ""),
+                reason=str(reason or ""),
+                install_prefix=install_prefix,
+            )
+        elif normalized == "heartbeat":
+            status = heartbeat_repo_lock(
+                root,
+                task_id=str(task_id or ""),
+                development_branch=str(development_branch or ""),
+                install_prefix=install_prefix,
+                holder="self_evolution_repo_lock",
+            )
+        else:
+            return tool_error(
+                "action must be one of status, acquire, release, force_release, or heartbeat.",
+                success=False,
+            )
+    except (RepoLockError, ProjectRootResolutionError) as exc:
+        return tool_error(str(exc), success=False)
+    return tool_result(success=True, action=normalized, **repo_lock_status_to_dict(status))
 
 
 def self_update_application(
@@ -1558,6 +1623,47 @@ SELF_EVOLUTION_THINKING_SCHEMA = {
     },
 }
 
+SELF_EVOLUTION_REPO_LOCK_SCHEMA = {
+    "name": "self_evolution_repo_lock",
+    "description": (
+        "Inspect or manage the repository-level lock for approved "
+        "self-evolution code tasks. Use status to diagnose conflicts, acquire "
+        "to reserve a development source repository for one task, release to "
+        "unlock the current task, force_release only after explicit user "
+        "approval, and heartbeat to refresh observability for the holder."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "action": {
+                "type": "string",
+                "description": "One of status, acquire, release, force_release, or heartbeat.",
+            },
+            "task_id": {
+                "type": "string",
+                "description": "Required for acquire, release, and heartbeat.",
+            },
+            "development_branch": {
+                "type": "string",
+                "description": "Required for acquire and heartbeat.",
+            },
+            "approval_text": {
+                "type": "string",
+                "description": "Required explicit approval text for force_release.",
+            },
+            "reason": {
+                "type": "string",
+                "description": "Required reason for force_release audit history.",
+            },
+            "project_root": {
+                "type": "string",
+                "description": "Optional git repository root. Defaults to the current directory.",
+            },
+        },
+        "required": ["action"],
+    },
+}
+
 SELF_UPDATE_APPLICATION_SCHEMA = {
     "name": "self_update_application",
     "description": (
@@ -1739,6 +1845,7 @@ for _schema in (
     RUN_CODE_TASK_VERIFICATION_SCHEMA,
     RECORD_CODE_TASK_SAFETY_REVIEW_SCHEMA,
     SELF_EVOLUTION_THINKING_SCHEMA,
+    SELF_EVOLUTION_REPO_LOCK_SCHEMA,
     SELF_UPDATE_APPLICATION_SCHEMA,
 ):
     _add_install_prefix_to_schema(_schema)
@@ -1874,6 +1981,23 @@ registry.register(
     ),
     check_fn=check_code_modification_requirements,
     emoji="T",
+)
+
+registry.register(
+    name="self_evolution_repo_lock",
+    toolset="code_modification",
+    schema=SELF_EVOLUTION_REPO_LOCK_SCHEMA,
+    handler=lambda args, **kw: self_evolution_repo_lock(
+        action=args.get("action", ""),
+        task_id=args.get("task_id", ""),
+        development_branch=args.get("development_branch", ""),
+        project_root=args.get("project_root"),
+        install_prefix=args.get("install_prefix"),
+        approval_text=args.get("approval_text", ""),
+        reason=args.get("reason", ""),
+    ),
+    check_fn=check_code_modification_requirements,
+    emoji="L",
 )
 
 registry.register(

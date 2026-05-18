@@ -17,6 +17,7 @@ from .executor import (
     read_markdown_bullets,
     read_state,
     require_task_branch,
+    require_task_repo_lock,
 )
 from .git_workflow import current_branch, require_git_repository
 from .governance import build_task_record_layout
@@ -89,6 +90,7 @@ def plan_task_verification(
     execution_state = read_state(layout.task_dir / "execution-state.json")
     require_verifiable_execution_state(execution_state.status, bool(execution_state.commits))
     require_task_branch(root, execution_state.development_branch)
+    require_task_repo_lock(root, execution_state, install_prefix=install_prefix, workspace_dir=workspace_dir)
 
     commands = tuple(
         build_verification_commands(
@@ -146,6 +148,7 @@ def run_task_verification(
     execution_state = read_state(layout.task_dir / "execution-state.json")
     require_verifiable_execution_state(execution_state.status, bool(execution_state.commits))
     require_task_branch(root, execution_state.development_branch)
+    require_task_repo_lock(root, execution_state, install_prefix=install_prefix, workspace_dir=workspace_dir)
 
     state_path = layout.task_dir / VERIFICATION_STATE_FILE_NAME
     state = read_verification_state(state_path) if state_path.exists() else plan_task_verification(
@@ -211,6 +214,7 @@ def record_task_safety_review(
     )
     execution_state = read_state(layout.task_dir / "execution-state.json")
     require_task_branch(root, execution_state.development_branch)
+    require_task_repo_lock(root, execution_state, install_prefix=install_prefix, workspace_dir=workspace_dir)
     clean_questions = tuple(item.strip() for item in questions if item.strip())
     if not clean_questions:
         raise CodeTaskVerificationError("at least one safety review question is required")

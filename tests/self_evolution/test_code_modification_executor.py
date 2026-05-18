@@ -10,6 +10,7 @@ from code_modification.executor import (
 )
 from code_modification.git_workflow import current_branch
 from code_modification.governance import DEFAULT_INTEGRATION_BRANCH
+from code_modification.repo_lock import acquire_repo_lock, repo_lock_status
 from code_modification.verifier import run_task_verification
 
 
@@ -107,6 +108,7 @@ def test_start_commit_and_finalize_approved_task(tmp_path):
     assert state.plan_steps
     assert state.documentation_updates == ()
     assert layout.change_log_path.exists()
+    assert repo_lock_status(repo, install_prefix=install_prefix_for(repo)).locked is True
 
     (repo / "workflow.txt").write_text("workflow\n", encoding="utf-8")
     committed, commit_hash = commit_task_step(
@@ -145,6 +147,31 @@ def test_start_commit_and_finalize_approved_task(tmp_path):
     assert "integrated" in layout.change_log_path.read_text(encoding="utf-8")
     assert "Final Report" in layout.final_report_path.read_text(encoding="utf-8")
     assert "## Documentation Sync" in layout.final_report_path.read_text(encoding="utf-8")
+    assert repo_lock_status(repo, install_prefix=install_prefix_for(repo)).locked is False
+
+
+def test_start_approved_task_rejects_repository_lock_conflict(tmp_path):
+    repo = init_repo(tmp_path)
+    plan, _layout = create_approval_record(repo)
+    acquire_repo_lock(
+        repo,
+        task_id="20260518-010000-other-task",
+        development_branch="self-evolution/dev/20260518-010000-other-task",
+        install_prefix=install_prefix_for(repo),
+    )
+
+    try:
+        start_approved_task(
+            plan.task_id,
+            approval_text="approved",
+            project_root=repo,
+            install_prefix=install_prefix_for(repo),
+        )
+    except CodeTaskExecutionError as exc:
+        assert "already locked" in str(exc)
+        assert "20260518-010000-other-task" in str(exc)
+    else:
+        raise AssertionError("Expected locked repository to reject a second task")
 
 
 def test_final_report_records_documentation_sync_status(tmp_path):

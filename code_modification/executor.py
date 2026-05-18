@@ -20,6 +20,12 @@ from .git_workflow import (
     require_git_repository,
 )
 from .governance import DEFAULT_INTEGRATION_BRANCH, build_task_record_layout
+from .repo_lock import (
+    RepoLockError,
+    acquire_repo_lock,
+    release_repo_lock,
+    require_repo_lock_holder,
+)
 
 
 STATE_FILE_NAME = "execution-state.json"
@@ -79,46 +85,78 @@ def start_approved_task(
     # never creates a fresh task record while preparing git changes.
     require_approval_record(layout.plan_path, layout.approval_path)
     require_explicit_approval(approval_text)
-    require_clean_worktree(root)
 
-    original_branch = current_branch(root)
-    start_branch = base_branch or original_branch
-    base_commit = current_commit(root)
     development_branch = read_development_branch(layout.plan_path)
-    approved_areas = read_markdown_bullets(layout.plan_path, "Affected Areas")
-    documentation_updates = read_documentation_updates(layout.plan_path)
-    plan_steps = tuple(
-        PlanStepRecord(description=description)
-        for description in read_markdown_bullets(layout.plan_path, "Tasks")
-    )
-    create_or_switch_development_branch(root, development_branch, base_branch=base_branch)
-    # Persist state outside git so a later tool call can resume without parsing
-    # the human-facing change log.
-    state = ExecutionState(
-        task_id=layout.task_id,
-        status="branch_created",
-        project_root=str(root),
-        base_branch=start_branch,
-        base_commit=base_commit,
-        development_branch=development_branch,
-        approved_areas=approved_areas,
-        plan_steps=plan_steps,
-        documentation_updates=documentation_updates,
-    )
-    write_state(layout.task_dir / STATE_FILE_NAME, state)
+    try:
+        acquire_repo_lock(
+            root,
+            task_id=layout.task_id,
+            development_branch=development_branch,
+            install_prefix=install_prefix,
+            workspace_dir=workspace_dir,
+        )
+    except RepoLockError as exc:
+        raise CodeTaskExecutionError(str(exc)) from exc
     append_change_log(
         layout.change_log_path,
-        "branch_created",
-        [
-            f"Base branch: `{start_branch}`",
-            f"Base commit: `{base_commit}`",
-            f"Development branch: `{development_branch}`",
-            f"Approved areas: {', '.join(approved_areas) or 'not specified'}",
-            f"Planned steps: {len(plan_steps)}",
-            f"Documentation update candidates: {', '.join(documentation_updates) or 'none'}",
-        ],
+        "repo_lock_acquired",
+        [f"Development branch: `{development_branch}`"],
     )
-    return state
+    try:
+        require_clean_worktree(root)
+        original_branch = current_branch(root)
+        start_branch = base_branch or original_branch
+        base_commit = current_commit(root)
+        approved_areas = read_markdown_bullets(layout.plan_path, "Affected Areas")
+        documentation_updates = read_documentation_updates(layout.plan_path)
+        plan_steps = tuple(
+            PlanStepRecord(description=description)
+            for description in read_markdown_bullets(layout.plan_path, "Tasks")
+        )
+        create_or_switch_development_branch(root, development_branch, base_branch=base_branch)
+        # Persist state outside git so a later tool call can resume without parsing
+        # the human-facing change log.
+        state = ExecutionState(
+            task_id=layout.task_id,
+            status="branch_created",
+            project_root=str(root),
+            base_branch=start_branch,
+            base_commit=base_commit,
+            development_branch=development_branch,
+            approved_areas=approved_areas,
+            plan_steps=plan_steps,
+            documentation_updates=documentation_updates,
+        )
+        write_state(layout.task_dir / STATE_FILE_NAME, state)
+        append_change_log(
+            layout.change_log_path,
+            "branch_created",
+            [
+                f"Base branch: `{start_branch}`",
+                f"Base commit: `{base_commit}`",
+                f"Development branch: `{development_branch}`",
+                f"Approved areas: {', '.join(approved_areas) or 'not specified'}",
+                f"Planned steps: {len(plan_steps)}",
+                f"Documentation update candidates: {', '.join(documentation_updates) or 'none'}",
+            ],
+        )
+        return state
+    except Exception:
+        try:
+            release_repo_lock(
+                root,
+                task_id=layout.task_id,
+                install_prefix=install_prefix,
+                workspace_dir=workspace_dir,
+            )
+            append_change_log(
+                layout.change_log_path,
+                "repo_lock_released_after_start_failure",
+                [f"Development branch: `{development_branch}`"],
+            )
+        except RepoLockError:
+            pass
+        raise
 
 
 def commit_task_step(
@@ -143,6 +181,7 @@ def commit_task_step(
     # Commits are only valid from the task branch; this prevents a delayed tool
     # call from committing unrelated changes on the user's current branch.
     require_task_branch(root, state.development_branch)
+    require_task_repo_lock(root, state, install_prefix=install_prefix, workspace_dir=workspace_dir)
     require_open_state(state)
     normalized_files = normalize_files(root, files)
     require_approved_files(normalized_files, state.approved_areas)
@@ -197,6 +236,7 @@ def finalize_task_branch(
     )
     state = read_state(layout.task_dir / STATE_FILE_NAME)
     require_task_branch(root, state.development_branch)
+    require_task_repo_lock(root, state, install_prefix=install_prefix, workspace_dir=workspace_dir)
     require_open_state(state)
     if not state.commits:
         raise CodeTaskExecutionError("at least one task commit is required before finalizing")
@@ -226,6 +266,20 @@ def finalize_task_branch(
             f"Development branch: `{state.development_branch}`",
             f"Integration branch: `{state.integration_branch}`",
         ],
+    )
+    try:
+        release_repo_lock(
+            root,
+            task_id=state.task_id,
+            install_prefix=install_prefix,
+            workspace_dir=workspace_dir,
+        )
+    except RepoLockError as exc:
+        raise CodeTaskExecutionError(str(exc)) from exc
+    append_change_log(
+        layout.change_log_path,
+        "repo_lock_released",
+        [f"Development branch: `{state.development_branch}`"],
     )
     return integrated
 
@@ -353,6 +407,25 @@ def require_task_branch(project_root: str | Path, development_branch: str) -> No
     branch = current_branch(project_root)
     if branch != development_branch:
         raise CodeTaskExecutionError(f"current branch must be {development_branch}")
+
+
+def require_task_repo_lock(
+    project_root: str | Path,
+    state: ExecutionState,
+    *,
+    install_prefix: str | Path | None = None,
+    workspace_dir: str | Path | None = None,
+) -> None:
+    try:
+        require_repo_lock_holder(
+            project_root,
+            task_id=state.task_id,
+            development_branch=state.development_branch,
+            install_prefix=install_prefix,
+            workspace_dir=workspace_dir,
+        )
+    except RepoLockError as exc:
+        raise CodeTaskExecutionError(str(exc)) from exc
 
 
 def require_approved_files(files: list[str], approved_areas: tuple[str, ...]) -> None:
