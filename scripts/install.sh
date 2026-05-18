@@ -6,7 +6,7 @@
 # Uses uv for desktop/server installs and Python's stdlib venv + pip on Termux.
 #
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/arcpis/zerme/main/scripts/install.sh | bash
 #
 # Or with options:
 #   curl -fsSL ... | bash -s -- --no-venv --skip-setup
@@ -43,8 +43,8 @@ NC='\033[0m' # No Color
 BOLD='\033[1m'
 
 # Configuration
-REPO_URL_SSH="git@github.com:NousResearch/hermes-agent.git"
-REPO_URL_HTTPS="https://github.com/NousResearch/hermes-agent.git"
+REPO_URL_SSH="git@github.com:arcpis/zerme.git"
+REPO_URL_HTTPS="https://github.com/arcpis/zerme.git"
 HERMES_HOME="${HERMES_HOME:-$HOME/.hermes}"
 # INSTALL_DIR is resolved AFTER arg parsing and OS detection so we can pick an
 # FHS-style layout for root installs.  Track whether the user gave us an
@@ -60,7 +60,7 @@ PYTHON_VERSION="3.11"
 NODE_VERSION="22"
 
 # FHS-style root install layout (set by resolve_install_layout when applicable):
-#   code at /usr/local/lib/hermes-agent, command at /usr/local/bin/hermes,
+#   code at /usr/local/lib/zermes, command at /usr/local/bin/hermes,
 #   data still at /root/.hermes (HERMES_HOME).  Matches Claude Code / Codex CLI
 #   and keeps Docker bind-mounted /root/ volumes lean.
 ROOT_FHS_LAYOUT=false
@@ -113,19 +113,19 @@ while [[ $# -gt 0 ]]; do
             echo "  --skip-setup   Skip interactive setup wizard"
             echo "  --branch NAME  Git branch to install (default: main)"
             echo "  --dir PATH     Installation directory"
-            echo "                   default (non-root):  ~/.hermes/hermes-agent"
-            echo "                   default (root, Linux): /usr/local/lib/hermes-agent"
+            echo "                   default (non-root):  ~/.hermes/zermes"
+            echo "                   default (root, Linux): /usr/local/lib/zermes"
             echo "  --hermes-home PATH  Data directory (default: ~/.hermes, or \$HERMES_HOME)"
             echo "  -h, --help     Show this help"
             echo ""
             echo "Notes:"
             echo "  When running as root on Linux, Hermes installs the code under"
-            echo "  /usr/local/lib/hermes-agent and links the command into"
+            echo "  /usr/local/lib/zermes and links the command into"
             echo "  /usr/local/bin/hermes (FHS layout — matches Claude Code / Codex CLI)."
             echo "  Data, config, sessions, and logs still live in \$HERMES_HOME"
             echo "  (default /root/.hermes).  This keeps Docker bind-mounted volumes"
             echo "  small and ensures the command is on PATH for all shells."
-            echo "  Existing installs at \$HERMES_HOME/hermes-agent are preserved in-place."
+            echo "  Existing installs at \$HERMES_HOME/zermes are preserved in-place."
             exit 0
             ;;
         *)
@@ -211,14 +211,14 @@ is_termux() {
 # symlink goes.  Called after detect_os so $OS/$DISTRO are known.
 #
 # Defaults:
-#   - Non-root, any OS:       INSTALL_DIR = $HERMES_HOME/hermes-agent
+#   - Non-root, any OS:       INSTALL_DIR = $HERMES_HOME/zermes
 #                             command link in $HOME/.local/bin
-#   - Termux (any uid):       INSTALL_DIR = $HERMES_HOME/hermes-agent
+#   - Termux (any uid):       INSTALL_DIR = $HERMES_HOME/zermes
 #                             command link in $PREFIX/bin (already on PATH)
-#   - Root on Linux (new):    INSTALL_DIR = /usr/local/lib/hermes-agent
+#   - Root on Linux (new):    INSTALL_DIR = /usr/local/lib/zermes
 #                             command link in /usr/local/bin
 #                             (unless a legacy install already exists at
-#                              $HERMES_HOME/hermes-agent — then preserve it)
+#                              $HERMES_HOME/zermes — then preserve it)
 #
 # Always no-op when the user set --dir or $HERMES_INSTALL_DIR.
 resolve_install_layout() {
@@ -229,7 +229,7 @@ resolve_install_layout() {
 
     # Termux: package manager manages /data/data/..., keep code in HERMES_HOME.
     if is_termux; then
-        INSTALL_DIR="$HERMES_HOME/hermes-agent"
+        INSTALL_DIR="$HERMES_HOME/zermes"
         return 0
     fi
 
@@ -237,13 +237,13 @@ resolve_install_layout() {
     # macOS root installs keep the legacy layout because /usr/local/ on macOS
     # is Homebrew territory and we don't want to fight that.
     if [ "$OS" = "linux" ] && [ "$(id -u)" -eq 0 ]; then
-        if [ -d "$HERMES_HOME/hermes-agent/.git" ]; then
-            INSTALL_DIR="$HERMES_HOME/hermes-agent"
+        if [ -d "$HERMES_HOME/zermes/.git" ]; then
+            INSTALL_DIR="$HERMES_HOME/zermes"
             log_info "Existing install detected at $INSTALL_DIR — keeping legacy layout"
-            log_info "  (new root installs use /usr/local/lib/hermes-agent)"
+            log_info "  (new root installs use /usr/local/lib/zermes)"
             return 0
         fi
-        INSTALL_DIR="/usr/local/lib/hermes-agent"
+        INSTALL_DIR="/usr/local/lib/zermes"
         ROOT_FHS_LAYOUT=true
         log_info "Root install on Linux — using FHS layout"
         log_info "  Code:    $INSTALL_DIR"
@@ -253,7 +253,7 @@ resolve_install_layout() {
     fi
 
     # Default: non-root, non-Termux → legacy user-scoped layout.
-    INSTALL_DIR="$HERMES_HOME/hermes-agent"
+    INSTALL_DIR="$HERMES_HOME/zermes"
 }
 
 get_command_link_dir() {
@@ -314,7 +314,7 @@ detect_os() {
             OS="windows"
             DISTRO="windows"
             log_error "Windows detected. Please use the PowerShell installer:"
-            log_info "  irm https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.ps1 | iex"
+            log_info "  irm https://raw.githubusercontent.com/arcpis/zerme/main/scripts/install.ps1 | iex"
             exit 1
             ;;
         *)

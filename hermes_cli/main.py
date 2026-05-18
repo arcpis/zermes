@@ -5911,14 +5911,12 @@ def _update_via_zip(args):
     from urllib.request import urlretrieve
 
     branch = "main"
-    zip_url = (
-        f"https://github.com/NousResearch/hermes-agent/archive/refs/heads/{branch}.zip"
-    )
+    zip_url = f"https://github.com/arcpis/zerme/archive/refs/heads/{branch}.zip"
 
     print("→ Downloading latest version...")
     try:
         tmp_dir = tempfile.mkdtemp(prefix="hermes-update-")
-        zip_path = os.path.join(tmp_dir, f"hermes-agent-{branch}.zip")
+        zip_path = os.path.join(tmp_dir, f"zermes-{branch}.zip")
         urlretrieve(zip_url, zip_path)
 
         print("→ Extracting...")
@@ -5936,8 +5934,7 @@ def _update_via_zip(args):
                     )
             zf.extractall(tmp_dir)
 
-        # GitHub ZIPs extract to hermes-agent-<branch>/
-        extracted = os.path.join(tmp_dir, f"hermes-agent-{branch}")
+        extracted = os.path.join(tmp_dir, f"zerme-{branch}")
         if not os.path.isdir(extracted):
             # Try to find it
             for d in os.listdir(tmp_dir):
@@ -6235,12 +6232,12 @@ def _restore_stashed_changes(
 # =========================================================================
 
 OFFICIAL_REPO_URLS = {
-    "https://github.com/NousResearch/hermes-agent.git",
-    "git@github.com:NousResearch/hermes-agent.git",
-    "https://github.com/NousResearch/hermes-agent",
-    "git@github.com:NousResearch/hermes-agent",
+    "https://github.com/arcpis/zerme.git",
+    "git@github.com:arcpis/zerme.git",
+    "https://github.com/arcpis/zerme",
+    "git@github.com:arcpis/zerme",
 }
-OFFICIAL_REPO_URL = "https://github.com/NousResearch/hermes-agent.git"
+OFFICIAL_REPO_URL = "https://github.com/arcpis/zerme.git"
 SKIP_UPSTREAM_PROMPT_FILE = ".skip_upstream_prompt"
 
 
@@ -6373,8 +6370,8 @@ def _sync_with_upstream_if_needed(git_cmd: list[str], cwd: Path) -> None:
 
         # Ask user if they want to add upstream
         print()
-        print("ℹ Your fork is not tracking the official Hermes repository.")
-        print("  This means you may miss updates from NousResearch/hermes-agent.")
+        print("ℹ Your fork is not tracking the official Zermes repository.")
+        print("  This means you may miss updates from arcpis/zerme.")
         print()
         try:
             response = (
@@ -6388,7 +6385,7 @@ def _sync_with_upstream_if_needed(git_cmd: list[str], cwd: Path) -> None:
             print("→ Adding upstream remote...")
             if _add_upstream_remote(git_cmd, cwd):
                 print(
-                    "  ✓ Added upstream: https://github.com/NousResearch/hermes-agent.git"
+                    "  ✓ Added upstream: https://github.com/arcpis/zerme.git"
                 )
                 has_upstream = True
             else:
@@ -6396,7 +6393,7 @@ def _sync_with_upstream_if_needed(git_cmd: list[str], cwd: Path) -> None:
                 return
         else:
             print(
-                "  Skipped. Run 'git remote add upstream https://github.com/NousResearch/hermes-agent.git' to add later."
+                "  Skipped. Run 'git remote add upstream https://github.com/arcpis/zerme.git' to add later."
             )
             _mark_skip_upstream_prompt()
             return
@@ -6943,7 +6940,7 @@ def _ensure_fhs_path_guard() -> None:
     except AttributeError:
         return
     # Only act when this is actually an FHS-layout install (command link at
-    # /usr/local/bin/hermes, code at /usr/local/lib/hermes-agent).
+    # /usr/local/bin/hermes, code at /usr/local/lib/zermes).
     fhs_link = Path("/usr/local/bin/hermes")
     if not fhs_link.is_symlink() and not fhs_link.exists():
         return
@@ -7162,7 +7159,7 @@ def _cmd_update_impl(args, gateway_mode: bool):
         else:
             print("✗ Not a git repository. Please reinstall:")
             print(
-                "  curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh | bash"
+                "  curl -fsSL https://raw.githubusercontent.com/arcpis/zerme/main/scripts/install.sh | bash"
             )
             sys.exit(1)
 

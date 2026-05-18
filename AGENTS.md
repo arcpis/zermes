@@ -1,6 +1,6 @@
 # Hermes Agent - Development Guide
 
-Instructions for AI coding assistants and developers working on the hermes-agent codebase.
+Instructions for AI coding assistants and developers working on the zermes codebase.
 
 ## Development Environment
 
@@ -10,7 +10,7 @@ source .venv/bin/activate   # or: source venv/bin/activate
 ```
 
 `scripts/run_tests.sh` probes `.venv` first, then `venv`, then
-`$HOME/.hermes/hermes-agent/venv` (for worktrees that share a venv with the
+`$HOME/.hermes/zermes/venv` (for worktrees that share a venv with the
 main checkout).
 
 ## Project Structure
@@ -20,7 +20,7 @@ The canonical source is the filesystem. The notes call out the load-bearing
 entry points you'll actually edit.
 
 ```
-hermes-agent/
+zermes/
 ├── run_agent.py          # AIAgent class — core conversation loop (~12k LOC)
 ├── model_tools.py        # Tool orchestration, discover_builtin_tools(), handle_function_call()
 ├── toolsets.py           # Toolset definitions, _HERMES_CORE_TOOLS list
@@ -72,19 +72,16 @@ Browse with `hermes logs [--follow] [--level ...] [--session ...]`.
 Zermes is maintained as a Hermes Agent fork with selective upstream
 compatibility. Keep branch responsibilities separate:
 
-- `main` tracks the clean Hermes upstream baseline in this checkout.
-- `zermes/main` is the Zermes product line.
-- `zermes/self-evolution` carries the governed self-evolution capability.
-- `self-evolution/dev/<task_id>` branches are task-scoped implementation
-  branches created by the self-evolution workflow.
+- `main` is the Zermes product line and should track the Zermes remote
+  repository.
+- `self-evolution/main` carries the governed self-evolution capability.
 
 Prefer small, topical commits over broad mixed commits. Keep internal module
 names such as `hermes_cli` stable unless there is a deliberate fork-wide rename
-plan; this reduces upstream merge conflicts. Use short-lived topic branches
-such as `zermes/branding-*` for focused integration work, then merge or
-cherry-pick those commits into `zermes/main`. If a Zermes remote is added,
-use `upstream` for `https://github.com/NousResearch/hermes-agent.git` and
-`origin` for the Zermes repository.
+plan; this reduces upstream merge conflicts. Merge or cherry-pick completed
+Zermes work into `main`. Use `upstream` for
+`https://github.com/NousResearch/hermes-agent.git` and `origin` for
+`https://github.com/arcpis/zerme.git`.
 
 ## Zermes Source Installer
 
