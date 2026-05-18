@@ -228,10 +228,11 @@ def _required_path(active: dict, field_name: str) -> str:
 
 
 def _existing_file(path: Path, label: str) -> Path:
-    resolved = path.resolve()
+    expanded = path.expanduser()
+    resolved = expanded.resolve()
     if not resolved.is_file():
         raise SystemExit(f"active runtime {label} does not exist: {resolved}")
-    return resolved
+    return expanded
 
 
 def _prepend_pythonpath(source_path: str, current: str | None) -> str:
