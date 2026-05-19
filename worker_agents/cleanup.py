@@ -5,8 +5,11 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
+import shutil
 from typing import Any, Mapping
 from uuid import uuid4
+
+from utils import atomic_json_write
 
 from .retention import (
     RetentionAction,
@@ -15,6 +18,7 @@ from .retention import (
     default_retention_policy,
 )
 from .storage.runtime_data_store import WorkerAgentRuntimeDataStore
+from .storage.safe_paths import path_under_root
 from .storage.task_store import WorkerTaskStore
 from .task_records import WorkerTaskResult
 from .task_state import TERMINAL_TASK_STATUSES, WorkerTaskError, WorkerTaskState
@@ -61,6 +65,29 @@ class CleanupPlan:
             "review": review_count,
             "keep": keep_count,
             "warnings": len(self.warnings),
+        }
+
+
+@dataclass(frozen=True)
+class CleanupExecutionResult:
+    """Audit record for one bounded cleanup execution."""
+
+    cleanup_run_id: str
+    started_at: str
+    finished_at: str
+    policy_version: int
+    scan_root: str
+    deleted: tuple[str, ...] = ()
+    skipped: Mapping[str, str] = field(default_factory=dict)
+    failed: Mapping[str, str] = field(default_factory=dict)
+
+    @property
+    def summary(self) -> Mapping[str, int]:
+        """Return counts for deleted, skipped, and failed plan items."""
+        return {
+            "deleted": len(self.deleted),
+            "skipped": len(self.skipped),
+            "failed": len(self.failed),
         }
 
 
@@ -215,6 +242,113 @@ class CleanupPlanner:
         return items
 
 
+@dataclass
+class CleanupExecutor:
+    """Execute a cleanup plan after rechecking runtime safety constraints."""
+
+    runtime_store: WorkerAgentRuntimeDataStore = field(
+        default_factory=WorkerAgentRuntimeDataStore
+    )
+    task_store: WorkerTaskStore | None = None
+    now: datetime | None = None
+
+    @property
+    def cleanup_runs_dir(self) -> Path:
+        return self.runtime_store.root / "cleanup-runs"
+
+    def execute_plan(self, plan: CleanupPlan) -> CleanupExecutionResult:
+        """Delete only items the dry-run plan marked as safe to delete."""
+        self.runtime_store.initialize()
+        self._validate_plan_root(plan)
+        started_at = _format_utc(self.now or datetime.now(timezone.utc))
+        deleted: list[str] = []
+        skipped: dict[str, str] = {}
+        failed: dict[str, str] = {}
+
+        for item in plan.items:
+            try:
+                path = self._resolve_item_path(item)
+                skip_reason = self._skip_reason(item, path)
+                if skip_reason:
+                    skipped[item.relative_path] = skip_reason
+                    continue
+                _delete_runtime_path(path)
+                deleted.append(item.relative_path)
+            except Exception as exc:  # noqa: BLE001 - cleanup must report all failures.
+                failed[item.relative_path] = str(exc)
+
+        finished_at = _format_utc(self.now or datetime.now(timezone.utc))
+        result = CleanupExecutionResult(
+            cleanup_run_id=plan.cleanup_run_id,
+            started_at=started_at,
+            finished_at=finished_at,
+            policy_version=plan.policy_version,
+            scan_root=plan.scan_root,
+            deleted=tuple(deleted),
+            skipped=skipped,
+            failed=failed,
+        )
+        self._save_result(result)
+        return result
+
+    def _validate_plan_root(self, plan: CleanupPlan) -> None:
+        expected = self.runtime_store.root.resolve(strict=False)
+        actual = Path(plan.scan_root).resolve(strict=False)
+        if actual != expected:
+            raise ValueError("cleanup plan scan_root does not match runtime store")
+
+    def _resolve_item_path(self, item: CleanupPlanItem) -> Path:
+        relative = Path(item.relative_path)
+        if relative.is_absolute():
+            raise ValueError("cleanup plan item path must be relative")
+        return path_under_root(self.runtime_store.root, relative)
+
+    def _skip_reason(self, item: CleanupPlanItem, path: Path) -> str | None:
+        if not item.can_delete:
+            return "plan item is not marked for deletion"
+        if item.requires_review:
+            return "plan item requires review"
+        if item.category in {
+            RetentionDataCategory.PROTECTED_LONG_TERM,
+            RetentionDataCategory.RUNTIME_ACTIVE,
+            RetentionDataCategory.RUNTIME_NEEDS_REVIEW,
+            RetentionDataCategory.RUNTIME_ORPHANED,
+        }:
+            return f"{item.category.value} items are not deleted by executor"
+        if not path.exists():
+            return "runtime path no longer exists"
+        if not _is_known_clearable_path(item.relative_path):
+            return "runtime path is not in a known clearable area"
+        task_skip = self._task_skip_reason(item)
+        if task_skip:
+            return task_skip
+        return None
+
+    def _task_skip_reason(self, item: CleanupPlanItem) -> str | None:
+        if not item.relative_path.startswith("tasks/"):
+            return None
+        parts = Path(item.relative_path).parts
+        if len(parts) != 2:
+            return "task cleanup items must target a task directory"
+        task_store = self.task_store or WorkerTaskStore(self.runtime_store)
+        task_id = parts[1]
+        try:
+            state = task_store.load_task_state(task_id)
+        except WorkerTaskError:
+            return "task state could not be reloaded safely"
+        if state.status not in TERMINAL_TASK_STATUSES:
+            return f"task is now {state.status.value}"
+        result = _try_load_task_result(task_store, task_id)
+        if state.requests or _has_unresolved_candidates(result):
+            return "task now has requests or unretained result candidates"
+        return None
+
+    def _save_result(self, result: CleanupExecutionResult) -> Path:
+        path = self.cleanup_runs_dir / result.cleanup_run_id / "result.json"
+        atomic_json_write(path, cleanup_execution_result_to_dict(result))
+        return path
+
+
 def cleanup_plan_to_dict(plan: CleanupPlan) -> dict[str, Any]:
     """Convert a cleanup plan to deterministic JSON-ready data."""
     return {
@@ -225,6 +359,23 @@ def cleanup_plan_to_dict(plan: CleanupPlan) -> dict[str, Any]:
         "summary": dict(plan.summary),
         "warnings": list(plan.warnings),
         "items": [cleanup_plan_item_to_dict(item) for item in plan.items],
+    }
+
+
+def cleanup_execution_result_to_dict(
+    result: CleanupExecutionResult,
+) -> dict[str, Any]:
+    """Convert cleanup execution result to deterministic JSON-ready data."""
+    return {
+        "cleanup_run_id": result.cleanup_run_id,
+        "started_at": result.started_at,
+        "finished_at": result.finished_at,
+        "policy_version": result.policy_version,
+        "scan_root": result.scan_root,
+        "summary": dict(result.summary),
+        "deleted": list(result.deleted),
+        "skipped": dict(result.skipped),
+        "failed": dict(result.failed),
     }
 
 
@@ -319,3 +470,15 @@ def _format_utc(value: datetime) -> str:
 
 def _relative_runtime_path(root: Path, path: Path) -> str:
     return path.resolve(strict=False).relative_to(root.resolve(strict=False)).as_posix()
+
+
+def _is_known_clearable_path(relative_path: str) -> bool:
+    parts = Path(relative_path).parts
+    return bool(parts) and parts[0] in {"tasks", "cache", "logs"}
+
+
+def _delete_runtime_path(path: Path) -> None:
+    if path.is_dir():
+        shutil.rmtree(path)
+    else:
+        path.unlink()
