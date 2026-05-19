@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
+from datetime import datetime, timezone
+from enum import StrEnum
 from typing import Any, Mapping
 
 from .profile import validate_worker_id
@@ -14,6 +16,21 @@ WORKER_TASK_SCHEMA_VERSION = 1
 
 class WorkerTaskError(ValueError):
     """Raised when a worker task state file violates its runtime contract."""
+
+
+class WorkerTaskStatus(StrEnum):
+    """Runtime status for one clearable worker task."""
+
+    DRAFT = "draft"
+    QUEUED = "queued"
+    RUNNING = "running"
+    WAITING_FOR_INPUT = "waiting_for_input"
+    WAITING_FOR_APPROVAL = "waiting_for_approval"
+    CANCELLING = "cancelling"
+    CANCELLED = "cancelled"
+    FAILED = "failed"
+    SUCCEEDED = "succeeded"
+    EXPIRED = "expired"
 
 
 def _require_mapping(value: Any, field_name: str) -> Mapping[str, Any]:
@@ -73,6 +90,21 @@ def validate_task_id(task_id: str) -> str:
     return task_id
 
 
+def utc_timestamp() -> str:
+    """Return a stable UTC timestamp for task audit fields."""
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _coerce_status(value: WorkerTaskStatus | str) -> WorkerTaskStatus:
+    if isinstance(value, WorkerTaskStatus):
+        return value
+    raw_status = _require_string(value, "status")
+    try:
+        return WorkerTaskStatus(raw_status)
+    except ValueError as exc:
+        raise WorkerTaskError(f"Unknown worker task status: {raw_status!r}") from exc
+
+
 @dataclass(frozen=True)
 class WorkerTaskState:
     """Current runtime snapshot for one worker task.
@@ -89,7 +121,7 @@ class WorkerTaskState:
     created_by: str
     created_at: str
     updated_at: str
-    status: str = "draft"
+    status: WorkerTaskStatus = WorkerTaskStatus.DRAFT
     schema_version: int = WORKER_TASK_SCHEMA_VERSION
     updated_by: str | None = None
     input_summary: str | None = None
@@ -111,10 +143,149 @@ class WorkerTaskState:
     def __post_init__(self) -> None:
         validate_task_id(self.task_id)
         validate_worker_id(self.worker_id)
+        object.__setattr__(self, "status", _coerce_status(self.status))
         if self.schema_version != WORKER_TASK_SCHEMA_VERSION:
             raise WorkerTaskError(
                 f"Unsupported worker task schema_version: {self.schema_version!r}"
             )
+
+
+TERMINAL_TASK_STATUSES = frozenset(
+    {
+        WorkerTaskStatus.CANCELLED,
+        WorkerTaskStatus.FAILED,
+        WorkerTaskStatus.SUCCEEDED,
+        WorkerTaskStatus.EXPIRED,
+    }
+)
+
+_ALLOWED_TASK_STATUS_TRANSITIONS = {
+    WorkerTaskStatus.DRAFT: {
+        WorkerTaskStatus.QUEUED,
+        WorkerTaskStatus.CANCELLED,
+        WorkerTaskStatus.EXPIRED,
+    },
+    WorkerTaskStatus.QUEUED: {
+        WorkerTaskStatus.RUNNING,
+        WorkerTaskStatus.WAITING_FOR_INPUT,
+        WorkerTaskStatus.WAITING_FOR_APPROVAL,
+        WorkerTaskStatus.CANCELLED,
+        WorkerTaskStatus.EXPIRED,
+    },
+    WorkerTaskStatus.RUNNING: {
+        WorkerTaskStatus.WAITING_FOR_INPUT,
+        WorkerTaskStatus.WAITING_FOR_APPROVAL,
+        WorkerTaskStatus.CANCELLING,
+        WorkerTaskStatus.FAILED,
+        WorkerTaskStatus.SUCCEEDED,
+        WorkerTaskStatus.EXPIRED,
+    },
+    WorkerTaskStatus.WAITING_FOR_INPUT: {
+        WorkerTaskStatus.QUEUED,
+        WorkerTaskStatus.RUNNING,
+        WorkerTaskStatus.CANCELLING,
+        WorkerTaskStatus.FAILED,
+        WorkerTaskStatus.EXPIRED,
+    },
+    WorkerTaskStatus.WAITING_FOR_APPROVAL: {
+        WorkerTaskStatus.QUEUED,
+        WorkerTaskStatus.RUNNING,
+        WorkerTaskStatus.CANCELLING,
+        WorkerTaskStatus.FAILED,
+        WorkerTaskStatus.EXPIRED,
+    },
+    WorkerTaskStatus.CANCELLING: {
+        WorkerTaskStatus.CANCELLED,
+        WorkerTaskStatus.FAILED,
+    },
+    WorkerTaskStatus.CANCELLED: set(),
+    WorkerTaskStatus.FAILED: set(),
+    WorkerTaskStatus.SUCCEEDED: set(),
+    WorkerTaskStatus.EXPIRED: set(),
+}
+
+
+def transition_task_status(
+    state: WorkerTaskState,
+    target_status: WorkerTaskStatus | str,
+    *,
+    updated_by: str,
+    status_reason: str | None = None,
+    now: str | None = None,
+    result: Mapping[str, Any] | None = None,
+) -> WorkerTaskState:
+    """Return a task state with an allowed lifecycle transition applied."""
+    target_status = _coerce_status(target_status)
+    changed_at = now or utc_timestamp()
+    if state.status == target_status:
+        return _apply_status_metadata(
+            state,
+            target_status=target_status,
+            changed_at=changed_at,
+            updated_by=updated_by,
+            status_reason=status_reason,
+            result=result,
+        )
+
+    allowed_targets = _ALLOWED_TASK_STATUS_TRANSITIONS[state.status]
+    if target_status not in allowed_targets:
+        raise WorkerTaskError(
+            f"Cannot transition task {state.task_id!r} "
+            f"from {state.status.value!r} to {target_status.value!r}"
+        )
+    return _apply_status_metadata(
+        state,
+        target_status=target_status,
+        changed_at=changed_at,
+        updated_by=updated_by,
+        status_reason=status_reason,
+        result=result,
+    )
+
+
+def _apply_status_metadata(
+    state: WorkerTaskState,
+    *,
+    target_status: WorkerTaskStatus,
+    changed_at: str,
+    updated_by: str,
+    status_reason: str | None,
+    result: Mapping[str, Any] | None,
+) -> WorkerTaskState:
+    failure = dict(state.failure)
+    cancellation = dict(state.cancellation)
+    result_data = dict(state.result)
+    if result is not None:
+        result_data.update(result)
+    if target_status == WorkerTaskStatus.FAILED:
+        failure.update({"failed_at": changed_at, "failed_by": updated_by})
+        if status_reason is not None:
+            failure["reason"] = status_reason
+    if target_status == WorkerTaskStatus.CANCELLING:
+        cancellation.update({"requested_at": changed_at, "requested_by": updated_by})
+        if status_reason is not None:
+            cancellation["reason"] = status_reason
+    if target_status == WorkerTaskStatus.CANCELLED:
+        cancellation.update({"cancelled_at": changed_at, "cancelled_by": updated_by})
+        if status_reason is not None:
+            cancellation["reason"] = status_reason
+    if target_status == WorkerTaskStatus.SUCCEEDED:
+        result_data.update({"completed_at": changed_at, "completed_by": updated_by})
+        if status_reason is not None:
+            result_data["summary"] = status_reason
+    if target_status == WorkerTaskStatus.EXPIRED:
+        failure.update({"expired_at": changed_at, "expired_by": updated_by})
+        if status_reason is not None:
+            failure["reason"] = status_reason
+    return replace(
+        state,
+        status=target_status,
+        updated_at=changed_at,
+        updated_by=updated_by,
+        failure=failure,
+        cancellation=cancellation,
+        result=result_data,
+    )
 
 
 _TASK_STATE_FIELDS = {
@@ -184,7 +355,7 @@ def worker_task_state_from_dict(data: Mapping[str, Any]) -> WorkerTaskState:
         created_at=_require_string(data["created_at"], "created_at"),
         updated_at=_require_string(data["updated_at"], "updated_at"),
         updated_by=_optional_string(data.get("updated_by"), "updated_by"),
-        status=_require_string(data["status"], "status"),
+        status=_coerce_status(data["status"]),
         title=_require_string(data["title"], "title"),
         objective=_require_string(data["objective"], "objective"),
         input_summary=_optional_string(data.get("input_summary"), "input_summary"),
@@ -219,7 +390,7 @@ def worker_task_state_to_dict(state: WorkerTaskState) -> dict[str, Any]:
         "created_at": state.created_at,
         "updated_at": state.updated_at,
         "updated_by": state.updated_by,
-        "status": state.status,
+        "status": state.status.value,
         "title": state.title,
         "objective": state.objective,
         "input_summary": state.input_summary,
