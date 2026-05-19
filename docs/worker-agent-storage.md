@@ -1,0 +1,35 @@
+# Worker Agent Storage Boundaries
+
+Managed worker agents use two storage roots with different lifetimes.
+
+Durable worker assets live under the active profile home:
+
+```text
+<zermes_home>/worker_agents/
+  registry.json
+  workers/
+  threads/
+  manifests/
+```
+
+This area is for worker identity, durable memory, skill bindings, policy or
+strategy records, manifests, and the minimal summaries or decisions that must
+survive cleanup.
+
+Clearable runtime data lives under the installation data directory:
+
+```text
+<install_dir>/data/worker_agents/
+  tasks/
+  cache/
+  logs/
+```
+
+Task directories hold runtime state, events, messages, requests, transcripts,
+stdout or stderr captures, rolling summaries, results, and temporary artifacts.
+Deleting `data/` must not delete worker identity, memory, skill bindings, or
+manifests.
+
+Use `worker_agents.storage` instead of manually joining these paths. The store
+objects create only the directory skeleton and do not define a full worker
+profile or task schema.
