@@ -89,5 +89,9 @@ Those candidates are markers only. Writing durable manifests, memories, learning
 records, or audit summaries belongs to later retention and personalization
 flows.
 
+The retention flow can explicitly promote manifest and audit summary candidates
+before old task runtime is deleted. Memory and learning candidates remain
+separate review inputs and are not written by cleanup code.
+
 Artifact paths in task results must be relative to the task directory. Absolute
 paths and `..` escapes are rejected.

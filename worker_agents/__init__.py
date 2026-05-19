@@ -19,6 +19,24 @@ from .registry import (
     WorkerRegistryStore,
 )
 from .registry_service import WorkerRegistryService
+from .retention import (
+    RETENTION_POLICY_SCHEMA_VERSION,
+    RetentionAction,
+    RetentionDataCategory,
+    RetentionPolicy,
+    RetentionPolicyError,
+    RetentionPolicyStore,
+    RetentionRule,
+    default_retention_policy,
+)
+from .cleanup import (
+    CleanupExecutionResult,
+    CleanupExecutor,
+    CleanupPlan,
+    CleanupPlanItem,
+    CleanupPlanner,
+)
+from .manifests import TaskResultRetentionService
 from .storage import (
     WorkerAgentProfileStore,
     WorkerAgentRuntimeDataStore,
@@ -45,6 +63,19 @@ __all__ = [
     "WORKER_PROFILE_SCHEMA_VERSION",
     "WORKER_REGISTRY_SCHEMA_VERSION",
     "WORKER_TASK_SCHEMA_VERSION",
+    "RETENTION_POLICY_SCHEMA_VERSION",
+    "CleanupExecutionResult",
+    "CleanupExecutor",
+    "CleanupPlan",
+    "CleanupPlanItem",
+    "CleanupPlanner",
+    "RetentionAction",
+    "RetentionDataCategory",
+    "RetentionPolicy",
+    "RetentionPolicyError",
+    "RetentionPolicyStore",
+    "RetentionRule",
+    "TaskResultRetentionService",
     "WorkerAgentProfile",
     "WorkerAgentProfileStore",
     "WorkerProfileError",
@@ -62,6 +93,7 @@ __all__ = [
     "WorkerTaskService",
     "WorkerTaskState",
     "WorkerTaskStatus",
+    "default_retention_policy",
     "dump_worker_profile_json",
     "ensure_worker_agents_data_dir",
     "ensure_worker_agents_home",

@@ -7,6 +7,7 @@ Durable worker assets live under the active profile home:
 ```text
 <zermes_home>/worker_agents/
   registry.json
+  shared/
   workers/
   threads/
   manifests/
@@ -38,3 +39,5 @@ Worker profile contracts are documented in `docs/worker-agent-profiles.md`.
 Worker registry lifecycle records are documented in
 `docs/worker-agent-registry.md`.
 Worker task state is documented in `docs/worker-agent-tasks.md`.
+Worker retention and cleanup are documented in
+`docs/worker-agent-retention.md`.
