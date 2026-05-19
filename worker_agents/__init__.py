@@ -27,11 +27,19 @@ from .storage import (
     get_worker_agents_data_dir,
     get_worker_agents_home,
 )
+from .task_service import WorkerTaskService
+from .task_state import (
+    WORKER_TASK_SCHEMA_VERSION,
+    WorkerTaskError,
+    WorkerTaskState,
+    WorkerTaskStatus,
+)
 
 __all__ = [
     "WORKER_PROFILE_FILE_NAME",
     "WORKER_PROFILE_SCHEMA_VERSION",
     "WORKER_REGISTRY_SCHEMA_VERSION",
+    "WORKER_TASK_SCHEMA_VERSION",
     "WorkerAgentProfile",
     "WorkerAgentProfileStore",
     "WorkerProfileError",
@@ -42,6 +50,10 @@ __all__ = [
     "WorkerRegistryRecord",
     "WorkerRegistryService",
     "WorkerRegistryStore",
+    "WorkerTaskError",
+    "WorkerTaskService",
+    "WorkerTaskState",
+    "WorkerTaskStatus",
     "dump_worker_profile_json",
     "ensure_worker_agents_data_dir",
     "ensure_worker_agents_home",
