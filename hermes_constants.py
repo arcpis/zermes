@@ -12,7 +12,7 @@ APP_NAME = "Zermes"
 APP_PACKAGE_NAME = "zermes-agent"
 APP_COMMAND = "zermes"
 APP_HOME_ENV = "ZERMES_HOME"
-APP_DEFAULT_HOME_DIR = ".zermes"
+APP_DEFAULT_HOME_DIR = ".hermes"
 
 LEGACY_APP_NAME = "Hermes"
 LEGACY_PACKAGE_NAME = "hermes-agent"
@@ -25,15 +25,15 @@ _profile_fallback_warned: bool = False
 
 def _configured_home_env() -> str:
     """Return the preferred app home override, accepting Hermes legacy env."""
-    return os.getenv(APP_HOME_ENV) or os.getenv(LEGACY_HOME_ENV, "")
+    return os.getenv(LEGACY_HOME_ENV) or os.getenv(APP_HOME_ENV, "")
 
 
 def get_hermes_home() -> Path:
-    """Return the Zermes home directory (default: ~/.zermes).
+    """Return the app home directory (default: ~/.hermes).
 
-    Reads ZERMES_HOME first, accepts HERMES_HOME for backward compatibility,
-    then falls back to ~/.zermes.  The function name is kept stable so the
-    fork can continue merging upstream Hermes code with minimal churn.
+    Reads HERMES_HOME first and accepts ZERMES_HOME as a fork alias, then
+    falls back to ~/.hermes.  The function name is kept stable so the fork
+    can continue merging upstream Hermes code with minimal churn.
     """
     val = _configured_home_env().strip()
     if val:

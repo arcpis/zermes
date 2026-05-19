@@ -9,15 +9,15 @@ def test_zermes_home_is_default(monkeypatch, tmp_path):
     monkeypatch.delenv("HERMES_HOME", raising=False)
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
 
-    assert get_hermes_home() == tmp_path / ".zermes"
-    assert get_default_hermes_root() == tmp_path / ".zermes"
+    assert get_hermes_home() == tmp_path / ".hermes"
+    assert get_default_hermes_root() == tmp_path / ".hermes"
 
 
-def test_zermes_home_takes_precedence_over_legacy_hermes_home(monkeypatch, tmp_path):
+def test_hermes_home_takes_precedence_over_zermes_alias(monkeypatch, tmp_path):
     monkeypatch.setenv("HERMES_HOME", str(tmp_path / ".hermes"))
     monkeypatch.setenv("ZERMES_HOME", str(tmp_path / ".zermes"))
 
-    assert get_hermes_home() == tmp_path / ".zermes"
+    assert get_hermes_home() == tmp_path / ".hermes"
 
 
 def test_legacy_hermes_home_remains_supported(monkeypatch, tmp_path):
