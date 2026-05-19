@@ -17,6 +17,7 @@ from .runtime_data_store import (
     TASK_RUNTIME_FILES,
     WorkerAgentRuntimeDataStore,
 )
+from .task_store import WORKER_TASK_STATE_FILE_NAME, WorkerTaskStore
 
 __all__ = [
     "PROFILE_STORE_DIRS",
@@ -24,8 +25,10 @@ __all__ = [
     "TASK_RUNTIME_FILES",
     "WORKER_AGENTS_DIR_NAME",
     "WORKER_REGISTRY_FILE_NAME",
+    "WORKER_TASK_STATE_FILE_NAME",
     "WorkerAgentProfileStore",
     "WorkerAgentRuntimeDataStore",
+    "WorkerTaskStore",
     "ensure_worker_agents_data_dir",
     "ensure_worker_agents_home",
     "get_worker_agents_data_dir",
