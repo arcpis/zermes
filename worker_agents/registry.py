@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
+from datetime import datetime, timezone
 from enum import StrEnum
 from pathlib import Path
 from typing import Any, Mapping
@@ -31,6 +32,12 @@ class WorkerLifecycleStatus(StrEnum):
     DISABLED = "disabled"
     ARCHIVED = "archived"
     DELETED = "deleted"
+
+
+class WorkerDeleteMode(StrEnum):
+    """How a delete request is represented in durable registry metadata."""
+
+    SOFT_DELETE = "soft_delete"
 
 
 def _require_mapping(value: Any, field_name: str) -> Mapping[str, Any]:
@@ -100,6 +107,11 @@ def default_profile_path_for_worker(worker_id: str) -> str:
     return WORKER_PROFILE_RELATIVE_PATH.format(worker_id=validate_worker_id(worker_id))
 
 
+def utc_timestamp() -> str:
+    """Return a stable UTC timestamp for registry audit fields."""
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
 @dataclass(frozen=True)
 class WorkerRegistryRecord:
     """Lightweight durable index entry for one managed worker."""
@@ -127,6 +139,120 @@ class WorkerRegistryRecord:
             object.__setattr__(
                 self, "profile_path", default_profile_path_for_worker(self.worker_id)
             )
+
+
+_ALLOWED_STATUS_TRANSITIONS = {
+    WorkerLifecycleStatus.REGISTERED: {
+        WorkerLifecycleStatus.ENABLED,
+        WorkerLifecycleStatus.DISABLED,
+        WorkerLifecycleStatus.ARCHIVED,
+        WorkerLifecycleStatus.DELETED,
+    },
+    WorkerLifecycleStatus.ENABLED: {
+        WorkerLifecycleStatus.DISABLED,
+        WorkerLifecycleStatus.ARCHIVED,
+        WorkerLifecycleStatus.DELETED,
+    },
+    WorkerLifecycleStatus.DISABLED: {
+        WorkerLifecycleStatus.ENABLED,
+        WorkerLifecycleStatus.ARCHIVED,
+        WorkerLifecycleStatus.DELETED,
+    },
+    WorkerLifecycleStatus.ARCHIVED: {WorkerLifecycleStatus.DISABLED},
+    WorkerLifecycleStatus.DELETED: set(),
+}
+
+
+def transition_worker_status(
+    record: WorkerRegistryRecord,
+    target_status: WorkerLifecycleStatus,
+    *,
+    updated_by: str,
+    status_reason: str | None = None,
+    now: str | None = None,
+    delete_mode: WorkerDeleteMode | None = None,
+) -> WorkerRegistryRecord:
+    """Return a record with an allowed lifecycle transition applied."""
+    if record.status == target_status:
+        return replace(
+            record,
+            updated_at=now or utc_timestamp(),
+            updated_by=updated_by,
+            status_reason=status_reason,
+        )
+    allowed_targets = _ALLOWED_STATUS_TRANSITIONS[record.status]
+    if target_status not in allowed_targets:
+        raise WorkerRegistryError(
+            f"Cannot transition worker {record.worker_id!r} "
+            f"from {record.status.value!r} to {target_status.value!r}"
+        )
+
+    changed_at = now or utc_timestamp()
+    return replace(
+        record,
+        status=target_status,
+        updated_at=changed_at,
+        updated_by=updated_by,
+        archived_at=changed_at
+        if target_status == WorkerLifecycleStatus.ARCHIVED
+        else record.archived_at,
+        deleted_at=changed_at
+        if target_status == WorkerLifecycleStatus.DELETED
+        else record.deleted_at,
+        delete_mode=(delete_mode or WorkerDeleteMode.SOFT_DELETE).value
+        if target_status == WorkerLifecycleStatus.DELETED
+        else record.delete_mode,
+        status_reason=status_reason,
+    )
+
+
+def enable_worker_record(
+    record: WorkerRegistryRecord, *, updated_by: str, status_reason: str | None = None
+) -> WorkerRegistryRecord:
+    """Mark a registered or disabled worker available for future scheduling."""
+    return transition_worker_status(
+        record,
+        WorkerLifecycleStatus.ENABLED,
+        updated_by=updated_by,
+        status_reason=status_reason,
+    )
+
+
+def disable_worker_record(
+    record: WorkerRegistryRecord, *, updated_by: str, status_reason: str | None = None
+) -> WorkerRegistryRecord:
+    """Mark a worker unavailable while keeping its durable assets."""
+    return transition_worker_status(
+        record,
+        WorkerLifecycleStatus.DISABLED,
+        updated_by=updated_by,
+        status_reason=status_reason,
+    )
+
+
+def archive_worker_record(
+    record: WorkerRegistryRecord, *, updated_by: str, status_reason: str | None = None
+) -> WorkerRegistryRecord:
+    """Hide a worker from normal lists without deleting durable assets."""
+    return transition_worker_status(
+        record,
+        WorkerLifecycleStatus.ARCHIVED,
+        updated_by=updated_by,
+        status_reason=status_reason,
+    )
+
+
+def delete_worker_record(
+    record: WorkerRegistryRecord, *, updated_by: str, status_reason: str | None = None
+) -> WorkerRegistryRecord:
+    """Soft-delete a worker registry record while preserving its asset directory."""
+    return transition_worker_status(
+        record,
+        WorkerLifecycleStatus.DELETED,
+        updated_by=updated_by,
+        status_reason=status_reason,
+        delete_mode=WorkerDeleteMode.SOFT_DELETE,
+    )
 
 
 _RECORD_FIELDS = {
