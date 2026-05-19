@@ -35,3 +35,5 @@ objects create only the directory skeleton and do not define a full worker
 profile or task schema.
 
 Worker profile contracts are documented in `docs/worker-agent-profiles.md`.
+Worker registry lifecycle records are documented in
+`docs/worker-agent-registry.md`.

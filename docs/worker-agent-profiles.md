@@ -71,7 +71,8 @@ such as `memory/`, `skills/`, or future policy files.
 
 ## Boundaries
 
-Profiles do not register, enable, disable, archive, or delete workers. They also
-do not launch runtime adapters, route messages, store task state, or decide
-whether an approval request is satisfied. Those checks belong to later worker
-registry, runtime, message routing, and execution layers.
+Profiles do not register, enable, disable, archive, or delete workers. Registry
+lifecycle behavior is documented in `docs/worker-agent-registry.md`. Profiles
+also do not launch runtime adapters, route messages, store task state, or decide
+whether an approval request is satisfied. Those checks belong to later runtime,
+message routing, and execution layers.
