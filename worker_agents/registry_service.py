@@ -11,7 +11,10 @@ from .registry import (
     WorkerRegistryError,
     WorkerRegistryRecord,
     WorkerRegistryStore,
+    archive_worker_record,
     default_profile_path_for_worker,
+    delete_worker_record,
+    disable_worker_record,
     transition_worker_status,
     utc_timestamp,
 )
@@ -107,6 +110,43 @@ class WorkerRegistryService:
         self.registry_store.save_records(records)
         return record
 
+    def get_worker(self, worker_id: str) -> WorkerRegistryRecord:
+        """Return one registry record or fail with a structured registry error."""
+        record = self.registry_store.load_records().get(worker_id)
+        if record is None:
+            raise WorkerRegistryError(f"Worker does not exist: {worker_id!r}")
+        return record
+
+    def list_workers(
+        self,
+        *,
+        status: WorkerLifecycleStatus | str | None = None,
+        runtime_type: str | None = None,
+        tags: tuple[str, ...] | list[str] | None = None,
+        include_deleted: bool = False,
+    ) -> list[WorkerRegistryRecord]:
+        """List lightweight worker records without loading private profile data."""
+        records = self.registry_store.load_records().values()
+        if status is not None:
+            status = WorkerLifecycleStatus(status)
+            records = [record for record in records if record.status == status]
+        elif not include_deleted:
+            records = [
+                record
+                for record in records
+                if record.status != WorkerLifecycleStatus.DELETED
+            ]
+        if runtime_type is not None:
+            records = [
+                record for record in records if record.runtime_type == runtime_type
+            ]
+        if tags:
+            required_tags = set(tags)
+            records = [
+                record for record in records if required_tags.issubset(record.tags)
+            ]
+        return sorted(records, key=lambda record: record.worker_id)
+
     def enable_worker(
         self,
         worker_id: str,
@@ -139,6 +179,94 @@ class WorkerRegistryService:
             runtime_type=profile.runtime.runtime_type,
             profile_path=default_profile_path_for_worker(profile.worker_id),
         )
+        records[worker_id] = updated
+        self.registry_store.save_records(records)
+        return updated
+
+    def disable_worker(
+        self,
+        worker_id: str,
+        *,
+        updated_by: str = "system",
+        status_reason: str | None = None,
+    ) -> WorkerRegistryRecord:
+        """Pause a worker without changing its durable profile."""
+        return self._change_registry_status(
+            worker_id,
+            lambda record: disable_worker_record(
+                record, updated_by=updated_by, status_reason=status_reason
+            ),
+        )
+
+    def archive_worker(
+        self,
+        worker_id: str,
+        *,
+        updated_by: str = "system",
+        status_reason: str | None = None,
+    ) -> WorkerRegistryRecord:
+        """Archive a worker while keeping its profile and long-term assets."""
+        return self._change_registry_status(
+            worker_id,
+            lambda record: archive_worker_record(
+                record, updated_by=updated_by, status_reason=status_reason
+            ),
+        )
+
+    def delete_worker(
+        self,
+        worker_id: str,
+        *,
+        updated_by: str = "system",
+        status_reason: str | None = None,
+    ) -> WorkerRegistryRecord:
+        """Soft-delete a worker record and leave long-term assets in place."""
+        return self._change_registry_status(
+            worker_id,
+            lambda record: delete_worker_record(
+                record, updated_by=updated_by, status_reason=status_reason
+            ),
+        )
+
+    def refresh_worker_index(self, worker_id: str) -> WorkerRegistryRecord:
+        """Refresh registry list fields from the validated durable profile."""
+        records = self.registry_store.load_records()
+        record = records.get(worker_id)
+        if record is None:
+            raise WorkerRegistryError(f"Worker does not exist: {worker_id!r}")
+        try:
+            profile = self.profile_store.load_worker_profile(worker_id)
+        except WorkerProfileError as exc:
+            raise WorkerRegistryError(f"Worker profile is invalid: {exc}") from exc
+        refreshed = replace(
+            record,
+            display_name=profile.display_name,
+            role=profile.role,
+            runtime_type=profile.runtime.runtime_type,
+            profile_path=default_profile_path_for_worker(profile.worker_id),
+            updated_at=self.now(),
+        )
+        records[worker_id] = refreshed
+        self.registry_store.save_records(records)
+        return refreshed
+
+    def _change_registry_status(
+        self,
+        worker_id: str,
+        update_record: Callable[[WorkerRegistryRecord], WorkerRegistryRecord],
+    ) -> WorkerRegistryRecord:
+        records = self.registry_store.load_records()
+        record = records.get(worker_id)
+        if record is None:
+            raise WorkerRegistryError(f"Worker does not exist: {worker_id!r}")
+        updated = update_record(record)
+        # Test clocks and audit determinism live at the service boundary.
+        if updated.updated_at != record.updated_at:
+            updated = replace(updated, updated_at=self.now())
+            if updated.status == WorkerLifecycleStatus.ARCHIVED:
+                updated = replace(updated, archived_at=updated.updated_at)
+            if updated.status == WorkerLifecycleStatus.DELETED:
+                updated = replace(updated, deleted_at=updated.updated_at)
         records[worker_id] = updated
         self.registry_store.save_records(records)
         return updated

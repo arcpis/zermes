@@ -10,6 +10,15 @@ from .profile import (
     worker_profile_from_dict,
     worker_profile_to_dict,
 )
+from .registry import (
+    WORKER_REGISTRY_SCHEMA_VERSION,
+    WorkerDeleteMode,
+    WorkerLifecycleStatus,
+    WorkerRegistryError,
+    WorkerRegistryRecord,
+    WorkerRegistryStore,
+)
+from .registry_service import WorkerRegistryService
 from .storage import (
     WorkerAgentProfileStore,
     WorkerAgentRuntimeDataStore,
@@ -22,10 +31,17 @@ from .storage import (
 __all__ = [
     "WORKER_PROFILE_FILE_NAME",
     "WORKER_PROFILE_SCHEMA_VERSION",
+    "WORKER_REGISTRY_SCHEMA_VERSION",
     "WorkerAgentProfile",
     "WorkerAgentProfileStore",
     "WorkerProfileError",
     "WorkerAgentRuntimeDataStore",
+    "WorkerDeleteMode",
+    "WorkerLifecycleStatus",
+    "WorkerRegistryError",
+    "WorkerRegistryRecord",
+    "WorkerRegistryService",
+    "WorkerRegistryStore",
     "dump_worker_profile_json",
     "ensure_worker_agents_data_dir",
     "ensure_worker_agents_home",
