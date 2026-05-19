@@ -33,3 +33,5 @@ manifests.
 Use `worker_agents.storage` instead of manually joining these paths. The store
 objects create only the directory skeleton and do not define a full worker
 profile or task schema.
+
+Worker profile contracts are documented in `docs/worker-agent-profiles.md`.
