@@ -9,6 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import UTC, datetime
 import json
+import os
 from pathlib import Path
 import re
 import subprocess
@@ -253,13 +254,7 @@ def _installer_self_evolution_workspace_candidates(install_prefix: Path | None) 
     return candidates
 
 
-def _configured_source_repo_path() -> Path | None:
-    try:
-        from hermes_cli.config import load_config
-
-        config: Any = load_config()
-    except Exception:
-        return None
+def _source_repo_from_config(config: Any) -> Path | None:
     current: Any = config
     for key in PROJECT_ROOT_CONFIG_PATH:
         current = current.get(key, {}) if isinstance(current, dict) else {}
@@ -269,6 +264,33 @@ def _configured_source_repo_path() -> Path | None:
         path = current.get("path")
         if isinstance(path, str) and path.strip():
             return Path(path.strip())
+    return None
+
+
+def _configured_source_repo_path() -> Path | None:
+    try:
+        from hermes_cli.config import load_config
+
+        config: Any = load_config()
+    except Exception:
+        config = {}
+    configured = _source_repo_from_config(config)
+    if configured:
+        return configured
+
+    zermes_home = os.getenv("ZERMES_HOME", "").strip()
+    hermes_home = os.getenv("HERMES_HOME", "").strip()
+    if zermes_home and zermes_home != hermes_home:
+        try:
+            import yaml
+
+            path = Path(zermes_home) / "config.yaml"
+            data = yaml.safe_load(path.read_text(encoding="utf-8")) if path.exists() else {}
+        except Exception:
+            data = {}
+        configured = _source_repo_from_config(data)
+        if configured:
+            return configured
     return None
 
 

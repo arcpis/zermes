@@ -8,9 +8,9 @@ import os
 from pathlib import Path
 
 
-APP_NAME = "Zermes"
-APP_PACKAGE_NAME = "zermes-agent"
-APP_COMMAND = "zermes"
+APP_NAME = "Hermes Agent"
+APP_PACKAGE_NAME = "hermes-agent"
+APP_COMMAND = "hermes"
 APP_HOME_ENV = "ZERMES_HOME"
 APP_DEFAULT_HOME_DIR = ".hermes"
 

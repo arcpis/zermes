@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 import shlex
 import subprocess
+import sys
 import time
 
 from .executor import (
@@ -399,10 +400,13 @@ def require_allowed_command(argv: tuple[str, ...]) -> None:
 
 def run_verification_command(project_root: Path, command: VerificationCommand) -> VerificationResult:
     require_allowed_command(command.command)
+    argv = list(command.command)
+    if len(argv) >= 3 and argv[0] == "python" and argv[1] == "-m":
+        argv[0] = sys.executable
     started = time.monotonic()
     try:
         result = subprocess.run(
-            list(command.command),
+            argv,
             cwd=project_root,
             text=True,
             capture_output=True,

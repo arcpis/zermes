@@ -102,6 +102,7 @@ termux-all = [
   # Excluded for now:
   # - matrix (mautrix[encryption] -> python-olm build failures on Termux)
   # - voice  (faster-whisper chain requires ctranslate2/av builds not packaged)
+  "hermes-agent[termux]",
   "zermes-agent[termux]",
   "zermes-agent[messaging]",
   "zermes-agent[slack]",

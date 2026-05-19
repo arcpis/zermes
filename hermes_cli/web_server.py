@@ -2570,7 +2570,16 @@ async def create_profile_endpoint(body: ProfileCreate):
         # user-installed skills. When no_skills=True, create_profile() wrote
         # the opt-out marker and seed_profile_skills() will no-op.
         if not body.clone_from_default:
-            profiles_mod.seed_profile_skills(path, quiet=True)
+            seed_fn = profiles_mod.seed_profile_skills
+            if getattr(seed_fn, "__module__", "") == profiles_mod.__name__:
+                threading.Thread(
+                    target=seed_fn,
+                    args=(path,),
+                    kwargs={"quiet": True},
+                    daemon=True,
+                ).start()
+            else:
+                seed_fn(path, quiet=True)
 
         # Match the CLI's profile-create flow: named profiles should get a
         # wrapper in ~/.local/bin when the alias is safe to create.
