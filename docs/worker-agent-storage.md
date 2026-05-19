@@ -31,9 +31,10 @@ Deleting `data/` must not delete worker identity, memory, skill bindings, or
 manifests.
 
 Use `worker_agents.storage` instead of manually joining these paths. The store
-objects create only the directory skeleton and do not define a full worker
-profile or task schema.
+objects create only the directory skeleton. Durable profile schema, registry
+lifecycle, and task runtime schema are documented separately.
 
 Worker profile contracts are documented in `docs/worker-agent-profiles.md`.
 Worker registry lifecycle records are documented in
 `docs/worker-agent-registry.md`.
+Worker task state is documented in `docs/worker-agent-tasks.md`.

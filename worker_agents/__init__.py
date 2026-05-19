@@ -28,6 +28,11 @@ from .storage import (
     get_worker_agents_home,
 )
 from .task_service import WorkerTaskService
+from .task_records import (
+    WorkerTaskEvent,
+    WorkerTaskRequest,
+    WorkerTaskResult,
+)
 from .task_state import (
     WORKER_TASK_SCHEMA_VERSION,
     WorkerTaskError,
@@ -51,6 +56,9 @@ __all__ = [
     "WorkerRegistryService",
     "WorkerRegistryStore",
     "WorkerTaskError",
+    "WorkerTaskEvent",
+    "WorkerTaskRequest",
+    "WorkerTaskResult",
     "WorkerTaskService",
     "WorkerTaskState",
     "WorkerTaskStatus",
