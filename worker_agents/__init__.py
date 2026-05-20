@@ -165,6 +165,7 @@ from .runtime_boundary import (
     RuntimePermissionSnapshot,
     RuntimeProfileSummary,
 )
+from .runtime_facade import AgentRuntimeInvocation, SharedAgentRuntimeFacade
 
 __all__ = [
     "WORKER_PROFILE_FILE_NAME",
@@ -184,12 +185,14 @@ __all__ = [
     "AgentRuntimeLifecycle",
     "AgentRuntimePersona",
     "AgentRuntimeRole",
+    "AgentRuntimeInvocation",
     "AgentRuntimeSessionConfig",
     "AgentRuntimeSessionScope",
     "RuntimeBudgetSnapshot",
     "RuntimeContextBundle",
     "RuntimePermissionSnapshot",
     "RuntimeProfileSummary",
+    "SharedAgentRuntimeFacade",
     "CleanupExecutionResult",
     "CleanupExecutor",
     "CleanupPlan",
