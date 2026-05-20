@@ -162,6 +162,169 @@ class WorkerMessageEnvelope:
         _validate_schema_version(self.schema_version)
 
 
+@dataclass(frozen=True)
+class WorkerMessageView:
+    """Minimal routed message view exposed to one worker."""
+
+    message_id: str
+    thread_id: str
+    sender: ChatParticipantRef
+    delivery_status: MessageDeliveryStatus
+    body_preview: str
+    audit_summary: str
+    sensitive_flags: tuple[str, ...] = ()
+
+
+@dataclass
+class MessageRouter:
+    """Small in-memory router for user-present worker chat threads."""
+
+    threads: dict[str, WorkerChatThread] = field(default_factory=dict)
+    messages: dict[str, list[WorkerMessageEnvelope]] = field(default_factory=dict)
+
+    def create_direct_thread(
+        self,
+        *,
+        thread_id: str,
+        user_id: str,
+        worker_id: str,
+        title: str = "",
+        created_at: str | None = None,
+        audit_summary: str = "",
+    ) -> WorkerChatThread:
+        """Create a managed user-to-worker private chat."""
+        thread = WorkerChatThread(
+            thread_id=thread_id,
+            thread_type=ChatThreadType.DIRECT,
+            participants=(
+                ChatParticipantRef(ChatParticipantKind.USER, user_id),
+                ChatParticipantRef(ChatParticipantKind.WORKER, worker_id),
+            ),
+            title=title,
+            created_at=created_at,
+            audit_summary=audit_summary,
+            main_agent_visible=True,
+        )
+        return self.add_thread(thread)
+
+    def create_group_thread(
+        self,
+        *,
+        thread_id: str,
+        user_id: str,
+        worker_ids: tuple[str, ...] = (),
+        organization_node_ids: tuple[str, ...] = (),
+        thread_type: ChatThreadType = ChatThreadType.ORGANIZATION_GROUP,
+        title: str = "",
+        created_at: str | None = None,
+        audit_summary: str = "",
+    ) -> WorkerChatThread:
+        """Create a managed group chat that includes user and main agent."""
+        participants = [
+            ChatParticipantRef(ChatParticipantKind.USER, user_id),
+            ChatParticipantRef(ChatParticipantKind.MAIN_AGENT, MAIN_AGENT_ID),
+        ]
+        participants.extend(
+            ChatParticipantRef(ChatParticipantKind.WORKER, worker_id)
+            for worker_id in worker_ids
+        )
+        participants.extend(
+            ChatParticipantRef(ChatParticipantKind.ORGANIZATION_NODE, node_id)
+            for node_id in organization_node_ids
+        )
+        thread = WorkerChatThread(
+            thread_id=thread_id,
+            thread_type=thread_type,
+            participants=tuple(participants),
+            title=title,
+            created_at=created_at,
+            audit_summary=audit_summary,
+        )
+        return self.add_thread(thread)
+
+    def add_thread(self, thread: WorkerChatThread) -> WorkerChatThread:
+        """Add a prebuilt thread after enforcing routing policy."""
+        validate_thread_participants(thread)
+        if thread.thread_id in self.threads:
+            raise MessageRouterError(f"chat thread already exists: {thread.thread_id!r}")
+        self.threads[thread.thread_id] = thread
+        self.messages[thread.thread_id] = []
+        return thread
+
+    def append_message(self, message: WorkerMessageEnvelope) -> WorkerMessageEnvelope:
+        """Append a message to an existing managed thread."""
+        thread = self._require_thread(message.thread_id)
+        validate_message_route(thread, message)
+        self.messages[message.thread_id].append(message)
+        return message
+
+    def update_delivery_status(
+        self,
+        *,
+        thread_id: str,
+        message_id: str,
+        delivery_status: MessageDeliveryStatus | str,
+    ) -> WorkerMessageEnvelope:
+        """Update one message status without changing the message body."""
+        status = _delivery_status(delivery_status)
+        messages = self.messages.get(thread_id)
+        if messages is None:
+            raise MessageRouterError(f"chat thread does not exist: {thread_id!r}")
+        for index, message in enumerate(messages):
+            if message.message_id != message_id:
+                continue
+            updated = WorkerMessageEnvelope(
+                message_id=message.message_id,
+                schema_version=message.schema_version,
+                thread_id=message.thread_id,
+                sender=message.sender,
+                recipient_scope=message.recipient_scope,
+                message_type=message.message_type,
+                created_at=message.created_at,
+                delivery_status=status,
+                visibility=message.visibility,
+                body_preview=message.body_preview,
+                audit_summary=message.audit_summary,
+                sensitive_flags=message.sensitive_flags,
+            )
+            messages[index] = updated
+            return updated
+        raise MessageRouterError(f"message does not exist: {message_id!r}")
+
+    def get_thread_messages(self, thread_id: str) -> tuple[WorkerMessageEnvelope, ...]:
+        """Return stored envelopes for one thread."""
+        self._require_thread(thread_id)
+        return tuple(self.messages[thread_id])
+
+    def get_worker_message_views(
+        self, *, thread_id: str, worker_id: str
+    ) -> tuple[WorkerMessageView, ...]:
+        """Return only the low-sensitivity messages routed to one worker."""
+        thread = self._require_thread(thread_id)
+        worker = ChatParticipantRef(ChatParticipantKind.WORKER, worker_id)
+        if worker not in thread.participants:
+            raise MessageRouterError("worker must be a thread participant")
+        return tuple(
+            WorkerMessageView(
+                message_id=message.message_id,
+                thread_id=message.thread_id,
+                sender=message.sender,
+                delivery_status=message.delivery_status,
+                body_preview=message.body_preview,
+                audit_summary=message.audit_summary,
+                sensitive_flags=message.sensitive_flags,
+            )
+            for message in self.messages[thread_id]
+            if _message_is_visible_to_worker(message, worker)
+        )
+
+    def _require_thread(self, thread_id: str) -> WorkerChatThread:
+        try:
+            return self.threads[thread_id]
+        except KeyError as exc:
+            raise MessageRouterError(f"chat thread does not exist: {thread_id!r}") from exc
+
+
 _PARTICIPANT_FIELDS = {"kind", "participant_id"}
 _RECIPIENT_SCOPE_FIELDS = {"participant_refs", "include_entire_thread"}
 _THREAD_FIELDS = {
@@ -402,6 +565,15 @@ def validate_message_route(
             raise MessageRouterError(
                 "workers cannot directly route messages to other workers"
             )
+
+
+def _message_is_visible_to_worker(
+    message: WorkerMessageEnvelope, worker: ChatParticipantRef
+) -> bool:
+    return (
+        message.recipient_scope.include_entire_thread
+        or worker in message.recipient_scope.participant_refs
+    )
 
 
 def _validate_participant_id(
