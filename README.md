@@ -1,266 +1,161 @@
 <p align="center">
-  <img src="assets/banner.png" alt="Hermes Agent" width="100%">
+  <img src="assets/banner.png" alt="Zermes" width="100%">
 </p>
 
-# Zermes ☤
+# Zermes
 
 <p align="center">
-  <a href="https://hermes-agent.nousresearch.com/docs/"><img src="https://img.shields.io/badge/Docs-hermes--agent.nousresearch.com-FFD700?style=for-the-badge" alt="Documentation"></a>
-  <a href="https://discord.gg/NousResearch"><img src="https://img.shields.io/badge/Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Discord"></a>
-  <a href="https://github.com/NousResearch/hermes-agent/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-MIT-green?style=for-the-badge" alt="License: MIT"></a>
-  <a href="https://nousresearch.com"><img src="https://img.shields.io/badge/Built%20by-Nous%20Research-blueviolet?style=for-the-badge" alt="Built by Nous Research"></a>
   <a href="README.zh-CN.md"><img src="https://img.shields.io/badge/Lang-中文-red?style=for-the-badge" alt="中文"></a>
+  <a href="https://hermes-agent.nousresearch.com/docs/"><img src="https://img.shields.io/badge/Hermes%20Docs-hermes--agent.nousresearch.com-FFD700?style=for-the-badge" alt="Hermes documentation"></a>
+  <a href="https://discord.gg/NousResearch"><img src="https://img.shields.io/badge/Hermes%20Community-Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Hermes community"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green?style=for-the-badge" alt="License: MIT"></a>
 </p>
 
-**The self-improving AI agent built by [Nous Research](https://nousresearch.com).** It's the only agent with a built-in learning loop — it creates skills from experience, improves them during use, nudges itself to persist knowledge, searches its own past conversations, and builds a deepening model of who you are across sessions. Run it on a $5 VPS, a GPU cluster, or serverless infrastructure that costs nearly nothing when idle. It's not tied to your laptop — talk to it from Telegram while it works on a cloud VM.
+Zermes is a Hermes Agent derivative focused on governed, code-level self-evolution. It keeps the practical Hermes runtime foundation: a terminal AI agent, configurable model providers, toolsets, skills, memory, scheduled work, and messaging gateways. On top of that base, Zermes emphasizes a safer path for improving the agent's own repository.
 
-Zermes is a Hermes Agent fork focused on governed self-improvement workflows. It keeps Hermes-compatible internals and CLI aliases where that helps migration, while the preferred command and data directory are now `zermes` and `~/.zermes`.
+The preferred user-facing command is `zermes`. Hermes-compatible names and internal structure remain where they help migration, but new Zermes installs should use the Zermes source runtime installer and a Zermes-oriented runtime layout.
 
-Use any model you want — [Nous Portal](https://portal.nousresearch.com), [OpenRouter](https://openrouter.ai) (200+ models), [NVIDIA NIM](https://build.nvidia.com) (Nemotron), [Xiaomi MiMo](https://platform.xiaomimimo.com), [z.ai/GLM](https://z.ai), [Kimi/Moonshot](https://platform.moonshot.ai), [MiniMax](https://www.minimax.io), [Hugging Face](https://huggingface.co), OpenAI, or your own endpoint. Switch with `zermes model` — no code changes, no lock-in.
+## Features
 
-<table>
-<tr><td><b>A real terminal interface</b></td><td>Full TUI with multiline editing, slash-command autocomplete, conversation history, interrupt-and-redirect, and streaming tool output.</td></tr>
-<tr><td><b>Lives where you do</b></td><td>Telegram, Discord, Slack, WhatsApp, Signal, and CLI — all from a single gateway process. Voice memo transcription, cross-platform conversation continuity.</td></tr>
-<tr><td><b>A closed learning loop</b></td><td>Agent-curated memory with periodic nudges. Autonomous skill creation after complex tasks. Skills self-improve during use. FTS5 session search with LLM summarization for cross-session recall. <a href="https://github.com/plastic-labs/honcho">Honcho</a> dialectic user modeling. Compatible with the <a href="https://agentskills.io">agentskills.io</a> open standard.</td></tr>
-<tr><td><b>Scheduled automations</b></td><td>Built-in cron scheduler with delivery to any platform. Daily reports, nightly backups, weekly audits — all in natural language, running unattended.</td></tr>
-<tr><td><b>Delegates and parallelizes</b></td><td>Spawn isolated subagents for parallel workstreams. Write Python scripts that call tools via RPC, collapsing multi-step pipelines into zero-context-cost turns.</td></tr>
-<tr><td><b>Governed self-evolution</b></td><td>Code improvement requests go through an approval-first workflow with audit files, dedicated branches, explicit-file commits, verification records, advisory thinking reports, and repository-local low-token analysis context.</td></tr>
-<tr><td><b>Runs anywhere, not just your laptop</b></td><td>Seven terminal backends — local, Docker, SSH, Singularity, Modal, Daytona, and Vercel Sandbox. Daytona and Modal offer serverless persistence — your agent's environment hibernates when idle and wakes on demand, costing nearly nothing between sessions. Run it on a $5 VPS or a GPU cluster.</td></tr>
-<tr><td><b>Research-ready</b></td><td>Batch trajectory generation, Atropos RL environments, trajectory compression for training the next generation of tool-calling models.</td></tr>
-</table>
+1. **Code-level self-evolution**
 
----
+   Zermes can notice when a user's request is really a feature or repository-improvement need, turn it into an approval-first implementation plan, and then complete the corresponding changes to its own code after approval. It can also run scheduled self-evolution thinking to collect improvement candidates over time. Actual code modification happens on dedicated task branches, uses explicit-file commits, records verification plans and results, and only finalizes when the required checks pass. The result is practical self-evolution: Zermes can adjust its own codebase, while keeping the risky parts visible, reviewable, and reversible.
 
-## Quick Install
+## Installation And Usage
 
-### Zermes source runtime installer
+### Recommended: Source Runtime Installer
 
-Zermes is moving to a source installer that separates the software install
-directory from user data and prepares a stable runtime layout for governed
-self-evolution:
-
-```bash
-python install.py install
-```
-
-The installer model uses `<prefix>/runtime/releases/source-install/` for the
-active source release, `<prefix>/bin/zermes` for the launcher, and `~/.hermes`
-or a custom `--data-dir` for user config, sessions, skills, and logs. The
-legacy installers below still work, but they run from a source checkout with an
-in-tree virtual environment and are now best treated as compatibility or
-developer paths while the new runtime installer is completed.
-
-Update an installed source runtime only from an explicit checkout:
-
-```bash
-python install.py update --prefix <prefix> --source <source-dir>
-python install.py update --prefix <prefix> --current-source
-```
-
-`--source` points at a chosen checkout; `--current-source` uses the checkout
-that contains `install.py`. Non-interactive updates must provide one of them.
-Updates first build `runtime/candidates/<candidate-id>/` and write
-`update-state.json`; after verification, `--activate` switches `active.json`.
-Use `--no-activate` to keep the candidate only. `python install.py rollback
---prefix <prefix>` points `active.json` back to `previous.json` without deleting
-releases. `--restart` records a governed `runtime/restart-intent.json`; managed
-CLI sessions consume it after the current chat exits, and managed gateway
-sessions consume it after the response is delivered and then use the existing
-drain-aware restart path. The installer still does not force-kill running
-processes.
-
-Uninstall a source runtime with:
-
-```bash
-python install.py uninstall --prefix <prefix>
-```
-
-Uninstall removes the software prefix but preserves the recorded user
-`data_dir` by default. Add `--remove-data` to delete that data directory, and
-add `--remove-global-command` to remove the user-level global `zermes` command
-created by the installer.
-
-### Linux, macOS, WSL2, Termux
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/arcpis/zerme/main/scripts/install.sh | bash
-```
-
-### Windows (native, PowerShell) — Early Beta
-
-> **Heads up:** Native Windows support is **early beta**. It installs and runs, but hasn't been road-tested as broadly as our Linux/macOS/WSL2 paths. Please [file issues](https://github.com/NousResearch/hermes-agent/issues) when you hit rough edges. For the most battle-tested Windows setup today, run the Linux/macOS one-liner above inside **WSL2**.
-
-Run this in PowerShell:
-
-```powershell
-irm https://raw.githubusercontent.com/arcpis/zerme/main/scripts/install.ps1 | iex
-```
-
-The installer handles everything: uv, Python 3.11, Node.js, ripgrep, ffmpeg, **and a portable Git Bash** (MinGit, unpacked to `%LOCALAPPDATA%\hermes\git` — no admin required, completely isolated from any system Git install).  Hermes uses this bundled Git Bash to run shell commands.
-
-If you already have Git installed, the installer detects it and uses that instead.  Otherwise a ~45MB MinGit download is all you need — it won't touch or interfere with any system Git.
-
-> **Android / Termux:** The tested manual path is documented in the [Termux guide](https://hermes-agent.nousresearch.com/docs/getting-started/termux). On Termux, Hermes installs a curated `.[termux]` extra because the full `.[all]` extra currently pulls Android-incompatible voice dependencies.
->
-> **Windows:** Native Windows is supported as an **early beta** — the PowerShell one-liner above installs everything, but expect rough edges and please file issues when you hit them. If you'd rather use WSL2 (our most battle-tested Windows path), the Linux command works there too. Native Windows install lives under `%LOCALAPPDATA%\hermes`; WSL2 installs under `~/.hermes` as on Linux.  The only Hermes feature that currently needs WSL2 specifically is the browser-based dashboard chat pane (it uses a POSIX PTY — classic CLI and gateway both run natively).
-
-After installation:
-
-```bash
-source ~/.bashrc    # reload shell (or: source ~/.zshrc)
-zermes              # start chatting!
-```
-
----
-
-## Getting Started
-
-```bash
-zermes              # Interactive CLI — start a conversation
-zermes model        # Choose your LLM provider and model
-zermes tools        # Configure which tools are enabled
-zermes config set   # Set individual config values
-zermes gateway      # Start the messaging gateway (Telegram, Discord, etc.)
-zermes setup        # Run the full setup wizard (configures everything at once)
-zermes claw migrate # Migrate from OpenClaw (if coming from OpenClaw)
-zermes update       # Update to the latest version
-zermes doctor       # Diagnose any issues
-```
-
-📖 **[Full documentation →](https://hermes-agent.nousresearch.com/docs/)**
-
-## CLI vs Messaging Quick Reference
-
-Zermes has two entry points: start the terminal UI with `zermes`, or run the gateway and talk to it from Telegram, Discord, Slack, WhatsApp, Signal, or Email. Once you're in a conversation, many slash commands are shared across both interfaces. The legacy `hermes` command remains available as a compatibility alias.
-
-| Action | CLI | Messaging platforms |
-|---------|-----|---------------------|
-| Start chatting | `zermes` | Run `zermes gateway setup` + `zermes gateway start`, then send the bot a message |
-| Start fresh conversation | `/new` or `/reset` | `/new` or `/reset` |
-| Change model | `/model [provider:model]` | `/model [provider:model]` |
-| Set a personality | `/personality [name]` | `/personality [name]` |
-| Retry or undo the last turn | `/retry`, `/undo` | `/retry`, `/undo` |
-| Compress context / check usage | `/compress`, `/usage`, `/insights [--days N]` | `/compress`, `/usage`, `/insights [days]` |
-| Browse skills | `/skills` or `/<skill-name>` | `/<skill-name>` |
-| Interrupt current work | `Ctrl+C` or send a new message | `/stop` or send a new message |
-| Platform-specific status | `/platforms` | `/status`, `/sethome` |
-
-For the full command lists, see the [CLI guide](https://hermes-agent.nousresearch.com/docs/user-guide/cli) and the [Messaging Gateway guide](https://hermes-agent.nousresearch.com/docs/user-guide/messaging).
-
----
-
-## Documentation
-
-All documentation lives at **[hermes-agent.nousresearch.com/docs](https://hermes-agent.nousresearch.com/docs/)**:
-
-| Section | What's Covered |
-|---------|---------------|
-| [Quickstart](https://hermes-agent.nousresearch.com/docs/getting-started/quickstart) | Install → setup → first conversation in 2 minutes |
-| [CLI Usage](https://hermes-agent.nousresearch.com/docs/user-guide/cli) | Commands, keybindings, personalities, sessions |
-| [Configuration](https://hermes-agent.nousresearch.com/docs/user-guide/configuration) | Config file, providers, models, all options |
-| [Messaging Gateway](https://hermes-agent.nousresearch.com/docs/user-guide/messaging) | Telegram, Discord, Slack, WhatsApp, Signal, Home Assistant |
-| [Security](https://hermes-agent.nousresearch.com/docs/user-guide/security) | Command approval, DM pairing, container isolation |
-| [Tools & Toolsets](https://hermes-agent.nousresearch.com/docs/user-guide/features/tools) | 40+ tools, toolset system, terminal backends |
-| [Skills System](https://hermes-agent.nousresearch.com/docs/user-guide/features/skills) | Procedural memory, Skills Hub, creating skills |
-| [Memory](https://hermes-agent.nousresearch.com/docs/user-guide/features/memory) | Persistent memory, user profiles, best practices |
-| [MCP Integration](https://hermes-agent.nousresearch.com/docs/user-guide/features/mcp) | Connect any MCP server for extended capabilities |
-| [Cron Scheduling](https://hermes-agent.nousresearch.com/docs/user-guide/features/cron) | Scheduled tasks with platform delivery |
-| [Context Files](https://hermes-agent.nousresearch.com/docs/user-guide/features/context-files) | Project context that shapes every conversation |
-| [Architecture](https://hermes-agent.nousresearch.com/docs/developer-guide/architecture) | Project structure, agent loop, key classes |
-| [Contributing](https://hermes-agent.nousresearch.com/docs/developer-guide/contributing) | Development setup, PR process, code style |
-| [CLI Reference](https://hermes-agent.nousresearch.com/docs/reference/cli-commands) | All commands and flags |
-| [Environment Variables](https://hermes-agent.nousresearch.com/docs/reference/environment-variables) | Complete env var reference |
-
----
-
-## Migrating from OpenClaw
-
-If you're coming from OpenClaw, Hermes can automatically import your settings, memories, skills, and API keys.
-
-**During first-time setup:** The setup wizard (`hermes setup`) automatically detects `~/.openclaw` and offers to migrate before configuration begins.
-
-**Anytime after install:**
-
-```bash
-hermes claw migrate              # Interactive migration (full preset)
-hermes claw migrate --dry-run    # Preview what would be migrated
-hermes claw migrate --preset user-data   # Migrate without secrets
-hermes claw migrate --overwrite  # Overwrite existing conflicts
-```
-
-What gets imported:
-- **SOUL.md** — persona file
-- **Memories** — MEMORY.md and USER.md entries
-- **Skills** — user-created skills → `~/.hermes/skills/openclaw-imports/`
-- **Command allowlist** — approval patterns
-- **Messaging settings** — platform configs, allowed users, working directory
-- **API keys** — allowlisted secrets (Telegram, OpenRouter, OpenAI, Anthropic, ElevenLabs)
-- **TTS assets** — workspace audio files
-- **Workspace instructions** — AGENTS.md (with `--workspace-target`)
-
-See `hermes claw migrate --help` for all options, or use the `openclaw-migration` skill for an interactive agent-guided migration with dry-run previews.
-
----
-
-## Self-Evolution Workflow
-
-Zermes includes a governed self-evolution workflow for improving its own codebase. The workflow is intentionally conservative:
-
-- `complete_code_task` creates a pre-change approval plan and audit record; it does not modify product code.
-- Approved work starts on a dedicated `self-evolution/dev/<task_id>` branch.
-- Commits must stage explicit file lists, not broad working-tree changes.
-- Verification plans and results are recorded before final integration.
-- `self_evolution_thinking` can create advisory candidate reports, but it never executes code changes.
-- Low-token analysis context is built from files inside this repository only and cached under `<install_prefix>/data/self-evolution/analysis-cache/`.
-- Approval plans and final reports track documentation sync candidates so user-visible changes can be reflected in repository docs.
-
-Generated analysis-cache content is install-local runtime state under the self-evolution data directory and is not committed to git.
-
----
-
-## Contributing
-
-We welcome contributions! See the [Contributing Guide](https://hermes-agent.nousresearch.com/docs/developer-guide/contributing) for development setup, code style, and PR process.
-
-Quick start for contributors — clone and go with `setup-hermes.sh`:
+Install from the default `main` branch:
 
 ```bash
 git clone https://github.com/arcpis/zerme.git
 cd zermes
-./setup-hermes.sh     # installs uv, creates venv, installs .[all], symlinks ~/.local/bin/hermes
-./hermes              # auto-detects the venv, no need to `source` first
+python3 install.py install --install-deps --global-command
 ```
 
-`setup-hermes.sh` remains the contributor/developer bootstrap. For long-running
-Zermes installs, prefer the source runtime installer path as it matures, because
-it keeps running code under `<prefix>/runtime/releases/` instead of the mutable
-development checkout.
+On Windows PowerShell, use `python` if that is your Python launcher:
 
-Manual path (equivalent to the above):
+```powershell
+git clone https://github.com/arcpis/zerme.git
+cd zermes
+python install.py install --install-deps --global-command
+```
+
+The installer creates a managed runtime instead of running directly from a mutable development checkout. It can:
+
+- copy the selected source into `<prefix>/runtime/releases/<release-id>/`;
+- create the runtime virtual environment;
+- install Python dependencies when `--install-deps` is provided;
+- create launchers under `<prefix>/bin`;
+- optionally expose the global `zermes` command for the current user;
+- keep user data separate in the configured data directory.
+
+Useful install options:
 
 ```bash
-curl -LsSf https://astral.sh/uv/install.sh | sh
-uv venv .venv --python 3.11
-source .venv/bin/activate
-uv pip install -e ".[all,dev]"
-scripts/run_tests.sh
+python3 install.py install --dry-run
+python3 install.py install --prefix ~/.local/share/zermes --data-dir ~/.zermes --install-deps --global-command
+python3 install.py install --no-install-deps
+python3 install.py install --no-global-command
 ```
 
-> **RL Training (optional):** The RL/Atropos integration (`environments/`) — see [`CONTRIBUTING.md`](https://github.com/NousResearch/hermes-agent/blob/main/CONTRIBUTING.md#development-setup) for the full setup.
+After installation:
 
----
+```bash
+zermes
+zermes setup
+zermes model
+zermes tools
+zermes gateway
+zermes doctor
+```
 
-## Community
+### Updating
 
-- 💬 [Discord](https://discord.gg/NousResearch)
-- 📚 [Skills Hub](https://agentskills.io)
-- 🐛 [Issues](https://github.com/NousResearch/hermes-agent/issues)
-- 🔌 [HermesClaw](https://github.com/AaronWong1999/hermesclaw) — Community WeChat bridge: Run Hermes Agent and OpenClaw on the same WeChat account.
+Updates are built from an explicit source checkout. Pull the latest source first, then build and activate an update candidate:
 
----
+```bash
+cd zermes
+git pull
+python3 install.py update --current-source --install-deps --activate --restart
+```
 
-## License
+You can also update an installed runtime from another checkout:
 
-MIT — see [LICENSE](LICENSE).
+```bash
+python3 install.py update --prefix <prefix> --source <source-dir> --install-deps --activate
+```
 
-Built by [Nous Research](https://nousresearch.com).
+Useful update options:
+
+```bash
+python3 install.py update --current-source --no-activate
+python3 install.py update --current-source --skip-verify
+python3 install.py rollback --prefix <prefix>
+```
+
+`--no-activate` builds and verifies the candidate without switching `active.json`. `rollback` points the runtime back to the previous release without deleting releases.
+
+### Uninstalling
+
+Remove the installed software runtime while preserving user data:
+
+```bash
+python3 install.py uninstall --prefix <prefix>
+```
+
+Also remove the recorded data directory and the global command created by the installer:
+
+```bash
+python3 install.py uninstall --prefix <prefix> --remove-data --remove-global-command
+```
+
+Use `--dry-run` first if you want to inspect the uninstall intent:
+
+```bash
+python3 install.py uninstall --prefix <prefix> --dry-run
+```
+
+### Developer Checkout
+
+For development, you can still work directly in a source checkout:
+
+```bash
+git clone https://github.com/arcpis/zerme.git
+cd zermes
+python3 -m venv venv
+source venv/bin/activate
+python -m pip install -e ".[all,dev]"
+zermes
+```
+
+## Hermes Community And Documentation
+
+Zermes is built on Hermes Agent, so much of the upstream Hermes documentation and community knowledge remains useful for the shared runtime, CLI concepts, providers, gateways, tools, skills, memory, and scheduling:
+
+- Hermes documentation: [hermes-agent.nousresearch.com/docs](https://hermes-agent.nousresearch.com/docs/)
+- Hermes / Nous Research community: [Discord](https://discord.gg/NousResearch)
+- Skills Hub: [agentskills.io](https://agentskills.io)
+- Upstream Hermes repository: [NousResearch/hermes-agent](https://github.com/NousResearch/hermes-agent)
+
+Some Zermes behavior, especially governed self-evolution and the source runtime installer, may differ from upstream Hermes documentation.
+
+## Copyright And License
+
+Zermes is distributed under the MIT License. See [LICENSE](LICENSE).
+
+Zermes is based on Hermes Agent and contains modifications to the Hermes codebase for Zermes naming, installation flow, runtime layout, and governed self-evolution workflows.
+
+Copyright for the original Hermes Agent project is retained by Nous Research:
+
+```text
+Copyright (c) 2025 Nous Research
+```
+
+Copyright for Zermes-specific modifications is retained by the Zermes contributors:
+
+```text
+Copyright (c) 2026 Zermes contributors
+```
+
+Both the original Hermes code and Zermes modifications are provided under the MIT License unless a file states otherwise.
