@@ -251,6 +251,37 @@ class OrgTree:
         validate_org_tree_structure(self)
 
 
+@dataclass(frozen=True)
+class OrgNodeSummary:
+    """Low-sensitivity summary safe for chat context, audit, and UI lists."""
+
+    org_node_id: str
+    name: str
+    node_type: OrgNodeType
+    lifecycle: OrgLifecycleState
+    parent_id: str | None
+    child_count: int
+    member_count: int
+    leader_kind: OrgLeaderKind
+    leader_worker_id: str | None = None
+    responsibility_summary: str = ""
+    applicable_task_types: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class OrgTreeSummary:
+    """Low-sensitivity aggregate summary for one organization tree."""
+
+    tree_id: str
+    revision: int
+    root_node_id: str
+    active_node_count: int
+    department_count: int
+    team_count: int
+    individual_count: int
+    node_summaries: tuple[OrgNodeSummary, ...]
+
+
 _LEADER_FIELDS = {"kind", "worker_id"}
 _CHAT_POLICY_FIELDS = {"default_thread_policy", "allow_default_group_chat"}
 _NODE_FIELDS = {
@@ -581,6 +612,85 @@ def org_tree_to_dict(tree: OrgTree) -> dict[str, Any]:
         "created_at": tree.created_at,
         "updated_at": tree.updated_at,
         "metadata": dict(tree.metadata),
+    }
+
+
+def summarize_org_node(node: OrgNode) -> OrgNodeSummary:
+    """Return a low-sensitivity summary for one organization node."""
+    return OrgNodeSummary(
+        org_node_id=node.org_node_id,
+        name=node.name,
+        node_type=node.node_type,
+        lifecycle=node.lifecycle,
+        parent_id=node.parent_id,
+        child_count=len(node.child_ids),
+        member_count=len(node.member_worker_ids)
+        + (1 if node.individual_worker_id is not None else 0),
+        leader_kind=node.leader.kind,
+        leader_worker_id=node.leader.worker_id,
+        responsibility_summary=node.description,
+        applicable_task_types=node.applicable_task_types,
+    )
+
+
+def summarize_org_tree(tree: OrgTree) -> OrgTreeSummary:
+    """Return a low-sensitivity aggregate summary for an organization tree."""
+    validate_org_tree_structure(tree)
+    node_summaries = tuple(
+        summarize_org_node(node) for _, node in sorted(tree.nodes.items())
+    )
+    active_nodes = [
+        node
+        for node in tree.nodes.values()
+        if node.lifecycle == OrgLifecycleState.ACTIVE
+    ]
+    return OrgTreeSummary(
+        tree_id=tree.tree_id,
+        revision=tree.revision,
+        root_node_id=tree.root_node_id,
+        active_node_count=len(active_nodes),
+        department_count=sum(
+            1 for node in tree.nodes.values() if node.node_type == OrgNodeType.DEPARTMENT
+        ),
+        team_count=sum(
+            1 for node in tree.nodes.values() if node.node_type == OrgNodeType.TEAM
+        ),
+        individual_count=sum(
+            1 for node in tree.nodes.values() if node.node_type == OrgNodeType.INDIVIDUAL
+        ),
+        node_summaries=node_summaries,
+    )
+
+
+def org_node_summary_to_dict(summary: OrgNodeSummary) -> dict[str, Any]:
+    return {
+        "org_node_id": summary.org_node_id,
+        "name": summary.name,
+        "node_type": summary.node_type.value,
+        "lifecycle": summary.lifecycle.value,
+        "parent_id": summary.parent_id,
+        "child_count": summary.child_count,
+        "member_count": summary.member_count,
+        "leader_kind": summary.leader_kind.value,
+        "leader_worker_id": summary.leader_worker_id,
+        "responsibility_summary": summary.responsibility_summary,
+        "applicable_task_types": list(summary.applicable_task_types),
+    }
+
+
+def org_tree_summary_to_dict(summary: OrgTreeSummary) -> dict[str, Any]:
+    return {
+        "tree_id": summary.tree_id,
+        "revision": summary.revision,
+        "root_node_id": summary.root_node_id,
+        "active_node_count": summary.active_node_count,
+        "department_count": summary.department_count,
+        "team_count": summary.team_count,
+        "individual_count": summary.individual_count,
+        "node_summaries": [
+            org_node_summary_to_dict(node_summary)
+            for node_summary in summary.node_summaries
+        ],
     }
 
 
