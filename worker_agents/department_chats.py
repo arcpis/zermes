@@ -69,6 +69,26 @@ class DepartmentChatFallbackKind(StrEnum):
     DIRECT_THREAD_PLAN = "direct_thread_plan"
 
 
+class DepartmentChatSummaryType(StrEnum):
+    """Summary kinds that may move between department chats."""
+
+    PERIODIC = "periodic_summary"
+    DECISION = "decision"
+    DELIVERABLE = "deliverable"
+    RISK = "risk"
+    HANDOFF = "handoff"
+    FINAL_ARCHIVE = "final_archive_summary"
+
+
+class DepartmentChatSummaryStatus(StrEnum):
+    """Delivery state for a low-sensitivity department chat summary."""
+
+    DRAFT = "draft"
+    READY = "ready"
+    DELIVERED = "delivered"
+    REJECTED = "rejected"
+
+
 @dataclass(frozen=True)
 class DepartmentChatBinding:
     """Low-sensitivity link between an organization node and a chat thread."""
@@ -216,6 +236,82 @@ class SingleWorkerDepartmentPlan:
             _unique_workers(self.employee_worker_ids, "employee_worker_ids"),
         )
         _string_value(self.reason, "reason")
+
+
+@dataclass(frozen=True)
+class DepartmentChatSummary:
+    """Low-sensitivity summary shared across department chat boundaries."""
+
+    summary_id: str
+    source_org_node_id: str
+    source_thread_id: str
+    target_org_node_id: str
+    target_thread_id: str
+    summary_type: DepartmentChatSummaryType
+    status: DepartmentChatSummaryStatus
+    body: str
+    manifest_refs: tuple[str, ...] = ()
+    audit_refs: tuple[str, ...] = ()
+    created_at: str | None = None
+    is_project_summary: bool = False
+    schema_version: int = DEPARTMENT_CHAT_BINDING_SCHEMA_VERSION
+
+    def __post_init__(self) -> None:
+        _validate_binding_id(self.summary_id, "summary_id")
+        _validate_org_id(self.source_org_node_id, "source_org_node_id")
+        _validate_binding_id(self.source_thread_id, "source_thread_id")
+        _validate_org_id(self.target_org_node_id, "target_org_node_id")
+        _validate_binding_id(self.target_thread_id, "target_thread_id")
+        object.__setattr__(self, "summary_type", _summary_type(self.summary_type))
+        object.__setattr__(self, "status", _summary_status(self.status))
+        _validate_low_sensitivity_body(self.body)
+        object.__setattr__(
+            self, "manifest_refs", _safe_ref_tuple(self.manifest_refs, "manifest_refs")
+        )
+        object.__setattr__(
+            self, "audit_refs", _safe_ref_tuple(self.audit_refs, "audit_refs")
+        )
+        _optional_string(self.created_at, "created_at")
+        if not isinstance(self.is_project_summary, bool):
+            raise DepartmentChatError("is_project_summary must be a boolean")
+        if self.schema_version != DEPARTMENT_CHAT_BINDING_SCHEMA_VERSION:
+            raise DepartmentChatError(
+                f"Unsupported department chat summary schema_version: {self.schema_version!r}"
+            )
+
+
+@dataclass(frozen=True)
+class DepartmentProjectChat:
+    """Minimal cross-department project chat structure."""
+
+    project_id: str
+    thread_id: str
+    participant_org_node_ids: tuple[str, ...]
+    summary_target_org_node_ids: tuple[str, ...]
+    deliverable_manifest_refs: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        _validate_binding_id(self.project_id, "project_id")
+        _validate_binding_id(self.thread_id, "thread_id")
+        object.__setattr__(
+            self,
+            "participant_org_node_ids",
+            _unique_org_ids(self.participant_org_node_ids, "participant_org_node_ids"),
+        )
+        object.__setattr__(
+            self,
+            "summary_target_org_node_ids",
+            _unique_org_ids(
+                self.summary_target_org_node_ids, "summary_target_org_node_ids"
+            ),
+        )
+        object.__setattr__(
+            self,
+            "deliverable_manifest_refs",
+            _safe_ref_tuple(
+                self.deliverable_manifest_refs, "deliverable_manifest_refs"
+            ),
+        )
 
 
 class DepartmentChatBindingService:
@@ -654,6 +750,95 @@ def thread_has_required_department_participants(thread: WorkerChatThread) -> boo
     return ChatParticipantKind.USER in kinds and ChatParticipantKind.MAIN_AGENT in kinds
 
 
+def plan_department_chat_summary(
+    *,
+    summary_id: str,
+    source_node: OrgNode,
+    source_thread_id: str,
+    target_node: OrgNode,
+    target_thread_id: str,
+    summary_type: DepartmentChatSummaryType,
+    body: str,
+    manifest_refs: tuple[str, ...] = (),
+    audit_refs: tuple[str, ...] = (),
+    created_at: str | None = None,
+    is_project_summary: bool = False,
+) -> DepartmentChatSummary:
+    """Build a low-sensitivity summary while enforcing hierarchy boundaries."""
+    if (
+        source_node.parent_id != target_node.org_node_id
+        and not is_project_summary
+    ):
+        raise DepartmentChatError(
+            "non-parent department summaries must be explicit project summaries"
+        )
+    return DepartmentChatSummary(
+        summary_id=summary_id,
+        source_org_node_id=source_node.org_node_id,
+        source_thread_id=source_thread_id,
+        target_org_node_id=target_node.org_node_id,
+        target_thread_id=target_thread_id,
+        summary_type=summary_type,
+        status=DepartmentChatSummaryStatus.READY,
+        body=body,
+        manifest_refs=manifest_refs,
+        audit_refs=audit_refs,
+        created_at=created_at,
+        is_project_summary=is_project_summary,
+    )
+
+
+def plan_final_department_chat_archive_summary(
+    *,
+    summary_id: str,
+    source_node: OrgNode,
+    source_thread_id: str,
+    target_node: OrgNode,
+    target_thread_id: str,
+    close_reason: str,
+    replacement_thread_id: str | None = None,
+    audit_refs: tuple[str, ...] = (),
+    created_at: str | None = None,
+) -> DepartmentChatSummary:
+    """Create the final summary emitted when a department chat closes."""
+    _string_value(close_reason, "close_reason")
+    replacement_text = (
+        f" Replacement thread: {replacement_thread_id}."
+        if replacement_thread_id
+        else ""
+    )
+    return plan_department_chat_summary(
+        summary_id=summary_id,
+        source_node=source_node,
+        source_thread_id=source_thread_id,
+        target_node=target_node,
+        target_thread_id=target_thread_id,
+        summary_type=DepartmentChatSummaryType.FINAL_ARCHIVE,
+        body=f"Closed department chat. Reason: {close_reason}.{replacement_text}",
+        audit_refs=audit_refs,
+        created_at=created_at,
+    )
+
+
+def department_chat_summary_to_dict(summary: DepartmentChatSummary) -> dict[str, Any]:
+    """Dump a summary without raw transcript or private worker context."""
+    return {
+        "summary_id": summary.summary_id,
+        "schema_version": summary.schema_version,
+        "source_org_node_id": summary.source_org_node_id,
+        "source_thread_id": summary.source_thread_id,
+        "target_org_node_id": summary.target_org_node_id,
+        "target_thread_id": summary.target_thread_id,
+        "summary_type": summary.summary_type.value,
+        "status": summary.status.value,
+        "body": summary.body,
+        "manifest_refs": list(summary.manifest_refs),
+        "audit_refs": list(summary.audit_refs),
+        "created_at": summary.created_at,
+        "is_project_summary": summary.is_project_summary,
+    }
+
+
 def chat_participant_from_dict(data: Mapping[str, Any]) -> ChatParticipantRef:
     data = _require_mapping(data, "required_participant")
     _reject_unknown_fields(data, _PARTICIPANT_FIELDS, "required_participant")
@@ -719,6 +904,28 @@ def _binding_state(value: DepartmentChatBindingState | str) -> DepartmentChatBin
         return DepartmentChatBindingState(raw)
     except ValueError as exc:
         raise DepartmentChatError(f"Unknown department chat binding state: {raw!r}") from exc
+
+
+def _summary_type(value: DepartmentChatSummaryType | str) -> DepartmentChatSummaryType:
+    if isinstance(value, DepartmentChatSummaryType):
+        return value
+    raw = _require_string(value, "summary_type")
+    try:
+        return DepartmentChatSummaryType(raw)
+    except ValueError as exc:
+        raise DepartmentChatError(f"Unknown department chat summary type: {raw!r}") from exc
+
+
+def _summary_status(
+    value: DepartmentChatSummaryStatus | str,
+) -> DepartmentChatSummaryStatus:
+    if isinstance(value, DepartmentChatSummaryStatus):
+        return value
+    raw = _require_string(value, "status")
+    try:
+        return DepartmentChatSummaryStatus(raw)
+    except ValueError as exc:
+        raise DepartmentChatError(f"Unknown department chat summary status: {raw!r}") from exc
 
 
 def _sync_action(
@@ -817,6 +1024,36 @@ def _unique_org_ids(values: tuple[str, ...], field_name: str) -> tuple[str, ...]
     if len(set(result)) != len(result):
         raise DepartmentChatError(f"{field_name} must not contain duplicates")
     return result
+
+
+def _safe_ref_tuple(values: tuple[str, ...], field_name: str) -> tuple[str, ...]:
+    if not isinstance(values, (list, tuple)):
+        raise DepartmentChatError(f"{field_name} must be a list of strings")
+    result = tuple(values)
+    for value in result:
+        _validate_binding_id(value, field_name)
+    if len(set(result)) != len(result):
+        raise DepartmentChatError(f"{field_name} must not contain duplicates")
+    return result
+
+
+_FORBIDDEN_SUMMARY_MARKERS = (
+    "raw_transcript",
+    "private_memory",
+    "credentials",
+    "environment",
+    "external_agent_raw_output",
+)
+
+
+def _validate_low_sensitivity_body(value: str) -> None:
+    _string_value(value, "body")
+    lowered = value.lower()
+    for marker in _FORBIDDEN_SUMMARY_MARKERS:
+        if marker in lowered:
+            raise DepartmentChatError(
+                f"department chat summaries must not contain {marker}"
+            )
 
 
 def _require_mapping(value: Any, field_name: str) -> Mapping[str, Any]:
