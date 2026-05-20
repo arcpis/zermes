@@ -408,6 +408,31 @@ class MessageRouter:
         self._require_thread(thread_id)
         return tuple(self.broadcast_deliveries[thread_id])
 
+    def apply_mention_timeouts(
+        self, *, thread_id: str, now: str, policy: Any = None
+    ) -> tuple[Any, ...]:
+        """Mark eligible mention deliveries as timed out for one thread."""
+        self._require_thread(thread_id)
+        from .message_followups import apply_mention_timeouts
+
+        updated = apply_mention_timeouts(
+            tuple(self.mention_deliveries[thread_id]),
+            now=now,
+            policy=policy,
+        )
+        self.mention_deliveries[thread_id] = list(updated)
+        return updated
+
+    def summarize_delivery_followups(self, *, thread_id: str) -> tuple[Any, ...]:
+        """Return low-sensitivity follow-up summaries for one thread."""
+        self._require_thread(thread_id)
+        from .message_followups import summarize_delivery_followups
+
+        return summarize_delivery_followups(
+            mention_deliveries=tuple(self.mention_deliveries[thread_id]),
+            broadcast_deliveries=tuple(self.broadcast_deliveries[thread_id]),
+        )
+
     def update_delivery_status(
         self,
         *,
