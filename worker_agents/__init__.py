@@ -158,6 +158,12 @@ from .runtime_boundary import (
     AgentRuntimeLifecycle,
     AgentRuntimePersona,
     AgentRuntimeRole,
+    AgentRuntimeSessionConfig,
+    AgentRuntimeSessionScope,
+    RuntimeBudgetSnapshot,
+    RuntimeContextBundle,
+    RuntimePermissionSnapshot,
+    RuntimeProfileSummary,
 )
 
 __all__ = [
@@ -178,6 +184,12 @@ __all__ = [
     "AgentRuntimeLifecycle",
     "AgentRuntimePersona",
     "AgentRuntimeRole",
+    "AgentRuntimeSessionConfig",
+    "AgentRuntimeSessionScope",
+    "RuntimeBudgetSnapshot",
+    "RuntimeContextBundle",
+    "RuntimePermissionSnapshot",
+    "RuntimeProfileSummary",
     "CleanupExecutionResult",
     "CleanupExecutor",
     "CleanupPlan",
