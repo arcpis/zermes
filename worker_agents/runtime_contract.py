@@ -28,6 +28,86 @@ class RuntimeType(StrEnum):
     DELEGATE_TASK_ADAPTER = "delegate_task_adapter"
 
 
+class RuntimeState(StrEnum):
+    """Execution state for one runtime adapter invocation."""
+
+    QUEUED = "queued"
+    STARTING = "starting"
+    RUNNING = "running"
+    CANCELLING = "cancelling"
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+    TIMED_OUT = "timed_out"
+    CANCELLED = "cancelled"
+
+
+class RuntimeEventType(StrEnum):
+    """Low-sensitive event types emitted by runtime adapters."""
+
+    QUEUED = "queued"
+    STARTED = "started"
+    HEARTBEAT = "heartbeat"
+    OUTPUT_CHUNK = "output_chunk"
+    TOOL_CALL_SUMMARY = "tool_call_summary"
+    RESOURCE_USAGE = "resource_usage"
+    ERROR = "error"
+    CANCEL_REQUESTED = "cancel_requested"
+    CANCELLED = "cancelled"
+    COMPLETED = "completed"
+
+
+TERMINAL_RUNTIME_STATES = frozenset(
+    {
+        RuntimeState.SUCCEEDED,
+        RuntimeState.FAILED,
+        RuntimeState.TIMED_OUT,
+        RuntimeState.CANCELLED,
+    }
+)
+
+_ALLOWED_RUNTIME_STATE_TRANSITIONS = {
+    RuntimeState.QUEUED: {RuntimeState.STARTING, RuntimeState.CANCELLED},
+    RuntimeState.STARTING: {
+        RuntimeState.RUNNING,
+        RuntimeState.FAILED,
+        RuntimeState.TIMED_OUT,
+        RuntimeState.CANCELLED,
+    },
+    RuntimeState.RUNNING: {
+        RuntimeState.CANCELLING,
+        RuntimeState.SUCCEEDED,
+        RuntimeState.FAILED,
+        RuntimeState.TIMED_OUT,
+    },
+    RuntimeState.CANCELLING: {RuntimeState.CANCELLED, RuntimeState.FAILED},
+    RuntimeState.SUCCEEDED: set(),
+    RuntimeState.FAILED: set(),
+    RuntimeState.TIMED_OUT: set(),
+    RuntimeState.CANCELLED: set(),
+}
+
+_EVENT_STATES = {
+    RuntimeEventType.QUEUED: {RuntimeState.QUEUED},
+    RuntimeEventType.STARTED: {RuntimeState.STARTING},
+    RuntimeEventType.HEARTBEAT: {RuntimeState.STARTING, RuntimeState.RUNNING},
+    RuntimeEventType.OUTPUT_CHUNK: {RuntimeState.RUNNING},
+    RuntimeEventType.TOOL_CALL_SUMMARY: {RuntimeState.RUNNING},
+    RuntimeEventType.RESOURCE_USAGE: {
+        RuntimeState.STARTING,
+        RuntimeState.RUNNING,
+        RuntimeState.CANCELLING,
+    },
+    RuntimeEventType.ERROR: {
+        RuntimeState.FAILED,
+        RuntimeState.TIMED_OUT,
+        RuntimeState.CANCELLED,
+    },
+    RuntimeEventType.CANCEL_REQUESTED: {RuntimeState.CANCELLING},
+    RuntimeEventType.CANCELLED: {RuntimeState.CANCELLED},
+    RuntimeEventType.COMPLETED: TERMINAL_RUNTIME_STATES,
+}
+
+
 _SENSITIVE_FIELD_NAMES = frozenset(
     {
         "api_key",
@@ -80,6 +160,12 @@ def _positive_int(value: Any, field_name: str) -> int:
     return value
 
 
+def _non_negative_int(value: Any, field_name: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise RuntimeContractError(f"{field_name} must be a non-negative integer")
+    return value
+
+
 def _optional_positive_int(value: Any, field_name: str) -> int | None:
     if value is None:
         return None
@@ -127,6 +213,24 @@ def _coerce_runtime_type(value: RuntimeType | str) -> RuntimeType:
         raise RuntimeContractError(f"Unknown runtime_type: {raw_value!r}") from exc
 
 
+def _coerce_runtime_state(value: RuntimeState | str) -> RuntimeState:
+    raw_value = value.value if isinstance(value, RuntimeState) else value
+    raw_value = _require_string(raw_value, "state")
+    try:
+        return RuntimeState(raw_value)
+    except ValueError as exc:
+        raise RuntimeContractError(f"Unknown runtime state: {raw_value!r}") from exc
+
+
+def _coerce_runtime_event_type(value: RuntimeEventType | str) -> RuntimeEventType:
+    raw_value = value.value if isinstance(value, RuntimeEventType) else value
+    raw_value = _require_string(raw_value, "event_type")
+    try:
+        return RuntimeEventType(raw_value)
+    except ValueError as exc:
+        raise RuntimeContractError(f"Unknown runtime event_type: {raw_value!r}") from exc
+
+
 def _reject_sensitive_fields(value: Any, field_name: str) -> None:
     """Reject raw logs, credentials, and complete context by field name."""
 
@@ -140,6 +244,20 @@ def _reject_sensitive_fields(value: Any, field_name: str) -> None:
     elif isinstance(value, (list, tuple)):
         for index, nested in enumerate(value):
             _reject_sensitive_fields(nested, f"{field_name}[{index}]")
+
+
+def validate_runtime_state_transition(
+    previous_state: RuntimeState | str, next_state: RuntimeState | str
+) -> tuple[RuntimeState, RuntimeState]:
+    """Return normalized states after rejecting an invalid runtime transition."""
+
+    previous = _coerce_runtime_state(previous_state)
+    next_ = _coerce_runtime_state(next_state)
+    if next_ not in _ALLOWED_RUNTIME_STATE_TRANSITIONS[previous]:
+        raise RuntimeContractError(
+            f"runtime state cannot transition from {previous.value} to {next_.value}"
+        )
+    return previous, next_
 
 
 @dataclass(frozen=True)
@@ -247,6 +365,67 @@ class RuntimeRequest:
             raise RuntimeContractError(
                 f"{self.runtime_type.value} requires parent_request_id"
             )
+
+
+@dataclass(frozen=True)
+class RuntimeEvent:
+    """Low-sensitive progress record emitted by a runtime adapter."""
+
+    event_id: str
+    request_id: str
+    task_id: str
+    worker_id: str
+    runtime_type: RuntimeType | str
+    state: RuntimeState | str
+    event_type: RuntimeEventType | str
+    created_at: str
+    sequence: int
+    payload: Mapping[str, Any] | None = None
+    contract_version: int = RUNTIME_CONTRACT_VERSION
+
+    def __post_init__(self) -> None:
+        _validate_contract_version(self.contract_version)
+        _require_string(self.event_id, "event_id")
+        _require_string(self.request_id, "request_id")
+        validate_task_id(self.task_id)
+        validate_worker_id(self.worker_id)
+        object.__setattr__(self, "runtime_type", _coerce_runtime_type(self.runtime_type))
+        state = _coerce_runtime_state(self.state)
+        event_type = _coerce_runtime_event_type(self.event_type)
+        object.__setattr__(self, "state", state)
+        object.__setattr__(self, "event_type", event_type)
+        _require_string(self.created_at, "created_at")
+        _non_negative_int(self.sequence, "sequence")
+        if self.payload is not None:
+            payload = dict(_require_mapping(self.payload, "payload"))
+            _reject_sensitive_fields(payload, "payload")
+            object.__setattr__(self, "payload", payload)
+        else:
+            object.__setattr__(self, "payload", {})
+        if state not in _EVENT_STATES[event_type]:
+            allowed = ", ".join(sorted(item.value for item in _EVENT_STATES[event_type]))
+            raise RuntimeContractError(
+                f"{event_type.value} event requires state in: {allowed}"
+            )
+
+
+def validate_runtime_event_sequence(events: tuple[RuntimeEvent, ...]) -> None:
+    """Validate ordering and terminal-state boundaries for one event stream."""
+
+    seen_sequences: set[int] = set()
+    terminal_state: RuntimeState | None = None
+    for event in events:
+        if not isinstance(event, RuntimeEvent):
+            raise RuntimeContractError("events must contain RuntimeEvent records")
+        if event.sequence in seen_sequences:
+            raise RuntimeContractError(f"duplicate runtime event sequence: {event.sequence}")
+        seen_sequences.add(event.sequence)
+        if terminal_state is not None:
+            raise RuntimeContractError(
+                f"runtime event cannot be appended after terminal state {terminal_state.value}"
+            )
+        if event.state in TERMINAL_RUNTIME_STATES:
+            terminal_state = event.state
 
 
 def runtime_budget_to_dict(budget: RuntimeExecutionBudget) -> dict[str, Any]:
@@ -414,6 +593,65 @@ def runtime_request_from_dict(data: Mapping[str, Any]) -> RuntimeRequest:
             data.get("parent_request_id"), "parent_request_id"
         ),
     )
+
+
+def runtime_event_to_dict(event: RuntimeEvent) -> dict[str, Any]:
+    return {
+        "contract_version": event.contract_version,
+        "event_id": event.event_id,
+        "request_id": event.request_id,
+        "task_id": event.task_id,
+        "worker_id": event.worker_id,
+        "runtime_type": event.runtime_type.value,
+        "state": event.state.value,
+        "event_type": event.event_type.value,
+        "created_at": event.created_at,
+        "sequence": event.sequence,
+        "payload": dict(event.payload or {}),
+    }
+
+
+def runtime_event_from_dict(data: Mapping[str, Any]) -> RuntimeEvent:
+    data = _require_mapping(data, "runtime_event")
+    _reject_unknown_fields(
+        data,
+        {
+            "contract_version",
+            "event_id",
+            "request_id",
+            "task_id",
+            "worker_id",
+            "runtime_type",
+            "state",
+            "event_type",
+            "created_at",
+            "sequence",
+            "payload",
+        },
+        "runtime_event",
+    )
+    _reject_sensitive_fields(data, "runtime_event")
+    return RuntimeEvent(
+        contract_version=_validate_contract_version(data.get("contract_version")),
+        event_id=_require_string(data.get("event_id"), "event_id"),
+        request_id=_require_string(data.get("request_id"), "request_id"),
+        task_id=_require_string(data.get("task_id"), "task_id"),
+        worker_id=_require_string(data.get("worker_id"), "worker_id"),
+        runtime_type=_coerce_runtime_type(data.get("runtime_type")),
+        state=_coerce_runtime_state(data.get("state")),
+        event_type=_coerce_runtime_event_type(data.get("event_type")),
+        created_at=_require_string(data.get("created_at"), "created_at"),
+        sequence=_non_negative_int(data.get("sequence"), "sequence"),
+        payload=dict(_require_mapping(data.get("payload", {}), "payload")),
+    )
+
+
+def dump_runtime_event_json(event: RuntimeEvent) -> str:
+    return json.dumps(runtime_event_to_dict(event), ensure_ascii=False, sort_keys=True)
+
+
+def load_runtime_event_json(payload: str) -> RuntimeEvent:
+    return runtime_event_from_dict(json.loads(payload))
 
 
 def dump_runtime_request_json(request: RuntimeRequest) -> str:
