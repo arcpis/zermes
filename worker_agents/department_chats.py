@@ -14,7 +14,9 @@ from .message_router import (
     WorkerChatThread,
 )
 from .organization import MAIN_AGENT_ID, OrganizationError, validate_org_node_id
+from .organization import OrgLeaderKind, OrgLifecycleState, OrgNode, OrgNodeType
 from .profile import WorkerProfileError, validate_worker_id
+from .registry import WorkerLifecycleStatus
 from .storage.safe_paths import validate_single_path_segment
 
 
@@ -40,6 +42,23 @@ class DepartmentChatBindingState(StrEnum):
     PENDING_UPDATE = "pending_update"
     CLOSED = "closed"
     ARCHIVED = "archived"
+
+
+class DepartmentChatMemberSyncAction(StrEnum):
+    """How one worker should be handled during binding membership sync."""
+
+    ADD = "add"
+    REMOVE = "remove"
+    KEEP = "keep"
+    REVIEW = "review"
+
+
+class DepartmentChatPlanStatus(StrEnum):
+    """Outcome status for a proposed binding operation."""
+
+    READY = "ready"
+    NEEDS_REVIEW = "needs_review"
+    REJECTED = "rejected"
 
 
 @dataclass(frozen=True)
@@ -103,6 +122,228 @@ class DepartmentChatBindingSummary:
     member_count: int
     parent_summary_target_count: int
     audit_summary: str = ""
+
+
+@dataclass(frozen=True)
+class DepartmentChatMemberSyncItem:
+    """One worker membership change proposed for a department chat binding."""
+
+    worker_id: str
+    action: DepartmentChatMemberSyncAction
+    reason: str = ""
+
+    def __post_init__(self) -> None:
+        _validate_worker(self.worker_id, "worker_id")
+        object.__setattr__(self, "action", _sync_action(self.action))
+        _string_value(self.reason, "reason")
+
+
+@dataclass(frozen=True)
+class DepartmentChatMemberSyncPlan:
+    """Auditable membership update plan; callers decide when to apply it."""
+
+    binding_id: str
+    status: DepartmentChatPlanStatus
+    items: tuple[DepartmentChatMemberSyncItem, ...] = ()
+    reason: str = ""
+
+    def __post_init__(self) -> None:
+        _validate_binding_id(self.binding_id, "binding_id")
+        object.__setattr__(self, "status", _plan_status(self.status))
+        object.__setattr__(self, "items", tuple(self.items))
+        _string_value(self.reason, "reason")
+
+
+@dataclass(frozen=True)
+class DepartmentChatBindingPlan:
+    """Result of planning a department or team default chat binding."""
+
+    status: DepartmentChatPlanStatus
+    binding: DepartmentChatBinding | None = None
+    member_sync_plan: DepartmentChatMemberSyncPlan | None = None
+    reason: str = ""
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "status", _plan_status(self.status))
+        _string_value(self.reason, "reason")
+
+
+class DepartmentChatBindingService:
+    """Plans department chat bindings from organization and registry summaries."""
+
+    def __init__(
+        self,
+        *,
+        worker_lookup: Mapping[str, Any],
+        user_id: str,
+    ) -> None:
+        self.worker_lookup = worker_lookup
+        self.user_id = user_id
+
+    def plan_default_binding(
+        self,
+        *,
+        org_node: OrgNode,
+        thread_id: str,
+        binding_id: str | None = None,
+        existing_binding: DepartmentChatBinding | None = None,
+    ) -> DepartmentChatBindingPlan:
+        """Create a default chat binding plan without mutating router state."""
+        node_error = self._node_unavailable_reason(org_node)
+        if node_error:
+            return DepartmentChatBindingPlan(
+                status=DepartmentChatPlanStatus.REJECTED,
+                reason=node_error,
+            )
+        owner_worker_id = self._owner_worker_id(org_node)
+        if owner_worker_id is None:
+            return DepartmentChatBindingPlan(
+                status=DepartmentChatPlanStatus.NEEDS_REVIEW,
+                reason="organization node requires a worker leader",
+            )
+        expected_workers = tuple(
+            dict.fromkeys((owner_worker_id, *org_node.member_worker_ids))
+        )
+        unavailable = [
+            worker_id
+            for worker_id in expected_workers
+            if not self._worker_can_join(worker_id)
+        ]
+        if unavailable:
+            return DepartmentChatBindingPlan(
+                status=DepartmentChatPlanStatus.REJECTED,
+                reason=f"unavailable worker references: {', '.join(unavailable)}",
+            )
+        binding = DepartmentChatBinding(
+            binding_id=binding_id or f"{org_node.org_node_id}-default",
+            org_node_id=org_node.org_node_id,
+            thread_id=thread_id,
+            binding_type=_default_binding_type_for_node(org_node),
+            owner_worker_id=owner_worker_id,
+            member_worker_ids=expected_workers,
+            required_participants=required_department_chat_participants(self.user_id),
+            parent_summary_targets=(org_node.parent_id,) if org_node.parent_id else (),
+            audit_summary=f"Default chat binding for {org_node.org_node_id}.",
+        )
+        return DepartmentChatBindingPlan(
+            status=DepartmentChatPlanStatus.READY,
+            binding=binding,
+            member_sync_plan=plan_department_chat_member_sync(
+                current_binding=existing_binding,
+                planned_binding=binding,
+            )
+            if existing_binding is not None
+            else None,
+        )
+
+    def validate_binding_participants(
+        self, binding: DepartmentChatBinding, thread: WorkerChatThread
+    ) -> None:
+        """Validate that an existing thread still satisfies a binding."""
+        if not thread_has_required_department_participants(thread):
+            raise DepartmentChatError("department chat thread requires user and main agent")
+        if thread.thread_type not in {
+            ChatThreadType.ORGANIZATION_GROUP,
+            ChatThreadType.PROJECT_GROUP,
+        }:
+            raise DepartmentChatError("department chat binding requires a group thread")
+        worker_participants = {
+            participant.participant_id
+            for participant in thread.participants
+            if participant.kind == ChatParticipantKind.WORKER
+        }
+        missing_workers = [
+            worker_id
+            for worker_id in binding.member_worker_ids
+            if worker_id not in worker_participants
+        ]
+        if missing_workers:
+            raise DepartmentChatError(
+                f"department chat thread is missing workers: {', '.join(missing_workers)}"
+            )
+
+    def _node_unavailable_reason(self, org_node: OrgNode) -> str:
+        if org_node.node_type not in {OrgNodeType.DEPARTMENT, OrgNodeType.TEAM}:
+            return "default chat bindings require a department or team node"
+        if org_node.lifecycle != OrgLifecycleState.ACTIVE:
+            return "default chat bindings require an active organization node"
+        return ""
+
+    def _owner_worker_id(self, org_node: OrgNode) -> str | None:
+        if org_node.leader.kind != OrgLeaderKind.WORKER:
+            return None
+        return org_node.leader.worker_id
+
+    def _worker_can_join(self, worker_id: str) -> bool:
+        record = self.worker_lookup.get(worker_id)
+        status = _worker_status_value(record)
+        return status not in {
+            WorkerLifecycleStatus.ARCHIVED.value,
+            WorkerLifecycleStatus.DELETED.value,
+        } and record is not None
+
+
+def plan_department_chat_member_sync(
+    *,
+    current_binding: DepartmentChatBinding | None,
+    planned_binding: DepartmentChatBinding,
+) -> DepartmentChatMemberSyncPlan:
+    """Compare current and planned members without editing thread history."""
+    if current_binding is None:
+        items = tuple(
+            DepartmentChatMemberSyncItem(
+                worker_id=worker_id,
+                action=DepartmentChatMemberSyncAction.ADD,
+                reason="new default chat member",
+            )
+            for worker_id in planned_binding.member_worker_ids
+        )
+        return DepartmentChatMemberSyncPlan(
+            binding_id=planned_binding.binding_id,
+            status=DepartmentChatPlanStatus.READY,
+            items=items,
+        )
+    if current_binding.state in {
+        DepartmentChatBindingState.CLOSED,
+        DepartmentChatBindingState.ARCHIVED,
+    }:
+        return DepartmentChatMemberSyncPlan(
+            binding_id=current_binding.binding_id,
+            status=DepartmentChatPlanStatus.NEEDS_REVIEW,
+            reason="closed or archived bindings require explicit reopening approval",
+        )
+    current_members = set(current_binding.member_worker_ids)
+    planned_members = set(planned_binding.member_worker_ids)
+    items = []
+    for worker_id in sorted(planned_members - current_members):
+        items.append(
+            DepartmentChatMemberSyncItem(
+                worker_id=worker_id,
+                action=DepartmentChatMemberSyncAction.ADD,
+                reason="organization member added",
+            )
+        )
+    for worker_id in sorted(current_members & planned_members):
+        items.append(
+            DepartmentChatMemberSyncItem(
+                worker_id=worker_id,
+                action=DepartmentChatMemberSyncAction.KEEP,
+                reason="organization member retained",
+            )
+        )
+    for worker_id in sorted(current_members - planned_members):
+        items.append(
+            DepartmentChatMemberSyncItem(
+                worker_id=worker_id,
+                action=DepartmentChatMemberSyncAction.REMOVE,
+                reason="organization member removed",
+            )
+        )
+    return DepartmentChatMemberSyncPlan(
+        binding_id=current_binding.binding_id,
+        status=DepartmentChatPlanStatus.READY,
+        items=tuple(items),
+    )
 
 
 _BINDING_FIELDS = {
@@ -318,6 +559,55 @@ def _binding_state(value: DepartmentChatBindingState | str) -> DepartmentChatBin
         return DepartmentChatBindingState(raw)
     except ValueError as exc:
         raise DepartmentChatError(f"Unknown department chat binding state: {raw!r}") from exc
+
+
+def _sync_action(
+    value: DepartmentChatMemberSyncAction | str,
+) -> DepartmentChatMemberSyncAction:
+    if isinstance(value, DepartmentChatMemberSyncAction):
+        return value
+    raw = _require_string(value, "action")
+    try:
+        return DepartmentChatMemberSyncAction(raw)
+    except ValueError as exc:
+        raise DepartmentChatError(f"Unknown department chat sync action: {raw!r}") from exc
+
+
+def _plan_status(value: DepartmentChatPlanStatus | str) -> DepartmentChatPlanStatus:
+    if isinstance(value, DepartmentChatPlanStatus):
+        return value
+    raw = _require_string(value, "status")
+    try:
+        return DepartmentChatPlanStatus(raw)
+    except ValueError as exc:
+        raise DepartmentChatError(f"Unknown department chat plan status: {raw!r}") from exc
+
+
+def _default_binding_type_for_node(org_node: OrgNode) -> DepartmentChatBindingType:
+    if org_node.node_type == OrgNodeType.DEPARTMENT:
+        return DepartmentChatBindingType.DEPARTMENT_DEFAULT
+    if org_node.node_type == OrgNodeType.TEAM:
+        return DepartmentChatBindingType.TEAM_DEFAULT
+    raise DepartmentChatError("default chat bindings require a department or team node")
+
+
+def _worker_status_value(worker_record: Any) -> str | None:
+    if isinstance(worker_record, WorkerLifecycleStatus):
+        return worker_record.value
+    if isinstance(worker_record, str):
+        return worker_record or None
+    status = getattr(worker_record, "status", None)
+    if isinstance(status, WorkerLifecycleStatus):
+        return status.value
+    if isinstance(status, str):
+        return status
+    if isinstance(worker_record, Mapping):
+        raw_status = worker_record.get("status")
+        if isinstance(raw_status, WorkerLifecycleStatus):
+            return raw_status.value
+        if isinstance(raw_status, str):
+            return raw_status
+    return None
 
 
 def _validate_binding_id(value: str, field_name: str) -> str:
