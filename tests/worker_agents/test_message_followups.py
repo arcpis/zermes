@@ -165,3 +165,20 @@ def test_timeout_policy_validates_non_negative_values():
         assert "non-negative" in str(exc)
     else:
         raise AssertionError("negative timeout should be rejected")
+
+
+def test_followup_summary_keeps_low_sensitivity_fields_only():
+    router, _ = _router_with_frontend_mention()
+    router.apply_mention_timeouts(
+        thread_id="thread-1", now="2026-05-20T00:31:00Z"
+    )
+    summary = router.summarize_delivery_followups(thread_id="thread-1")[0]
+
+    serialized = repr(summary)
+
+    assert "frontend" in serialized
+    assert "raw_transcript" not in serialized
+    assert "private_memory" not in serialized
+    assert "credentials" not in serialized
+    assert "environment" not in serialized
+    assert "stdout" not in serialized

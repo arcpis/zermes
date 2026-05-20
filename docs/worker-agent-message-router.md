@@ -52,6 +52,52 @@ The service does not call runtime adapters or task executors. Later runtime
 adapter integration should consume routed envelopes and write back messages,
 requests, results, or artifact summaries through this boundary.
 
+## Mentions
+
+Mention handling is implemented in `worker_agents.message_mentions` and exposed
+through `MessageRouter.append_mention_message`.
+
+A mention is a directed responsibility signal, not a task execution request.
+The router records one delivery state per resolved target. Mention targets can
+refer to workers, departments, teams, or organization nodes. Department and team
+mentions route to the node's worker leader by default; missing, inactive,
+ambiguous, or ownerless targets are recorded as failed resolution results
+instead of being silently dropped.
+
+Supported mention delivery states include pending, seen, public replied, silent
+acknowledged, no response needed, rejected, delegated, deferred, internal todo,
+timed out, and failed. A worker may acknowledge or defer a mention without
+posting a public reply. Internal todo means follow-up tracking only; it does not
+create `WorkerTask` state or start a runtime adapter.
+
+## Broadcasts
+
+Broadcast handling is implemented in `worker_agents.message_broadcasts` and
+exposed through `MessageRouter.append_broadcast_message`.
+
+A broadcast is low-sensitivity context synchronization. It can target the
+current thread, a department, a team, an organization node, or explicit workers
+already present in the managed thread. The default organization routing is
+conservative: department, team, and organization-node broadcasts route to the
+worker leader rather than expanding to every member.
+
+Broadcast delivery states are delivered, seen, handled, ignored, and failed.
+Informational broadcasts do not require every worker to reply or even mark seen.
+Important and requires-ack broadcasts can appear in main-agent follow-up
+summaries, but this layer does not implement UI reminders or confirmation
+cards.
+
+## Follow-Up Summaries
+
+Follow-up summaries are implemented in `worker_agents.message_followups`.
+`MessageRouter.apply_mention_timeouts` marks eligible open mention deliveries as
+timed out, and `MessageRouter.summarize_delivery_followups` returns
+low-sensitivity items for main-agent review.
+
+Timeout scans are idempotent and only update tracking records. They do not send
+reminder messages, create tasks, call workers, write memory, or invoke external
+adapters.
+
 ## Summaries
 
 Use `summarize_chat_thread` and `summarize_message` for prompt context, audit,
@@ -62,6 +108,11 @@ sensitivity flags.
 Summaries intentionally exclude full transcripts, private worker memory,
 department memory, tool credentials, environment variables, raw external agent
 stdout/stderr, and runtime task state.
+
+Mention, broadcast, and follow-up summaries follow the same low-sensitivity
+rule. They store ids, target summaries, delivery states, timestamps, and audit
+summaries, not raw transcripts, private memory, credentials, environment
+variables, or external adapter output.
 
 ## Storage Boundary
 
@@ -80,13 +131,14 @@ state should live under install data:
 
 Deleting runtime `data/` must not delete worker identity, organization
 structure, important thread summaries, or retained manifest references.
+Important mention and broadcast audit summaries should follow the same boundary:
+long-lived summaries belong under profile home, while raw event logs and
+temporary tracking details belong under runtime data.
 
 ## Future Layers
 
 The next organization-chat layers build on this router:
 
-- `@` and broadcast handling add recipient expansion, handled outcomes, and
-  timeout tracking.
 - Department chat binding connects organization nodes to default group threads
   and enforces single-worker department fallbacks.
 - Runtime adapters receive and emit normalized messages through the router
