@@ -210,6 +210,7 @@ class MessageRouter:
 
     threads: dict[str, WorkerChatThread] = field(default_factory=dict)
     messages: dict[str, list[WorkerMessageEnvelope]] = field(default_factory=dict)
+    mention_deliveries: dict[str, list[Any]] = field(default_factory=dict)
 
     def create_direct_thread(
         self,
@@ -278,6 +279,7 @@ class MessageRouter:
             raise MessageRouterError(f"chat thread already exists: {thread.thread_id!r}")
         self.threads[thread.thread_id] = thread
         self.messages[thread.thread_id] = []
+        self.mention_deliveries[thread.thread_id] = []
         return thread
 
     def append_message(self, message: WorkerMessageEnvelope) -> WorkerMessageEnvelope:
@@ -286,6 +288,60 @@ class MessageRouter:
         validate_message_route(thread, message)
         self.messages[message.thread_id].append(message)
         return message
+
+    def append_mention_message(
+        self,
+        *,
+        message: WorkerMessageEnvelope,
+        resolved_targets: tuple[Any, ...],
+        deadline_at: str | None = None,
+    ) -> tuple[Any, ...]:
+        """Append a mention message and create per-target delivery records."""
+        if message.message_type != ChatMessageType.MENTION:
+            raise MessageRouterError("mention deliveries require a mention message")
+        self.append_message(message)
+        from .message_mentions import create_mention_delivery_record
+
+        records = tuple(
+            create_mention_delivery_record(
+                delivery_id=f"{message.message_id}-mention-{index + 1}",
+                message_id=message.message_id,
+                thread_id=message.thread_id,
+                mentioned_target=resolved,
+                created_at=message.created_at,
+                deadline_at=deadline_at,
+            )
+            for index, resolved in enumerate(resolved_targets)
+        )
+        self.mention_deliveries[message.thread_id].extend(records)
+        return records
+
+    def update_mention_delivery_status(
+        self,
+        *,
+        thread_id: str,
+        delivery_id: str,
+        update: Any,
+    ) -> Any:
+        """Update one mention delivery without changing the message envelope."""
+        self._require_thread(thread_id)
+        from .message_mentions import update_mention_delivery_record
+
+        records = self.mention_deliveries.get(thread_id)
+        if records is None:
+            raise MessageRouterError(f"chat thread does not exist: {thread_id!r}")
+        for index, record in enumerate(records):
+            if record.delivery_id != delivery_id:
+                continue
+            updated = update_mention_delivery_record(record, update)
+            records[index] = updated
+            return updated
+        raise MessageRouterError(f"mention delivery does not exist: {delivery_id!r}")
+
+    def get_mention_deliveries(self, thread_id: str) -> tuple[Any, ...]:
+        """Return tracked mention deliveries for one thread."""
+        self._require_thread(thread_id)
+        return tuple(self.mention_deliveries[thread_id])
 
     def update_delivery_status(
         self,

@@ -17,6 +17,7 @@ from .organization import (
 )
 from .profile import WorkerProfileError, validate_worker_id
 from .registry import WorkerLifecycleStatus
+from .storage.safe_paths import validate_single_path_segment
 
 
 MESSAGE_MENTION_SCHEMA_VERSION = 1
@@ -47,6 +48,33 @@ class MentionResolutionStatus(StrEnum):
     INACTIVE = "inactive"
     MISSING_OWNER = "missing_owner"
     INVALID = "invalid"
+
+
+class MentionDeliveryStatus(StrEnum):
+    """Per-recipient handling state for one mention delivery."""
+
+    PENDING = "pending"
+    SEEN = "seen"
+    PUBLIC_REPLIED = "public_replied"
+    SILENT_ACK = "silent_ack"
+    NO_RESPONSE_NEEDED = "no_response_needed"
+    REJECTED = "rejected"
+    DELEGATED = "delegated"
+    DEFERRED = "deferred"
+    INTERNAL_TODO = "internal_todo"
+    TIMED_OUT = "timed_out"
+    FAILED = "failed"
+
+
+_MENTION_TERMINAL_STATUSES = {
+    MentionDeliveryStatus.PUBLIC_REPLIED,
+    MentionDeliveryStatus.SILENT_ACK,
+    MentionDeliveryStatus.NO_RESPONSE_NEEDED,
+    MentionDeliveryStatus.REJECTED,
+    MentionDeliveryStatus.DELEGATED,
+    MentionDeliveryStatus.TIMED_OUT,
+    MentionDeliveryStatus.FAILED,
+}
 
 
 @dataclass(frozen=True)
@@ -90,6 +118,157 @@ class MentionResolvedTarget:
             raise MessageRouterError(
                 f"Unsupported mention schema_version: {self.schema_version!r}"
             )
+
+
+@dataclass(frozen=True)
+class MentionDeliveryRecord:
+    """Tracked delivery and handling state for one resolved mention target."""
+
+    delivery_id: str
+    message_id: str
+    thread_id: str
+    mentioned_target: MentionResolvedTarget
+    resolved_recipient: ChatParticipantRef | None
+    status: MentionDeliveryStatus = MentionDeliveryStatus.PENDING
+    created_at: str | None = None
+    updated_at: str | None = None
+    deadline_at: str | None = None
+    reply_message_id: str | None = None
+    delegated_to: ChatParticipantRef | None = None
+    status_summary: str = ""
+    audit_summary: str = ""
+    schema_version: int = MESSAGE_MENTION_SCHEMA_VERSION
+
+    def __post_init__(self) -> None:
+        _validate_mention_id(self.delivery_id, "delivery_id")
+        _validate_mention_id(self.message_id, "message_id")
+        _validate_mention_id(self.thread_id, "thread_id")
+        object.__setattr__(self, "status", _delivery_status(self.status))
+        _validate_optional_string(self.created_at, "created_at")
+        _validate_optional_string(self.updated_at, "updated_at")
+        _validate_optional_string(self.deadline_at, "deadline_at")
+        _validate_optional_string(self.reply_message_id, "reply_message_id")
+        _validate_string(self.status_summary, "status_summary")
+        _validate_string(self.audit_summary, "audit_summary")
+        if self.schema_version != MESSAGE_MENTION_SCHEMA_VERSION:
+            raise MessageRouterError(
+                f"Unsupported mention schema_version: {self.schema_version!r}"
+            )
+        if self.status == MentionDeliveryStatus.PUBLIC_REPLIED:
+            _validate_mention_id(
+                _require_string(self.reply_message_id, "reply_message_id"),
+                "reply_message_id",
+            )
+        if self.status == MentionDeliveryStatus.DELEGATED and self.delegated_to is None:
+            raise MessageRouterError("delegated mention status requires delegated_to")
+        if self.status == MentionDeliveryStatus.PENDING and self.resolved_recipient is None:
+            raise MessageRouterError("pending mention delivery requires a recipient")
+
+
+@dataclass(frozen=True)
+class MentionDeliveryUpdate:
+    """Safe status update payload for one mention delivery."""
+
+    status: MentionDeliveryStatus
+    actor: ChatParticipantRef
+    updated_at: str | None = None
+    status_summary: str = ""
+    audit_summary: str = ""
+    reply_message_id: str | None = None
+    delegated_to: ChatParticipantRef | None = None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "status", _delivery_status(self.status))
+        _validate_optional_string(self.updated_at, "updated_at")
+        _validate_optional_string(self.reply_message_id, "reply_message_id")
+        _validate_string(self.status_summary, "status_summary")
+        _validate_string(self.audit_summary, "audit_summary")
+
+
+def create_mention_delivery_record(
+    *,
+    delivery_id: str,
+    message_id: str,
+    thread_id: str,
+    mentioned_target: MentionResolvedTarget,
+    created_at: str | None = None,
+    deadline_at: str | None = None,
+) -> MentionDeliveryRecord:
+    """Create one delivery record from a resolution result."""
+    if (
+        mentioned_target.status == MentionResolutionStatus.RESOLVED
+        and mentioned_target.recipient_ref is not None
+    ):
+        return MentionDeliveryRecord(
+            delivery_id=delivery_id,
+            message_id=message_id,
+            thread_id=thread_id,
+            mentioned_target=mentioned_target,
+            resolved_recipient=mentioned_target.recipient_ref,
+            status=MentionDeliveryStatus.PENDING,
+            created_at=created_at,
+            deadline_at=deadline_at,
+            audit_summary="Mention target resolved and queued for handling.",
+        )
+    return MentionDeliveryRecord(
+        delivery_id=delivery_id,
+        message_id=message_id,
+        thread_id=thread_id,
+        mentioned_target=mentioned_target,
+        resolved_recipient=None,
+        status=MentionDeliveryStatus.FAILED,
+        created_at=created_at,
+        updated_at=created_at,
+        status_summary=mentioned_target.failure_reason,
+        audit_summary="Mention target could not be routed.",
+    )
+
+
+def update_mention_delivery_record(
+    record: MentionDeliveryRecord, update: MentionDeliveryUpdate
+) -> MentionDeliveryRecord:
+    """Return a mention delivery with an authorized status update applied."""
+    _validate_mention_status_actor(record, update.actor)
+    return MentionDeliveryRecord(
+        delivery_id=record.delivery_id,
+        message_id=record.message_id,
+        thread_id=record.thread_id,
+        mentioned_target=record.mentioned_target,
+        resolved_recipient=record.resolved_recipient,
+        status=update.status,
+        created_at=record.created_at,
+        updated_at=update.updated_at,
+        deadline_at=record.deadline_at,
+        reply_message_id=update.reply_message_id,
+        delegated_to=update.delegated_to,
+        status_summary=update.status_summary,
+        audit_summary=update.audit_summary,
+    )
+
+
+def is_mention_delivery_open(record: MentionDeliveryRecord) -> bool:
+    """Return whether a delivery still needs handling or follow-up."""
+    return record.status not in _MENTION_TERMINAL_STATUSES
+
+
+def mention_delivery_record_to_dict(record: MentionDeliveryRecord) -> dict[str, Any]:
+    """Return a stable low-sensitivity mention delivery representation."""
+    return {
+        "delivery_id": record.delivery_id,
+        "message_id": record.message_id,
+        "thread_id": record.thread_id,
+        "schema_version": record.schema_version,
+        "mentioned_target": mention_resolved_target_to_dict(record.mentioned_target),
+        "resolved_recipient": _participant_to_dict(record.resolved_recipient),
+        "status": record.status.value,
+        "created_at": record.created_at,
+        "updated_at": record.updated_at,
+        "deadline_at": record.deadline_at,
+        "reply_message_id": record.reply_message_id,
+        "delegated_to": _participant_to_dict(record.delegated_to),
+        "status_summary": record.status_summary,
+        "audit_summary": record.audit_summary,
+    }
 
 
 def resolve_mention_targets(
@@ -350,6 +529,50 @@ def _failed(
     )
 
 
+def _validate_mention_status_actor(
+    record: MentionDeliveryRecord, actor: ChatParticipantRef
+) -> None:
+    if actor.kind == ChatParticipantKind.MAIN_AGENT:
+        return
+    if record.resolved_recipient is not None and actor == record.resolved_recipient:
+        return
+    raise MessageRouterError("actor cannot update this mention delivery")
+
+
+def _delivery_status(value: MentionDeliveryStatus | str) -> MentionDeliveryStatus:
+    if isinstance(value, MentionDeliveryStatus):
+        return value
+    try:
+        return MentionDeliveryStatus(value)
+    except ValueError as exc:
+        raise MessageRouterError(
+            f"Unknown mention delivery status: {value!r}"
+        ) from exc
+
+
+def _validate_mention_id(value: str, field_name: str) -> str:
+    try:
+        return validate_single_path_segment(value, field_name)
+    except ValueError as exc:
+        raise MessageRouterError(str(exc)) from exc
+
+
+def _validate_optional_string(value: Any, field_name: str) -> None:
+    if value is not None:
+        _validate_string(value, field_name)
+
+
+def _validate_string(value: Any, field_name: str) -> None:
+    if not isinstance(value, str):
+        raise MessageRouterError(f"{field_name} must be a string")
+
+
+def _require_string(value: Any, field_name: str) -> str:
+    if not isinstance(value, str) or not value:
+        raise MessageRouterError(f"{field_name} must be a non-empty string")
+    return value
+
+
 def _target_kind(value: MentionTargetKind | str) -> MentionTargetKind:
     if isinstance(value, MentionTargetKind):
         return value
@@ -379,4 +602,3 @@ def _participant_to_dict(participant: ChatParticipantRef | None) -> dict[str, st
         "kind": participant.kind.value,
         "participant_id": participant.participant_id,
     }
-
