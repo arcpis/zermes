@@ -153,6 +153,12 @@ from .task_state import (
     WorkerTaskState,
     WorkerTaskStatus,
 )
+from .runtime_boundary import (
+    AgentRuntimeBoundaryError,
+    AgentRuntimeLifecycle,
+    AgentRuntimePersona,
+    AgentRuntimeRole,
+)
 
 __all__ = [
     "WORKER_PROFILE_FILE_NAME",
@@ -168,6 +174,10 @@ __all__ = [
     "ChatParticipantRef",
     "ChatRecipientScope",
     "ChatThreadType",
+    "AgentRuntimeBoundaryError",
+    "AgentRuntimeLifecycle",
+    "AgentRuntimePersona",
+    "AgentRuntimeRole",
     "CleanupExecutionResult",
     "CleanupExecutor",
     "CleanupPlan",
