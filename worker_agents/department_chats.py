@@ -61,6 +61,14 @@ class DepartmentChatPlanStatus(StrEnum):
     REJECTED = "rejected"
 
 
+class DepartmentChatFallbackKind(StrEnum):
+    """Alternative collaboration surface for a single-worker department."""
+
+    DIRECT_THREAD = "direct_thread"
+    PARENT_GROUP_THREAD = "parent_group_thread"
+    DIRECT_THREAD_PLAN = "direct_thread_plan"
+
+
 @dataclass(frozen=True)
 class DepartmentChatBinding:
     """Low-sensitivity link between an organization node and a chat thread."""
@@ -160,11 +168,53 @@ class DepartmentChatBindingPlan:
 
     status: DepartmentChatPlanStatus
     binding: DepartmentChatBinding | None = None
+    fallback_target: DepartmentChatFallbackTarget | None = None
     member_sync_plan: DepartmentChatMemberSyncPlan | None = None
     reason: str = ""
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "status", _plan_status(self.status))
+        _string_value(self.reason, "reason")
+
+
+@dataclass(frozen=True)
+class DepartmentChatFallbackTarget:
+    """Auditable fallback when a department group chat should not exist."""
+
+    fallback_kind: DepartmentChatFallbackKind
+    worker_id: str | None = None
+    thread_id: str | None = None
+    parent_org_node_id: str | None = None
+    reason: str = ""
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "fallback_kind", _fallback_kind(self.fallback_kind))
+        if self.worker_id is not None:
+            _validate_worker(self.worker_id, "worker_id")
+        if self.thread_id is not None:
+            _validate_binding_id(self.thread_id, "thread_id")
+        if self.parent_org_node_id is not None:
+            _validate_org_id(self.parent_org_node_id, "parent_org_node_id")
+        _string_value(self.reason, "reason")
+
+
+@dataclass(frozen=True)
+class SingleWorkerDepartmentPlan:
+    """Plan describing how to avoid a redundant one-worker group chat."""
+
+    status: DepartmentChatPlanStatus
+    employee_worker_ids: tuple[str, ...]
+    fallback_target: DepartmentChatFallbackTarget | None = None
+    member_sync_plan: DepartmentChatMemberSyncPlan | None = None
+    reason: str = ""
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "status", _plan_status(self.status))
+        object.__setattr__(
+            self,
+            "employee_worker_ids",
+            _unique_workers(self.employee_worker_ids, "employee_worker_ids"),
+        )
         _string_value(self.reason, "reason")
 
 
@@ -213,6 +263,20 @@ class DepartmentChatBindingService:
             return DepartmentChatBindingPlan(
                 status=DepartmentChatPlanStatus.REJECTED,
                 reason=f"unavailable worker references: {', '.join(unavailable)}",
+            )
+        single_worker_plan = plan_single_worker_department_chat(
+            org_node=org_node,
+            employee_worker_ids=expected_workers,
+            direct_thread_id_by_worker={},
+            parent_thread_id_by_org={},
+            current_binding=existing_binding,
+        )
+        if single_worker_plan.status == DepartmentChatPlanStatus.NEEDS_REVIEW:
+            return DepartmentChatBindingPlan(
+                status=DepartmentChatPlanStatus.NEEDS_REVIEW,
+                fallback_target=single_worker_plan.fallback_target,
+                member_sync_plan=single_worker_plan.member_sync_plan,
+                reason=single_worker_plan.reason,
             )
         binding = DepartmentChatBinding(
             binding_id=binding_id or f"{org_node.org_node_id}-default",
@@ -281,6 +345,102 @@ class DepartmentChatBindingService:
             WorkerLifecycleStatus.ARCHIVED.value,
             WorkerLifecycleStatus.DELETED.value,
         } and record is not None
+
+
+def count_department_chat_employees(*worker_id_groups: tuple[str, ...]) -> tuple[str, ...]:
+    """Return unique worker ids that count as employees in a department chat."""
+    employee_ids: dict[str, None] = {}
+    for group in worker_id_groups:
+        for worker_id in group:
+            _validate_worker(worker_id, "employee_worker_ids")
+            employee_ids[worker_id] = None
+    return tuple(employee_ids)
+
+
+def plan_single_worker_department_chat(
+    *,
+    org_node: OrgNode,
+    employee_worker_ids: tuple[str, ...],
+    direct_thread_id_by_worker: Mapping[str, str],
+    parent_thread_id_by_org: Mapping[str, str],
+    current_binding: DepartmentChatBinding | None = None,
+) -> SingleWorkerDepartmentPlan:
+    """Choose a non-group fallback for departments with fewer than two employees."""
+    employees = count_department_chat_employees(employee_worker_ids)
+    if len(employees) >= 2:
+        return SingleWorkerDepartmentPlan(
+            status=DepartmentChatPlanStatus.READY,
+            employee_worker_ids=employees,
+            reason="department has enough employee participants for a group chat",
+        )
+    if not employees:
+        return SingleWorkerDepartmentPlan(
+            status=DepartmentChatPlanStatus.NEEDS_REVIEW,
+            employee_worker_ids=employees,
+            reason="department has no employee participants",
+        )
+    worker_id = employees[0]
+    sync_plan = None
+    if current_binding is not None and current_binding.state in {
+        DepartmentChatBindingState.ACTIVE,
+        DepartmentChatBindingState.PENDING_UPDATE,
+    }:
+        sync_plan = DepartmentChatMemberSyncPlan(
+            binding_id=current_binding.binding_id,
+            status=DepartmentChatPlanStatus.NEEDS_REVIEW,
+            items=(
+                DepartmentChatMemberSyncItem(
+                    worker_id=worker_id,
+                    action=DepartmentChatMemberSyncAction.REVIEW,
+                    reason="single-worker department should use fallback chat",
+                ),
+            ),
+            reason="close group entry and preserve summaries before migrating",
+        )
+    return SingleWorkerDepartmentPlan(
+        status=DepartmentChatPlanStatus.NEEDS_REVIEW,
+        employee_worker_ids=employees,
+        fallback_target=_single_worker_fallback(
+            org_node=org_node,
+            worker_id=worker_id,
+            direct_thread_id_by_worker=direct_thread_id_by_worker,
+            parent_thread_id_by_org=parent_thread_id_by_org,
+        ),
+        member_sync_plan=sync_plan,
+        reason="single-worker departments should not create group chats",
+    )
+
+
+def _single_worker_fallback(
+    *,
+    org_node: OrgNode,
+    worker_id: str,
+    direct_thread_id_by_worker: Mapping[str, str],
+    parent_thread_id_by_org: Mapping[str, str],
+) -> DepartmentChatFallbackTarget:
+    direct_thread_id = direct_thread_id_by_worker.get(worker_id)
+    if direct_thread_id:
+        return DepartmentChatFallbackTarget(
+            fallback_kind=DepartmentChatFallbackKind.DIRECT_THREAD,
+            worker_id=worker_id,
+            thread_id=direct_thread_id,
+            reason="use existing direct thread for the only employee",
+        )
+    if org_node.parent_id is not None:
+        parent_thread_id = parent_thread_id_by_org.get(org_node.parent_id)
+        if parent_thread_id:
+            return DepartmentChatFallbackTarget(
+                fallback_kind=DepartmentChatFallbackKind.PARENT_GROUP_THREAD,
+                worker_id=worker_id,
+                thread_id=parent_thread_id,
+                parent_org_node_id=org_node.parent_id,
+                reason="use parent group chat with summary-only context",
+            )
+    return DepartmentChatFallbackTarget(
+        fallback_kind=DepartmentChatFallbackKind.DIRECT_THREAD_PLAN,
+        worker_id=worker_id,
+        reason="create or reuse a direct thread for the only employee",
+    )
 
 
 def plan_department_chat_member_sync(
@@ -581,6 +741,16 @@ def _plan_status(value: DepartmentChatPlanStatus | str) -> DepartmentChatPlanSta
         return DepartmentChatPlanStatus(raw)
     except ValueError as exc:
         raise DepartmentChatError(f"Unknown department chat plan status: {raw!r}") from exc
+
+
+def _fallback_kind(value: DepartmentChatFallbackKind | str) -> DepartmentChatFallbackKind:
+    if isinstance(value, DepartmentChatFallbackKind):
+        return value
+    raw = _require_string(value, "fallback_kind")
+    try:
+        return DepartmentChatFallbackKind(raw)
+    except ValueError as exc:
+        raise DepartmentChatError(f"Unknown department chat fallback kind: {raw!r}") from exc
 
 
 def _default_binding_type_for_node(org_node: OrgNode) -> DepartmentChatBindingType:

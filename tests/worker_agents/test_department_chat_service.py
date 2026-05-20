@@ -6,9 +6,12 @@ from worker_agents.department_chats import (
     DepartmentChatBindingState,
     DepartmentChatBindingType,
     DepartmentChatError,
+    DepartmentChatFallbackKind,
     DepartmentChatMemberSyncAction,
     DepartmentChatPlanStatus,
+    count_department_chat_employees,
     plan_department_chat_member_sync,
+    plan_single_worker_department_chat,
     required_department_chat_participants,
 )
 from worker_agents.message_router import (
@@ -206,3 +209,66 @@ def test_member_sync_plan_does_not_reopen_closed_bindings():
 
     assert plan.status == DepartmentChatPlanStatus.NEEDS_REVIEW
     assert "reopening" in plan.reason
+
+
+def test_single_worker_department_does_not_create_group_binding():
+    plan = _service().plan_default_binding(
+        org_node=_node(member_worker_ids=("engineering_lead",)),
+        thread_id="engineering-thread",
+    )
+
+    assert plan.status == DepartmentChatPlanStatus.NEEDS_REVIEW
+    assert plan.binding is None
+    assert plan.fallback_target is not None
+    assert plan.fallback_target.fallback_kind == DepartmentChatFallbackKind.DIRECT_THREAD_PLAN
+    assert plan.fallback_target.worker_id == "engineering_lead"
+
+
+def test_single_worker_rule_uses_existing_direct_thread_first():
+    plan = plan_single_worker_department_chat(
+        org_node=_node(member_worker_ids=("engineering_lead",)),
+        employee_worker_ids=("engineering_lead",),
+        direct_thread_id_by_worker={"engineering_lead": "direct-engineering-lead"},
+        parent_thread_id_by_org={"root": "root-thread"},
+    )
+
+    assert plan.status == DepartmentChatPlanStatus.NEEDS_REVIEW
+    assert plan.fallback_target is not None
+    assert plan.fallback_target.fallback_kind == DepartmentChatFallbackKind.DIRECT_THREAD
+    assert plan.fallback_target.thread_id == "direct-engineering-lead"
+
+
+def test_single_worker_rule_can_use_parent_group_thread():
+    plan = plan_single_worker_department_chat(
+        org_node=_node(member_worker_ids=("engineering_lead",)),
+        employee_worker_ids=("engineering_lead",),
+        direct_thread_id_by_worker={},
+        parent_thread_id_by_org={"root": "root-thread"},
+    )
+
+    assert plan.fallback_target is not None
+    assert plan.fallback_target.fallback_kind == DepartmentChatFallbackKind.PARENT_GROUP_THREAD
+    assert plan.fallback_target.parent_org_node_id == "root"
+
+
+def test_single_worker_rule_deduplicates_leader_and_member():
+    employees = count_department_chat_employees(
+        ("engineering_lead",),
+        ("engineering_lead",),
+    )
+
+    assert employees == ("engineering_lead",)
+
+
+def test_existing_group_that_shrinks_to_single_worker_needs_close_plan():
+    plan = plan_single_worker_department_chat(
+        org_node=_node(member_worker_ids=("engineering_lead",)),
+        employee_worker_ids=("engineering_lead",),
+        direct_thread_id_by_worker={},
+        parent_thread_id_by_org={},
+        current_binding=_binding(member_worker_ids=("engineering_lead", "backend")),
+    )
+
+    assert plan.member_sync_plan is not None
+    assert plan.member_sync_plan.status == DepartmentChatPlanStatus.NEEDS_REVIEW
+    assert plan.member_sync_plan.items[0].action == DepartmentChatMemberSyncAction.REVIEW
