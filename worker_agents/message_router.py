@@ -336,6 +336,74 @@ def load_message_envelope_json(payload: str) -> WorkerMessageEnvelope:
     return message_envelope_from_dict(data)
 
 
+def is_user_present_thread(thread: WorkerChatThread) -> bool:
+    """Return whether a thread includes the user participant required by policy."""
+    return any(
+        participant.kind == ChatParticipantKind.USER for participant in thread.participants
+    )
+
+
+def validate_thread_participants(thread: WorkerChatThread) -> None:
+    """Validate user-present direct and group thread membership rules."""
+    user_count = _participant_count(thread, ChatParticipantKind.USER)
+    main_agent_count = _participant_count(thread, ChatParticipantKind.MAIN_AGENT)
+    worker_count = _participant_count(thread, ChatParticipantKind.WORKER)
+    org_node_count = _participant_count(thread, ChatParticipantKind.ORGANIZATION_NODE)
+
+    if user_count != 1:
+        raise MessageRouterError("chat threads must include exactly one user")
+    if len(set(thread.participants)) != len(thread.participants):
+        raise MessageRouterError("chat thread participants must be unique")
+
+    if thread.thread_type == ChatThreadType.DIRECT:
+        if worker_count != 1:
+            raise MessageRouterError("direct threads must include exactly one worker")
+        if main_agent_count or org_node_count:
+            raise MessageRouterError(
+                "direct threads may only contain the user and one worker"
+            )
+        if not thread.main_agent_visible:
+            raise MessageRouterError("direct threads must remain main-agent visible")
+        return
+
+    if main_agent_count != 1:
+        raise MessageRouterError("group threads must include the main agent")
+    if worker_count + org_node_count < 1:
+        raise MessageRouterError(
+            "group threads must include a worker or organization node"
+        )
+
+
+def validate_message_route(
+    thread: WorkerChatThread, message: WorkerMessageEnvelope
+) -> None:
+    """Validate that a message stays inside a user-present managed thread."""
+    validate_thread_participants(thread)
+    if message.thread_id != thread.thread_id:
+        raise MessageRouterError("message thread_id must match the thread")
+    if message.sender not in thread.participants:
+        raise MessageRouterError("message sender must be a thread participant")
+
+    thread_participants = set(thread.participants)
+    for recipient in message.recipient_scope.participant_refs:
+        if recipient not in thread_participants:
+            raise MessageRouterError("message recipients must be thread participants")
+
+    if (
+        thread.thread_type == ChatThreadType.DIRECT
+        and message.sender.kind == ChatParticipantKind.WORKER
+    ):
+        worker_recipients = [
+            recipient
+            for recipient in message.recipient_scope.participant_refs
+            if recipient.kind == ChatParticipantKind.WORKER
+        ]
+        if worker_recipients:
+            raise MessageRouterError(
+                "workers cannot directly route messages to other workers"
+            )
+
+
 def _validate_participant_id(
     kind: ChatParticipantKind, participant_id: str
 ) -> None:
@@ -365,6 +433,12 @@ def _validate_router_id(value: str, field_name: str) -> str:
         return validate_single_path_segment(value, field_name)
     except ValueError as exc:
         raise MessageRouterError(str(exc)) from exc
+
+
+def _participant_count(
+    thread: WorkerChatThread, kind: ChatParticipantKind
+) -> int:
+    return sum(1 for participant in thread.participants if participant.kind == kind)
 
 
 def _thread_type(value: ChatThreadType | str) -> ChatThreadType:
