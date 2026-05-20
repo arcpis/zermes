@@ -5,14 +5,22 @@ from pathlib import Path
 import pytest
 
 from worker_agents.storage import (
+    ORGANIZATION_ACTIVE_FILE_NAME,
     TASK_RUNTIME_FILES,
     WorkerAgentProfileStore,
     WorkerAgentRuntimeDataStore,
+    ensure_worker_agents_organization_dir,
     ensure_worker_agents_data_dir,
     ensure_worker_agents_home,
+    get_active_organization_path,
+    get_organization_history_dir,
+    get_organization_proposals_dir,
+    get_worker_agents_organization_dir,
+    get_worker_agents_runtime_organization_dir,
     get_worker_agents_data_dir,
     get_worker_agents_home,
 )
+from worker_agents.storage.safe_paths import validate_single_path_segment
 
 
 def test_worker_agents_home_follows_profile_home(monkeypatch, tmp_path):
@@ -45,6 +53,53 @@ def test_ensure_helpers_create_directories_and_are_idempotent(monkeypatch, tmp_p
     assert ensure_worker_agents_data_dir(install_root=install_root) == data_dir
     assert profile_dir.is_dir()
     assert data_dir.is_dir()
+
+
+def test_organization_paths_are_profile_scoped(monkeypatch, tmp_path):
+    profile_home = tmp_path / "profile"
+    monkeypatch.setenv("HERMES_HOME", str(profile_home))
+
+    organization_dir = get_worker_agents_organization_dir()
+
+    assert organization_dir == profile_home / "worker_agents" / "organization"
+    assert get_active_organization_path() == organization_dir / "active.json"
+    assert get_organization_proposals_dir() == organization_dir / "proposals"
+    assert get_organization_history_dir() == organization_dir / "history"
+
+
+def test_organization_path_initialization_does_not_create_active_tree(
+    monkeypatch, tmp_path
+):
+    profile_home = tmp_path / "profile"
+    monkeypatch.setenv("HERMES_HOME", str(profile_home))
+
+    organization_dir = ensure_worker_agents_organization_dir()
+
+    assert organization_dir.is_dir()
+    assert get_organization_proposals_dir().is_dir()
+    assert get_organization_history_dir().is_dir()
+    assert not (organization_dir / ORGANIZATION_ACTIVE_FILE_NAME).exists()
+
+
+def test_runtime_organization_path_is_separate_from_profile_home(monkeypatch, tmp_path):
+    profile_home = tmp_path / "profile"
+    install_root = tmp_path / "install"
+    monkeypatch.setenv("HERMES_HOME", str(profile_home))
+
+    runtime_organization_dir = get_worker_agents_runtime_organization_dir(
+        install_root=install_root
+    )
+
+    assert runtime_organization_dir == install_root / "data" / "worker_agents" / "organization"
+    assert profile_home not in runtime_organization_dir.parents
+
+
+def test_single_segment_path_guard_rejects_unsafe_summary_ids():
+    assert validate_single_path_segment("proposal-1", "summary id") == "proposal-1"
+
+    for unsafe_id in ("", ".", "..", "../outside", "nested/id", "nested\\id"):
+        with pytest.raises(ValueError, match="single summary id"):
+            validate_single_path_segment(unsafe_id, "summary id")
 
 
 def test_profile_store_initializes_durable_skeleton_without_overwriting(tmp_path):

@@ -3,10 +3,23 @@
 from pathlib import Path
 
 
+def validate_single_path_segment(name: str, field_name: str = "path segment") -> str:
+    """Return ``name`` after rejecting empty, nested, or traversal-like values."""
+    if (
+        not isinstance(name, str)
+        or not name
+        or name in {".", ".."}
+        or "/" in name
+        or "\\" in name
+        or Path(name).name != name
+    ):
+        raise ValueError(f"Expected a single {field_name}, got {name!r}")
+    return name
+
+
 def ensure_single_segment_dir(parent: Path, name: str) -> Path:
     """Create a child directory when ``name`` is exactly one path segment."""
-    if not name or Path(name).name != name:
-        raise ValueError(f"Expected a single path segment, got {name!r}")
+    validate_single_path_segment(name)
     path = parent / name
     path.mkdir(parents=True, exist_ok=True)
     return path
