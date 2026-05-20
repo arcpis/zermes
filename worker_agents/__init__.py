@@ -56,6 +56,7 @@ from .organization import (
     org_node_to_dict,
     org_tree_from_dict,
     org_tree_to_dict,
+    validate_org_tree_references,
 )
 from .storage import (
     WorkerAgentProfileStore,
@@ -138,6 +139,7 @@ __all__ = [
     "org_node_to_dict",
     "org_tree_from_dict",
     "org_tree_to_dict",
+    "validate_org_tree_references",
     "worker_profile_from_dict",
     "worker_profile_to_dict",
 ]

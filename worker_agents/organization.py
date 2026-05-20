@@ -5,13 +5,21 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import Any, Mapping
+from typing import Any, Callable, Mapping
 
 from .profile import WorkerProfileError, validate_worker_id
+from .registry import WorkerLifecycleStatus
 
 
 ORGANIZATION_SCHEMA_VERSION = 1
 MAIN_AGENT_ID = "zermes_main_agent"
+AVAILABLE_ORGANIZATION_WORKER_STATUSES = frozenset(
+    {
+        WorkerLifecycleStatus.REGISTERED.value,
+        WorkerLifecycleStatus.ENABLED.value,
+        WorkerLifecycleStatus.DISABLED.value,
+    }
+)
 
 
 class OrganizationError(ValueError):
@@ -421,6 +429,101 @@ def validate_org_tree_structure(tree: OrgTree) -> None:
             sibling_names.add(child_name)
 
     _validate_tree_has_no_cycles(tree)
+
+
+def validate_org_tree_references(
+    tree: OrgTree,
+    worker_lookup: Mapping[str, Any] | set[str] | Callable[[str], Any],
+) -> None:
+    """Validate that organization worker references point to existing workers.
+
+    The lookup is deliberately read-only and tiny: callers may pass a set of
+    worker ids, a mapping of worker id to status/record, or a callable returning
+    either. This keeps the organization contract independent from profile and
+    registry stores.
+    """
+    for node in tree.nodes.values():
+        _validate_leader_reference(node, worker_lookup)
+        for worker_id in node.member_worker_ids:
+            _require_available_worker(worker_id, worker_lookup, "member_worker_ids")
+        if node.individual_worker_id is not None:
+            _require_available_worker(
+                node.individual_worker_id, worker_lookup, "individual_worker_id"
+            )
+    _validate_sibling_individual_worker_uniqueness(tree)
+
+
+def _validate_leader_reference(
+    node: OrgNode, worker_lookup: Mapping[str, Any] | set[str] | Callable[[str], Any]
+) -> None:
+    if node.leader.kind == OrgLeaderKind.MAIN_AGENT:
+        return
+    if node.leader.kind == OrgLeaderKind.NONE:
+        return
+    if node.leader.worker_id is None:
+        raise OrganizationError(f"node {node.org_node_id!r} has missing leader worker_id")
+    _require_available_worker(node.leader.worker_id, worker_lookup, "leader.worker_id")
+
+
+def _validate_sibling_individual_worker_uniqueness(tree: OrgTree) -> None:
+    for parent in tree.nodes.values():
+        seen_worker_ids: set[str] = set()
+        for child_id in parent.child_ids:
+            child = tree.nodes[child_id]
+            if child.individual_worker_id is None:
+                continue
+            if child.individual_worker_id in seen_worker_ids:
+                raise OrganizationError(
+                    f"worker {child.individual_worker_id!r} appears more than once "
+                    f"under parent {parent.org_node_id!r}"
+                )
+            seen_worker_ids.add(child.individual_worker_id)
+
+
+def _require_available_worker(
+    worker_id: str,
+    worker_lookup: Mapping[str, Any] | set[str] | Callable[[str], Any],
+    field_name: str,
+) -> None:
+    worker_record = _lookup_worker(worker_id, worker_lookup)
+    if worker_record is None or worker_record is False:
+        raise OrganizationError(f"{field_name} references missing worker {worker_id!r}")
+    status = _worker_status_value(worker_record)
+    if status is not None and status not in AVAILABLE_ORGANIZATION_WORKER_STATUSES:
+        raise OrganizationError(
+            f"{field_name} references unavailable worker {worker_id!r}: {status!r}"
+        )
+
+
+def _lookup_worker(
+    worker_id: str, worker_lookup: Mapping[str, Any] | set[str] | Callable[[str], Any]
+) -> Any:
+    if callable(worker_lookup):
+        return worker_lookup(worker_id)
+    if isinstance(worker_lookup, set):
+        return True if worker_id in worker_lookup else None
+    return worker_lookup.get(worker_id)
+
+
+def _worker_status_value(worker_record: Any) -> str | None:
+    if isinstance(worker_record, WorkerLifecycleStatus):
+        return worker_record.value
+    if isinstance(worker_record, str):
+        if worker_record == "":
+            return None
+        return worker_record
+    status = getattr(worker_record, "status", None)
+    if isinstance(status, WorkerLifecycleStatus):
+        return status.value
+    if isinstance(status, str):
+        return status
+    if isinstance(worker_record, Mapping):
+        raw_status = worker_record.get("status")
+        if isinstance(raw_status, WorkerLifecycleStatus):
+            return raw_status.value
+        if isinstance(raw_status, str):
+            return raw_status
+    return None
 
 
 def _validate_tree_has_no_cycles(tree: OrgTree) -> None:
