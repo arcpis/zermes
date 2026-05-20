@@ -175,6 +175,35 @@ class WorkerMessageView:
     sensitive_flags: tuple[str, ...] = ()
 
 
+@dataclass(frozen=True)
+class WorkerChatThreadSummary:
+    """Low-sensitivity thread summary safe for audit, UI, and prompt context."""
+
+    thread_id: str
+    thread_type: ChatThreadType
+    title: str
+    participant_count: int
+    worker_count: int
+    organization_node_count: int
+    main_agent_visible: bool
+    audit_summary: str = ""
+
+
+@dataclass(frozen=True)
+class WorkerMessageSummary:
+    """Low-sensitivity message summary without raw transcript content."""
+
+    message_id: str
+    thread_id: str
+    sender: ChatParticipantRef
+    message_type: ChatMessageType
+    delivery_status: MessageDeliveryStatus
+    visibility: MessageVisibility
+    body_preview: str
+    audit_summary: str
+    sensitive_flags: tuple[str, ...] = ()
+
+
 @dataclass
 class MessageRouter:
     """Small in-memory router for user-present worker chat threads."""
@@ -295,6 +324,17 @@ class MessageRouter:
         """Return stored envelopes for one thread."""
         self._require_thread(thread_id)
         return tuple(self.messages[thread_id])
+
+    def summarize_thread(self, thread_id: str) -> WorkerChatThreadSummary:
+        """Return a low-sensitivity summary for one known thread."""
+        return summarize_chat_thread(self._require_thread(thread_id))
+
+    def summarize_thread_messages(
+        self, thread_id: str
+    ) -> tuple[WorkerMessageSummary, ...]:
+        """Return low-sensitivity message summaries for one known thread."""
+        self._require_thread(thread_id)
+        return tuple(summarize_message(message) for message in self.messages[thread_id])
 
     def get_worker_message_views(
         self, *, thread_id: str, worker_id: str
@@ -472,6 +512,64 @@ def message_envelope_to_dict(message: WorkerMessageEnvelope) -> dict[str, Any]:
         "body_preview": message.body_preview,
         "audit_summary": message.audit_summary,
         "sensitive_flags": list(message.sensitive_flags),
+    }
+
+
+def summarize_chat_thread(thread: WorkerChatThread) -> WorkerChatThreadSummary:
+    """Return a thread summary that excludes transcript and private memory."""
+    return WorkerChatThreadSummary(
+        thread_id=thread.thread_id,
+        thread_type=thread.thread_type,
+        title=thread.title,
+        participant_count=len(thread.participants),
+        worker_count=_participant_count(thread, ChatParticipantKind.WORKER),
+        organization_node_count=_participant_count(
+            thread, ChatParticipantKind.ORGANIZATION_NODE
+        ),
+        main_agent_visible=thread.main_agent_visible,
+        audit_summary=thread.audit_summary,
+    )
+
+
+def summarize_message(message: WorkerMessageEnvelope) -> WorkerMessageSummary:
+    """Return a message summary that keeps only routed low-sensitivity fields."""
+    return WorkerMessageSummary(
+        message_id=message.message_id,
+        thread_id=message.thread_id,
+        sender=message.sender,
+        message_type=message.message_type,
+        delivery_status=message.delivery_status,
+        visibility=message.visibility,
+        body_preview=message.body_preview,
+        audit_summary=message.audit_summary,
+        sensitive_flags=message.sensitive_flags,
+    )
+
+
+def chat_thread_summary_to_dict(summary: WorkerChatThreadSummary) -> dict[str, Any]:
+    return {
+        "thread_id": summary.thread_id,
+        "thread_type": summary.thread_type.value,
+        "title": summary.title,
+        "participant_count": summary.participant_count,
+        "worker_count": summary.worker_count,
+        "organization_node_count": summary.organization_node_count,
+        "main_agent_visible": summary.main_agent_visible,
+        "audit_summary": summary.audit_summary,
+    }
+
+
+def message_summary_to_dict(summary: WorkerMessageSummary) -> dict[str, Any]:
+    return {
+        "message_id": summary.message_id,
+        "thread_id": summary.thread_id,
+        "sender": chat_participant_to_dict(summary.sender),
+        "message_type": summary.message_type.value,
+        "delivery_status": summary.delivery_status.value,
+        "visibility": summary.visibility.value,
+        "body_preview": summary.body_preview,
+        "audit_summary": summary.audit_summary,
+        "sensitive_flags": list(summary.sensitive_flags),
     }
 
 
