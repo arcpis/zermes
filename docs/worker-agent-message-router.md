@@ -143,3 +143,6 @@ The next organization-chat layers build on this router:
   and enforces single-worker department fallbacks.
 - Runtime adapters receive and emit normalized messages through the router
   instead of contacting users or workers directly.
+
+See `docs/worker-agent-department-chats.md` for the department chat binding and
+hierarchical summary boundary.

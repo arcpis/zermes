@@ -102,6 +102,11 @@ Long-term storage, proposal history, message routing, department chat binding,
 department memory, and department skill or tool policy are implemented by later
 worker-agent layers.
 
+Department chat binding is implemented in `worker_agents.department_chats` and
+documented in `docs/worker-agent-department-chats.md`. It binds active
+department or team nodes to user-present group threads without copying worker
+profiles or private memory.
+
 ## Durable Store
 
 `OrganizationStore` in `worker_agents.storage.organization_store` persists
