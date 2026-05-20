@@ -56,6 +56,19 @@ class RuntimeEventType(StrEnum):
     COMPLETED = "completed"
 
 
+class RuntimeErrorCode(StrEnum):
+    """Structured error classes returned by runtime adapters."""
+
+    RETRYABLE = "retryable"
+    NON_RETRYABLE = "non_retryable"
+    PERMISSION_DENIED = "permission_denied"
+    BUDGET_EXCEEDED = "budget_exceeded"
+    ADAPTER_UNHEALTHY = "adapter_unhealthy"
+    OUTPUT_PARSE_ERROR = "output_parse_error"
+    CANCELLED = "cancelled"
+    TIMED_OUT = "timed_out"
+
+
 TERMINAL_RUNTIME_STATES = frozenset(
     {
         RuntimeState.SUCCEEDED,
@@ -229,6 +242,15 @@ def _coerce_runtime_event_type(value: RuntimeEventType | str) -> RuntimeEventTyp
         return RuntimeEventType(raw_value)
     except ValueError as exc:
         raise RuntimeContractError(f"Unknown runtime event_type: {raw_value!r}") from exc
+
+
+def _coerce_runtime_error_code(value: RuntimeErrorCode | str) -> RuntimeErrorCode:
+    raw_value = value.value if isinstance(value, RuntimeErrorCode) else value
+    raw_value = _require_string(raw_value, "error_code")
+    try:
+        return RuntimeErrorCode(raw_value)
+    except ValueError as exc:
+        raise RuntimeContractError(f"Unknown runtime error_code: {raw_value!r}") from exc
 
 
 def _reject_sensitive_fields(value: Any, field_name: str) -> None:
@@ -407,6 +429,176 @@ class RuntimeEvent:
             raise RuntimeContractError(
                 f"{event_type.value} event requires state in: {allowed}"
             )
+
+
+@dataclass(frozen=True)
+class RuntimeArtifactRef:
+    """Reference to an artifact manifest without copying artifact content."""
+
+    manifest_ref: str
+    artifact_type: str
+    summary: str
+    retention_policy_ref: str | None = None
+
+    def __post_init__(self) -> None:
+        _require_string(self.manifest_ref, "manifest_ref")
+        _require_string(self.artifact_type, "artifact_type")
+        _require_string(self.summary, "summary")
+        _optional_string(self.retention_policy_ref, "retention_policy_ref")
+
+
+@dataclass(frozen=True)
+class RuntimeMemoryProposal:
+    """Redacted memory candidate that still requires later review."""
+
+    proposal_id: str
+    target_scope: str
+    redacted_summary: str
+    source_task_id: str
+    review_reason: str
+
+    def __post_init__(self) -> None:
+        _require_string(self.proposal_id, "proposal_id")
+        _require_string(self.target_scope, "target_scope")
+        _require_string(self.redacted_summary, "redacted_summary")
+        validate_task_id(self.source_task_id)
+        _require_string(self.review_reason, "review_reason")
+        _reject_sensitive_fields(runtime_memory_proposal_to_dict(self), "memory_proposal")
+
+
+@dataclass(frozen=True)
+class RuntimeSafetyRequest:
+    """User or main-agent review request produced by a runtime result."""
+
+    request_id: str
+    request_type: str
+    risk_level: str
+    user_visible_summary: str
+    required_approver: str
+    blocking: bool = True
+
+    def __post_init__(self) -> None:
+        _require_string(self.request_id, "request_id")
+        _require_string(self.request_type, "request_type")
+        _require_string(self.risk_level, "risk_level")
+        _require_string(self.user_visible_summary, "user_visible_summary")
+        _require_string(self.required_approver, "required_approver")
+        if not isinstance(self.blocking, bool):
+            raise RuntimeContractError("blocking must be a boolean")
+
+
+@dataclass(frozen=True)
+class RuntimeErrorInfo:
+    """Low-sensitive error summary with an optional middle-data log reference."""
+
+    code: RuntimeErrorCode | str
+    message: str
+    safe_summary: str
+    retryable: bool
+    source: str
+    created_at: str
+    raw_error_ref: str | None = None
+
+    def __post_init__(self) -> None:
+        code = _coerce_runtime_error_code(self.code)
+        object.__setattr__(self, "code", code)
+        _require_string(self.message, "message")
+        _require_string(self.safe_summary, "safe_summary")
+        if not isinstance(self.retryable, bool):
+            raise RuntimeContractError("retryable must be a boolean")
+        _require_string(self.source, "source")
+        _require_string(self.created_at, "created_at")
+        _optional_string(self.raw_error_ref, "raw_error_ref")
+        if code == RuntimeErrorCode.RETRYABLE and not self.retryable:
+            raise RuntimeContractError("retryable error code must set retryable=true")
+        if code in {
+            RuntimeErrorCode.NON_RETRYABLE,
+            RuntimeErrorCode.PERMISSION_DENIED,
+            RuntimeErrorCode.BUDGET_EXCEEDED,
+            RuntimeErrorCode.CANCELLED,
+            RuntimeErrorCode.TIMED_OUT,
+        } and self.retryable:
+            raise RuntimeContractError(f"{code.value} errors must not be retryable")
+        _reject_sensitive_fields(runtime_error_to_dict(self), "runtime_error")
+
+
+@dataclass(frozen=True)
+class RuntimeResult:
+    """Terminal runtime output before result routing writes anywhere durable."""
+
+    request_id: str
+    task_id: str
+    worker_id: str
+    runtime_type: RuntimeType | str
+    final_state: RuntimeState | str
+    started_at: str
+    completed_at: str
+    public_message: str | None = None
+    internal_summary: str | None = None
+    artifact_refs: tuple[RuntimeArtifactRef, ...] = ()
+    memory_proposals: tuple[RuntimeMemoryProposal, ...] = ()
+    department_asset_proposals: tuple[RuntimeMemoryProposal, ...] = ()
+    safety_requests: tuple[RuntimeSafetyRequest, ...] = ()
+    audit_summary: str | None = None
+    error: RuntimeErrorInfo | None = None
+    partial_success: bool = False
+    contract_version: int = RUNTIME_CONTRACT_VERSION
+
+    def __post_init__(self) -> None:
+        _validate_contract_version(self.contract_version)
+        _require_string(self.request_id, "request_id")
+        validate_task_id(self.task_id)
+        validate_worker_id(self.worker_id)
+        object.__setattr__(self, "runtime_type", _coerce_runtime_type(self.runtime_type))
+        final_state = _coerce_runtime_state(self.final_state)
+        object.__setattr__(self, "final_state", final_state)
+        if final_state not in TERMINAL_RUNTIME_STATES:
+            raise RuntimeContractError("runtime result requires a terminal final_state")
+        _require_string(self.started_at, "started_at")
+        _require_string(self.completed_at, "completed_at")
+        _optional_string(self.public_message, "public_message")
+        _optional_string(self.internal_summary, "internal_summary")
+        _optional_string(self.audit_summary, "audit_summary")
+        if not isinstance(self.partial_success, bool):
+            raise RuntimeContractError("partial_success must be a boolean")
+        self._validate_tuple_records("artifact_refs", RuntimeArtifactRef)
+        self._validate_tuple_records("memory_proposals", RuntimeMemoryProposal)
+        self._validate_tuple_records(
+            "department_asset_proposals", RuntimeMemoryProposal
+        )
+        self._validate_tuple_records("safety_requests", RuntimeSafetyRequest)
+        if self.error is not None and not isinstance(self.error, RuntimeErrorInfo):
+            raise RuntimeContractError("error must be a RuntimeErrorInfo")
+        if final_state in {RuntimeState.FAILED, RuntimeState.TIMED_OUT} and self.error is None:
+            raise RuntimeContractError(f"{final_state.value} result requires error")
+        if final_state == RuntimeState.CANCELLED and self.error is None:
+            raise RuntimeContractError("cancelled result requires cancellation error")
+        if not self._has_any_output():
+            raise RuntimeContractError("runtime result requires at least one output field")
+        _reject_sensitive_fields(runtime_result_to_dict(self), "runtime_result")
+
+    def _validate_tuple_records(self, field_name: str, record_type: type) -> None:
+        values = getattr(self, field_name)
+        if not isinstance(values, tuple):
+            raise RuntimeContractError(f"{field_name} must be a tuple")
+        if any(not isinstance(value, record_type) for value in values):
+            raise RuntimeContractError(
+                f"{field_name} must contain {record_type.__name__} records"
+            )
+
+    def _has_any_output(self) -> bool:
+        return any(
+            (
+                self.public_message,
+                self.internal_summary,
+                self.artifact_refs,
+                self.memory_proposals,
+                self.department_asset_proposals,
+                self.safety_requests,
+                self.audit_summary,
+                self.error,
+            )
+        )
 
 
 def validate_runtime_event_sequence(events: tuple[RuntimeEvent, ...]) -> None:
@@ -652,6 +844,264 @@ def dump_runtime_event_json(event: RuntimeEvent) -> str:
 
 def load_runtime_event_json(payload: str) -> RuntimeEvent:
     return runtime_event_from_dict(json.loads(payload))
+
+
+def runtime_artifact_ref_to_dict(ref: RuntimeArtifactRef) -> dict[str, Any]:
+    return {
+        "manifest_ref": ref.manifest_ref,
+        "artifact_type": ref.artifact_type,
+        "summary": ref.summary,
+        "retention_policy_ref": ref.retention_policy_ref,
+    }
+
+
+def runtime_artifact_ref_from_dict(data: Mapping[str, Any]) -> RuntimeArtifactRef:
+    data = _require_mapping(data, "artifact_ref")
+    _reject_unknown_fields(
+        data,
+        {"manifest_ref", "artifact_type", "summary", "retention_policy_ref"},
+        "artifact_ref",
+    )
+    _reject_sensitive_fields(data, "artifact_ref")
+    return RuntimeArtifactRef(
+        manifest_ref=_require_string(data.get("manifest_ref"), "manifest_ref"),
+        artifact_type=_require_string(data.get("artifact_type"), "artifact_type"),
+        summary=_require_string(data.get("summary"), "summary"),
+        retention_policy_ref=_optional_string(
+            data.get("retention_policy_ref"), "retention_policy_ref"
+        ),
+    )
+
+
+def runtime_memory_proposal_to_dict(
+    proposal: RuntimeMemoryProposal,
+) -> dict[str, Any]:
+    return {
+        "proposal_id": proposal.proposal_id,
+        "target_scope": proposal.target_scope,
+        "redacted_summary": proposal.redacted_summary,
+        "source_task_id": proposal.source_task_id,
+        "review_reason": proposal.review_reason,
+    }
+
+
+def runtime_memory_proposal_from_dict(
+    data: Mapping[str, Any],
+) -> RuntimeMemoryProposal:
+    data = _require_mapping(data, "memory_proposal")
+    _reject_unknown_fields(
+        data,
+        {
+            "proposal_id",
+            "target_scope",
+            "redacted_summary",
+            "source_task_id",
+            "review_reason",
+        },
+        "memory_proposal",
+    )
+    _reject_sensitive_fields(data, "memory_proposal")
+    return RuntimeMemoryProposal(
+        proposal_id=_require_string(data.get("proposal_id"), "proposal_id"),
+        target_scope=_require_string(data.get("target_scope"), "target_scope"),
+        redacted_summary=_require_string(
+            data.get("redacted_summary"), "redacted_summary"
+        ),
+        source_task_id=_require_string(data.get("source_task_id"), "source_task_id"),
+        review_reason=_require_string(data.get("review_reason"), "review_reason"),
+    )
+
+
+def runtime_safety_request_to_dict(
+    request: RuntimeSafetyRequest,
+) -> dict[str, Any]:
+    return {
+        "request_id": request.request_id,
+        "request_type": request.request_type,
+        "risk_level": request.risk_level,
+        "user_visible_summary": request.user_visible_summary,
+        "required_approver": request.required_approver,
+        "blocking": request.blocking,
+    }
+
+
+def runtime_safety_request_from_dict(data: Mapping[str, Any]) -> RuntimeSafetyRequest:
+    data = _require_mapping(data, "safety_request")
+    _reject_unknown_fields(
+        data,
+        {
+            "request_id",
+            "request_type",
+            "risk_level",
+            "user_visible_summary",
+            "required_approver",
+            "blocking",
+        },
+        "safety_request",
+    )
+    _reject_sensitive_fields(data, "safety_request")
+    blocking = data.get("blocking", True)
+    if not isinstance(blocking, bool):
+        raise RuntimeContractError("blocking must be a boolean")
+    return RuntimeSafetyRequest(
+        request_id=_require_string(data.get("request_id"), "request_id"),
+        request_type=_require_string(data.get("request_type"), "request_type"),
+        risk_level=_require_string(data.get("risk_level"), "risk_level"),
+        user_visible_summary=_require_string(
+            data.get("user_visible_summary"), "user_visible_summary"
+        ),
+        required_approver=_require_string(
+            data.get("required_approver"), "required_approver"
+        ),
+        blocking=blocking,
+    )
+
+
+def runtime_error_to_dict(error: RuntimeErrorInfo) -> dict[str, Any]:
+    return {
+        "code": error.code.value,
+        "message": error.message,
+        "safe_summary": error.safe_summary,
+        "retryable": error.retryable,
+        "source": error.source,
+        "created_at": error.created_at,
+        "raw_error_ref": error.raw_error_ref,
+    }
+
+
+def runtime_error_from_dict(data: Mapping[str, Any]) -> RuntimeErrorInfo:
+    data = _require_mapping(data, "runtime_error")
+    _reject_unknown_fields(
+        data,
+        {
+            "code",
+            "message",
+            "safe_summary",
+            "retryable",
+            "source",
+            "created_at",
+            "raw_error_ref",
+        },
+        "runtime_error",
+    )
+    _reject_sensitive_fields(data, "runtime_error")
+    retryable = data.get("retryable")
+    if not isinstance(retryable, bool):
+        raise RuntimeContractError("retryable must be a boolean")
+    return RuntimeErrorInfo(
+        code=_coerce_runtime_error_code(data.get("code")),
+        message=_require_string(data.get("message"), "message"),
+        safe_summary=_require_string(data.get("safe_summary"), "safe_summary"),
+        retryable=retryable,
+        source=_require_string(data.get("source"), "source"),
+        created_at=_require_string(data.get("created_at"), "created_at"),
+        raw_error_ref=_optional_string(data.get("raw_error_ref"), "raw_error_ref"),
+    )
+
+
+def runtime_result_to_dict(result: RuntimeResult) -> dict[str, Any]:
+    return {
+        "contract_version": result.contract_version,
+        "request_id": result.request_id,
+        "task_id": result.task_id,
+        "worker_id": result.worker_id,
+        "runtime_type": result.runtime_type.value,
+        "final_state": result.final_state.value,
+        "started_at": result.started_at,
+        "completed_at": result.completed_at,
+        "public_message": result.public_message,
+        "internal_summary": result.internal_summary,
+        "artifact_refs": [
+            runtime_artifact_ref_to_dict(ref) for ref in result.artifact_refs
+        ],
+        "memory_proposals": [
+            runtime_memory_proposal_to_dict(proposal)
+            for proposal in result.memory_proposals
+        ],
+        "department_asset_proposals": [
+            runtime_memory_proposal_to_dict(proposal)
+            for proposal in result.department_asset_proposals
+        ],
+        "safety_requests": [
+            runtime_safety_request_to_dict(request)
+            for request in result.safety_requests
+        ],
+        "audit_summary": result.audit_summary,
+        "error": runtime_error_to_dict(result.error) if result.error else None,
+        "partial_success": result.partial_success,
+    }
+
+
+def runtime_result_from_dict(data: Mapping[str, Any]) -> RuntimeResult:
+    data = _require_mapping(data, "runtime_result")
+    _reject_unknown_fields(
+        data,
+        {
+            "contract_version",
+            "request_id",
+            "task_id",
+            "worker_id",
+            "runtime_type",
+            "final_state",
+            "started_at",
+            "completed_at",
+            "public_message",
+            "internal_summary",
+            "artifact_refs",
+            "memory_proposals",
+            "department_asset_proposals",
+            "safety_requests",
+            "audit_summary",
+            "error",
+            "partial_success",
+        },
+        "runtime_result",
+    )
+    _reject_sensitive_fields(data, "runtime_result")
+    partial_success = data.get("partial_success", False)
+    if not isinstance(partial_success, bool):
+        raise RuntimeContractError("partial_success must be a boolean")
+    return RuntimeResult(
+        contract_version=_validate_contract_version(data.get("contract_version")),
+        request_id=_require_string(data.get("request_id"), "request_id"),
+        task_id=_require_string(data.get("task_id"), "task_id"),
+        worker_id=_require_string(data.get("worker_id"), "worker_id"),
+        runtime_type=_coerce_runtime_type(data.get("runtime_type")),
+        final_state=_coerce_runtime_state(data.get("final_state")),
+        started_at=_require_string(data.get("started_at"), "started_at"),
+        completed_at=_require_string(data.get("completed_at"), "completed_at"),
+        public_message=_optional_string(data.get("public_message"), "public_message"),
+        internal_summary=_optional_string(
+            data.get("internal_summary"), "internal_summary"
+        ),
+        artifact_refs=tuple(
+            runtime_artifact_ref_from_dict(item)
+            for item in data.get("artifact_refs", ())
+        ),
+        memory_proposals=tuple(
+            runtime_memory_proposal_from_dict(item)
+            for item in data.get("memory_proposals", ())
+        ),
+        department_asset_proposals=tuple(
+            runtime_memory_proposal_from_dict(item)
+            for item in data.get("department_asset_proposals", ())
+        ),
+        safety_requests=tuple(
+            runtime_safety_request_from_dict(item)
+            for item in data.get("safety_requests", ())
+        ),
+        audit_summary=_optional_string(data.get("audit_summary"), "audit_summary"),
+        error=runtime_error_from_dict(data["error"]) if data.get("error") else None,
+        partial_success=partial_success,
+    )
+
+
+def dump_runtime_result_json(result: RuntimeResult) -> str:
+    return json.dumps(runtime_result_to_dict(result), ensure_ascii=False, sort_keys=True)
+
+
+def load_runtime_result_json(payload: str) -> RuntimeResult:
+    return runtime_result_from_dict(json.loads(payload))
 
 
 def dump_runtime_request_json(request: RuntimeRequest) -> str:
