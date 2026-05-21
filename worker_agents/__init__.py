@@ -270,6 +270,14 @@ from .temporary_subagents import (
     temporary_subagent_request_to_runtime_request,
     temporary_subagent_result_envelope_to_dict,
 )
+from .temporary_subagent_policy import (
+    TemporarySubagentEffectivePolicy,
+    TemporarySubagentPolicyDecision,
+    TemporarySubagentPolicyError,
+    evaluate_temporary_subagent_policy,
+    temporary_subagent_effective_policy_to_dict,
+    temporary_subagent_policy_decision_to_dict,
+)
 
 __all__ = [
     "WORKER_PROFILE_FILE_NAME",
@@ -366,7 +374,10 @@ __all__ = [
     "SingleWorkerDepartmentPlan",
     "TaskResultRetentionService",
     "TemporarySubagentError",
+    "TemporarySubagentEffectivePolicy",
     "TemporarySubagentProfileOverlay",
+    "TemporarySubagentPolicyDecision",
+    "TemporarySubagentPolicyError",
     "TemporarySubagentRequest",
     "TemporarySubagentResultEnvelope",
     "TemporarySubagentResultReturnPolicy",
@@ -419,6 +430,7 @@ __all__ = [
     "dump_org_node_json",
     "dump_org_tree_json",
     "dump_worker_profile_json",
+    "evaluate_temporary_subagent_policy",
     "ensure_worker_agents_data_dir",
     "ensure_worker_agents_home",
     "get_worker_agents_data_dir",
@@ -466,6 +478,8 @@ __all__ = [
     "validate_thread_participants",
     "thread_has_required_department_participants",
     "temporary_subagent_profile_overlay_to_dict",
+    "temporary_subagent_effective_policy_to_dict",
+    "temporary_subagent_policy_decision_to_dict",
     "temporary_subagent_request_to_dict",
     "temporary_subagent_request_to_runtime_request",
     "temporary_subagent_result_envelope_to_dict",
