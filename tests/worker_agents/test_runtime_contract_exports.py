@@ -1,4 +1,7 @@
 from worker_agents import (
+    InternalWorkerRuntimeContextRequest,
+    InternalWorkerRuntimeRunner,
+    finalize_internal_runtime_result,
     RUNTIME_CONTRACT_VERSION,
     RuntimeContractError,
     RuntimeEvent,
@@ -23,3 +26,13 @@ def test_runtime_contract_is_available_from_worker_agents_package():
 
     assert previous == RuntimeState.QUEUED
     assert next_ == RuntimeState.STARTING
+
+
+def test_internal_runtime_api_is_available_from_worker_agents_package():
+    assert InternalWorkerRuntimeContextRequest.__name__ == (
+        "InternalWorkerRuntimeContextRequest"
+    )
+    assert InternalWorkerRuntimeRunner.__name__ == "InternalWorkerRuntimeRunner"
+    assert finalize_internal_runtime_result.__name__ == (
+        "finalize_internal_runtime_result"
+    )
