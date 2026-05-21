@@ -211,6 +211,13 @@ from .internal_runtime_runner import (
     prepare_internal_worker_runtime_run,
     run_internal_worker_runtime_task,
 )
+from .internal_runtime_task_integration import (
+    InternalWorkerRuntimeTaskIntegrationError,
+    finalize_internal_runtime_result,
+    mark_internal_runtime_started,
+    record_internal_runtime_event,
+    runtime_error_code_to_final_state,
+)
 
 __all__ = [
     "WORKER_PROFILE_FILE_NAME",
@@ -233,6 +240,7 @@ __all__ = [
     "InternalWorkerRuntimeContextRequest",
     "InternalWorkerRuntimeRunner",
     "InternalWorkerRuntimeRunnerError",
+    "InternalWorkerRuntimeTaskIntegrationError",
     "PreparedInternalWorkerRuntimeRun",
     "AgentRuntimeLifecycle",
     "AgentRuntimePersona",
@@ -338,6 +346,10 @@ __all__ = [
     "default_retention_policy",
     "build_internal_worker_runtime_context",
     "prepare_internal_worker_runtime_run",
+    "finalize_internal_runtime_result",
+    "mark_internal_runtime_started",
+    "record_internal_runtime_event",
+    "runtime_error_code_to_final_state",
     "run_internal_worker_runtime_task",
     "dump_chat_thread_json",
     "dump_department_chat_binding_json",
