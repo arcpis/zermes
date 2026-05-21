@@ -1,0 +1,499 @@
+"""Department memory contracts and review-safe storage helpers."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from enum import StrEnum
+from pathlib import Path, PurePosixPath, PureWindowsPath
+from typing import Any, Mapping
+
+from .organization import validate_org_node_id
+
+
+DEPARTMENT_MEMORY_SCHEMA_VERSION = 1
+
+_SENSITIVE_FIELD_NAMES = frozenset(
+    {
+        "api_key",
+        "complete_transcript",
+        "cookie",
+        "credential",
+        "credentials",
+        "env",
+        "environment",
+        "external_raw_log",
+        "external_raw_output",
+        "full_prompt",
+        "full_transcript",
+        "private_memory",
+        "private_memory_text",
+        "raw_output",
+        "raw_stderr",
+        "raw_stdout",
+        "raw_transcript",
+        "refresh_token",
+        "secret",
+        "stderr",
+        "stdout",
+        "token",
+    }
+)
+
+
+class DepartmentMemoryError(ValueError):
+    """Raised when department memory crosses a durable asset boundary."""
+
+
+class DepartmentMemoryKind(StrEnum):
+    """Long-lived knowledge categories owned by a department."""
+
+    RESPONSIBILITY = "responsibility"
+    DELIVERY_STANDARD = "delivery_standard"
+    RETROSPECTIVE = "retrospective"
+    RISK = "risk"
+    COLLABORATION_NORM = "collaboration_norm"
+    PLAYBOOK_NOTE = "playbook_note"
+
+
+class DepartmentMemoryVisibility(StrEnum):
+    """Who may consume a department memory summary."""
+
+    PRIVATE_TO_DEPARTMENT = "private_to_department"
+    INHERITABLE_SUMMARY = "inheritable_summary"
+    ORGANIZATION_SUMMARY = "organization_summary"
+
+
+class DepartmentMemorySensitivity(StrEnum):
+    """Sensitivity labels used before reading or adopting memory."""
+
+    LOW = "low"
+    INTERNAL = "internal"
+    RESTRICTED = "restricted"
+    USER_CONFIRMATION_REQUIRED = "user_confirmation_required"
+
+
+class DepartmentMemoryProposalState(StrEnum):
+    """Review lifecycle for department memory proposals."""
+
+    PENDING = "pending"
+    CHANGES_REQUESTED = "changes_requested"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+    EXPIRED = "expired"
+    SUPERSEDED = "superseded"
+
+
+@dataclass(frozen=True)
+class DepartmentMemoryRecord:
+    """Approved department memory; pending proposals use a separate record."""
+
+    department_id: str
+    memory_id: str
+    kind: DepartmentMemoryKind | str
+    summary: str
+    source_refs: tuple[str, ...] = ()
+    visibility: DepartmentMemoryVisibility | str = (
+        DepartmentMemoryVisibility.PRIVATE_TO_DEPARTMENT
+    )
+    sensitivity: DepartmentMemorySensitivity | str = DepartmentMemorySensitivity.LOW
+    revision: int = 1
+    active: bool = True
+    accepted_at: str | None = None
+    created_at: str | None = None
+    updated_at: str | None = None
+    audit_summary: str = ""
+    schema_version: int = DEPARTMENT_MEMORY_SCHEMA_VERSION
+
+    def __post_init__(self) -> None:
+        _require_schema_version(self.schema_version)
+        validate_org_node_id(self.department_id)
+        _validate_identifier(self.memory_id, "memory_id")
+        object.__setattr__(self, "kind", _memory_kind(self.kind))
+        _require_string(self.summary, "summary")
+        object.__setattr__(
+            self, "visibility", _memory_visibility(self.visibility)
+        )
+        object.__setattr__(
+            self, "sensitivity", _memory_sensitivity(self.sensitivity)
+        )
+        _require_positive_int(self.revision, "revision")
+        if not isinstance(self.active, bool):
+            raise DepartmentMemoryError("active must be a boolean")
+        object.__setattr__(
+            self,
+            "source_refs",
+            tuple(_validate_relative_ref(ref, "source_refs") for ref in self.source_refs),
+        )
+        for value, field_name in (
+            (self.accepted_at, "accepted_at"),
+            (self.created_at, "created_at"),
+            (self.updated_at, "updated_at"),
+        ):
+            if value is not None:
+                _require_string(value, field_name)
+        if not isinstance(self.audit_summary, str):
+            raise DepartmentMemoryError("audit_summary must be a string")
+
+
+@dataclass(frozen=True)
+class DepartmentMemoryProposal:
+    """Pending department memory candidate; it is not an active memory."""
+
+    proposal_id: str
+    department_id: str
+    kind: DepartmentMemoryKind | str
+    candidate_summary: str
+    source_actor: str
+    source_refs: tuple[str, ...] = ()
+    rationale: str = ""
+    source_hash: str | None = None
+    visibility: DepartmentMemoryVisibility | str = (
+        DepartmentMemoryVisibility.PRIVATE_TO_DEPARTMENT
+    )
+    sensitivity: DepartmentMemorySensitivity | str = DepartmentMemorySensitivity.INTERNAL
+    review_requirement: str = "department_lead_or_main_agent"
+    state: DepartmentMemoryProposalState | str = DepartmentMemoryProposalState.PENDING
+    created_at: str | None = None
+    updated_at: str | None = None
+    audit_summary: str = ""
+    schema_version: int = DEPARTMENT_MEMORY_SCHEMA_VERSION
+
+    def __post_init__(self) -> None:
+        _require_schema_version(self.schema_version)
+        _validate_identifier(self.proposal_id, "proposal_id")
+        validate_org_node_id(self.department_id)
+        object.__setattr__(self, "kind", _memory_kind(self.kind))
+        _require_string(self.candidate_summary, "candidate_summary")
+        _require_string(self.source_actor, "source_actor")
+        object.__setattr__(
+            self, "visibility", _memory_visibility(self.visibility)
+        )
+        object.__setattr__(
+            self, "sensitivity", _memory_sensitivity(self.sensitivity)
+        )
+        object.__setattr__(self, "state", _proposal_state(self.state))
+        object.__setattr__(
+            self,
+            "source_refs",
+            tuple(_validate_relative_ref(ref, "source_refs") for ref in self.source_refs),
+        )
+        _require_string(self.review_requirement, "review_requirement")
+        for value, field_name in (
+            (self.rationale, "rationale"),
+            (self.audit_summary, "audit_summary"),
+        ):
+            if not isinstance(value, str):
+                raise DepartmentMemoryError(f"{field_name} must be a string")
+        for value, field_name in (
+            (self.source_hash, "source_hash"),
+            (self.created_at, "created_at"),
+            (self.updated_at, "updated_at"),
+        ):
+            if value is not None:
+                _require_string(value, field_name)
+
+
+def validate_department_memory_payload(payload: Mapping[str, Any]) -> None:
+    """Reject raw, private, or secret-bearing fields before durable storage."""
+
+    _reject_sensitive_payload(payload, "payload")
+
+
+def department_memory_dir(worker_agents_home: str | Path, department_id: str) -> Path:
+    """Return the durable department memory root without creating it."""
+
+    validate_org_node_id(department_id)
+    return (
+        Path(worker_agents_home)
+        / "organization"
+        / "departments"
+        / department_id
+        / "memory"
+    )
+
+
+def department_memory_to_dict(memory: DepartmentMemoryRecord) -> dict[str, Any]:
+    """Return a deterministic JSON-ready active department memory."""
+
+    return {
+        "department_id": memory.department_id,
+        "memory_id": memory.memory_id,
+        "schema_version": memory.schema_version,
+        "kind": memory.kind.value,
+        "summary": memory.summary,
+        "source_refs": list(memory.source_refs),
+        "visibility": memory.visibility.value,
+        "sensitivity": memory.sensitivity.value,
+        "revision": memory.revision,
+        "active": memory.active,
+        "accepted_at": memory.accepted_at,
+        "created_at": memory.created_at,
+        "updated_at": memory.updated_at,
+        "audit_summary": memory.audit_summary,
+    }
+
+
+def department_memory_from_dict(data: Mapping[str, Any]) -> DepartmentMemoryRecord:
+    """Load an active department memory after validating its boundary."""
+
+    data = _require_mapping(data, "department memory")
+    _reject_unknown_fields(data, _MEMORY_FIELDS, "department memory")
+    return DepartmentMemoryRecord(
+        department_id=_require_string(data.get("department_id"), "department_id"),
+        memory_id=_require_string(data.get("memory_id"), "memory_id"),
+        schema_version=data.get("schema_version", DEPARTMENT_MEMORY_SCHEMA_VERSION),
+        kind=_require_string(data.get("kind"), "kind"),
+        summary=_require_string(data.get("summary"), "summary"),
+        source_refs=_string_tuple(data.get("source_refs", ()), "source_refs"),
+        visibility=data.get(
+            "visibility", DepartmentMemoryVisibility.PRIVATE_TO_DEPARTMENT
+        ),
+        sensitivity=data.get("sensitivity", DepartmentMemorySensitivity.LOW),
+        revision=data.get("revision", 1),
+        active=data.get("active", True),
+        accepted_at=_optional_string(data.get("accepted_at"), "accepted_at"),
+        created_at=_optional_string(data.get("created_at"), "created_at"),
+        updated_at=_optional_string(data.get("updated_at"), "updated_at"),
+        audit_summary=_string_value(data.get("audit_summary", ""), "audit_summary"),
+    )
+
+
+def department_memory_proposal_to_dict(
+    proposal: DepartmentMemoryProposal,
+) -> dict[str, Any]:
+    """Return a deterministic JSON-ready department memory proposal."""
+
+    return {
+        "proposal_id": proposal.proposal_id,
+        "department_id": proposal.department_id,
+        "schema_version": proposal.schema_version,
+        "kind": proposal.kind.value,
+        "candidate_summary": proposal.candidate_summary,
+        "source_actor": proposal.source_actor,
+        "source_refs": list(proposal.source_refs),
+        "rationale": proposal.rationale,
+        "source_hash": proposal.source_hash,
+        "visibility": proposal.visibility.value,
+        "sensitivity": proposal.sensitivity.value,
+        "review_requirement": proposal.review_requirement,
+        "state": proposal.state.value,
+        "created_at": proposal.created_at,
+        "updated_at": proposal.updated_at,
+        "audit_summary": proposal.audit_summary,
+    }
+
+
+def department_memory_proposal_from_dict(
+    data: Mapping[str, Any],
+) -> DepartmentMemoryProposal:
+    """Load a department memory proposal after validating its boundary."""
+
+    data = _require_mapping(data, "department memory proposal")
+    _reject_unknown_fields(data, _PROPOSAL_FIELDS, "department memory proposal")
+    return DepartmentMemoryProposal(
+        proposal_id=_require_string(data.get("proposal_id"), "proposal_id"),
+        department_id=_require_string(data.get("department_id"), "department_id"),
+        schema_version=data.get("schema_version", DEPARTMENT_MEMORY_SCHEMA_VERSION),
+        kind=_require_string(data.get("kind"), "kind"),
+        candidate_summary=_require_string(
+            data.get("candidate_summary"), "candidate_summary"
+        ),
+        source_actor=_require_string(data.get("source_actor"), "source_actor"),
+        source_refs=_string_tuple(data.get("source_refs", ()), "source_refs"),
+        rationale=_string_value(data.get("rationale", ""), "rationale"),
+        source_hash=_optional_string(data.get("source_hash"), "source_hash"),
+        visibility=data.get(
+            "visibility", DepartmentMemoryVisibility.PRIVATE_TO_DEPARTMENT
+        ),
+        sensitivity=data.get("sensitivity", DepartmentMemorySensitivity.INTERNAL),
+        review_requirement=_require_string(
+            data.get("review_requirement"), "review_requirement"
+        ),
+        state=data.get("state", DepartmentMemoryProposalState.PENDING),
+        created_at=_optional_string(data.get("created_at"), "created_at"),
+        updated_at=_optional_string(data.get("updated_at"), "updated_at"),
+        audit_summary=_string_value(data.get("audit_summary", ""), "audit_summary"),
+    )
+
+
+_MEMORY_FIELDS = {
+    "department_id",
+    "memory_id",
+    "schema_version",
+    "kind",
+    "summary",
+    "source_refs",
+    "visibility",
+    "sensitivity",
+    "revision",
+    "active",
+    "accepted_at",
+    "created_at",
+    "updated_at",
+    "audit_summary",
+}
+_PROPOSAL_FIELDS = {
+    "proposal_id",
+    "department_id",
+    "schema_version",
+    "kind",
+    "candidate_summary",
+    "source_actor",
+    "source_refs",
+    "rationale",
+    "source_hash",
+    "visibility",
+    "sensitivity",
+    "review_requirement",
+    "state",
+    "created_at",
+    "updated_at",
+    "audit_summary",
+}
+
+
+def _require_schema_version(schema_version: Any) -> None:
+    if schema_version != DEPARTMENT_MEMORY_SCHEMA_VERSION:
+        raise DepartmentMemoryError(
+            f"Unsupported department memory schema_version: {schema_version!r}"
+        )
+
+
+def _require_string(value: Any, field_name: str) -> str:
+    if not isinstance(value, str) or not value:
+        raise DepartmentMemoryError(f"{field_name} must be a non-empty string")
+    return value
+
+
+def _optional_string(value: Any, field_name: str) -> str | None:
+    if value is None:
+        return None
+    return _require_string(value, field_name)
+
+
+def _string_value(value: Any, field_name: str) -> str:
+    if not isinstance(value, str):
+        raise DepartmentMemoryError(f"{field_name} must be a string")
+    return value
+
+
+def _string_tuple(value: Any, field_name: str) -> tuple[str, ...]:
+    if not isinstance(value, (list, tuple)):
+        raise DepartmentMemoryError(f"{field_name} must be a list of strings")
+    result = tuple(value)
+    if any(not isinstance(item, str) or not item for item in result):
+        raise DepartmentMemoryError(f"{field_name} must be a list of non-empty strings")
+    return result
+
+
+def _require_positive_int(value: Any, field_name: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+        raise DepartmentMemoryError(f"{field_name} must be a positive integer")
+    return value
+
+
+def _require_mapping(value: Any, field_name: str) -> Mapping[str, Any]:
+    if not isinstance(value, Mapping):
+        raise DepartmentMemoryError(f"{field_name} must be an object")
+    return value
+
+
+def _reject_unknown_fields(
+    data: Mapping[str, Any], allowed_fields: set[str], field_name: str
+) -> None:
+    unknown_fields = sorted(set(data) - allowed_fields)
+    if unknown_fields:
+        joined = ", ".join(unknown_fields)
+        raise DepartmentMemoryError(f"{field_name} has unknown fields: {joined}")
+
+
+def _validate_identifier(value: str, field_name: str) -> str:
+    _require_string(value, field_name)
+    if value in {".", ".."} or "/" in value or "\\" in value:
+        raise DepartmentMemoryError(f"{field_name} must be a single path segment")
+    return value
+
+
+def _validate_relative_ref(value: str, field_name: str) -> str:
+    _require_string(value, field_name)
+    posix = PurePosixPath(value)
+    windows = PureWindowsPath(value)
+    if (
+        posix.is_absolute()
+        or windows.is_absolute()
+        or ".." in posix.parts
+        or ".." in windows.parts
+    ):
+        raise DepartmentMemoryError(f"{field_name} must stay within allowed storage")
+    return value
+
+
+def _memory_kind(value: DepartmentMemoryKind | str) -> DepartmentMemoryKind:
+    try:
+        return (
+            value
+            if isinstance(value, DepartmentMemoryKind)
+            else DepartmentMemoryKind(value)
+        )
+    except ValueError as exc:
+        raise DepartmentMemoryError(f"Unknown department memory kind: {value!r}") from exc
+
+
+def _memory_visibility(
+    value: DepartmentMemoryVisibility | str,
+) -> DepartmentMemoryVisibility:
+    try:
+        return (
+            value
+            if isinstance(value, DepartmentMemoryVisibility)
+            else DepartmentMemoryVisibility(value)
+        )
+    except ValueError as exc:
+        raise DepartmentMemoryError(
+            f"Unknown department memory visibility: {value!r}"
+        ) from exc
+
+
+def _memory_sensitivity(
+    value: DepartmentMemorySensitivity | str,
+) -> DepartmentMemorySensitivity:
+    try:
+        return (
+            value
+            if isinstance(value, DepartmentMemorySensitivity)
+            else DepartmentMemorySensitivity(value)
+        )
+    except ValueError as exc:
+        raise DepartmentMemoryError(
+            f"Unknown department memory sensitivity: {value!r}"
+        ) from exc
+
+
+def _proposal_state(
+    value: DepartmentMemoryProposalState | str,
+) -> DepartmentMemoryProposalState:
+    try:
+        return (
+            value
+            if isinstance(value, DepartmentMemoryProposalState)
+            else DepartmentMemoryProposalState(value)
+        )
+    except ValueError as exc:
+        raise DepartmentMemoryError(
+            f"Unknown department memory proposal state: {value!r}"
+        ) from exc
+
+
+def _reject_sensitive_payload(value: Any, field_name: str) -> None:
+    if isinstance(value, Mapping):
+        for key, nested in value.items():
+            key_text = str(key)
+            if key_text.lower() in _SENSITIVE_FIELD_NAMES:
+                raise DepartmentMemoryError(
+                    f"{field_name} contains sensitive field: {key_text}"
+                )
+            _reject_sensitive_payload(nested, f"{field_name}.{key_text}")
+        return
+    if isinstance(value, (list, tuple)):
+        for index, nested in enumerate(value):
+            _reject_sensitive_payload(nested, f"{field_name}[{index}]")

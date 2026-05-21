@@ -44,6 +44,22 @@ from .tool_permission_snapshot import (
     compatibility_result_to_dict,
     tool_permission_snapshot_to_dict,
 )
+from .department_memory import (
+    DEPARTMENT_MEMORY_SCHEMA_VERSION,
+    DepartmentMemoryError,
+    DepartmentMemoryKind,
+    DepartmentMemoryProposal,
+    DepartmentMemoryProposalState,
+    DepartmentMemoryRecord,
+    DepartmentMemorySensitivity,
+    DepartmentMemoryVisibility,
+    department_memory_dir,
+    department_memory_from_dict,
+    department_memory_proposal_from_dict,
+    department_memory_proposal_to_dict,
+    department_memory_to_dict,
+    validate_department_memory_payload,
+)
 from .registry import (
     WORKER_REGISTRY_SCHEMA_VERSION,
     WorkerDeleteMode,
