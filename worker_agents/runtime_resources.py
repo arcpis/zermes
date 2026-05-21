@@ -2,11 +2,21 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from collections.abc import Callable
+from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any
 
-from .runtime_contract import RuntimeExecutionBudget
+from .runtime_contract import (
+    RuntimeErrorCode,
+    RuntimeErrorInfo,
+    RuntimeEvent,
+    RuntimeEventType,
+    RuntimeExecutionBudget,
+    RuntimeRequest,
+    RuntimeState,
+    utc_timestamp,
+)
 
 
 class RuntimeResourceError(ValueError):
@@ -36,6 +46,17 @@ class RuntimeBudgetViolationKind(StrEnum):
     TRANSCRIPT_BYTES = "transcript_bytes"
     RETRY_ATTEMPTS = "retry_attempts"
     CONCURRENT_CHILDREN = "concurrent_children"
+
+
+class RuntimeCancellationReason(StrEnum):
+    """Reasons a managed runtime invocation may be stopped."""
+
+    USER_REQUESTED = "user_requested"
+    PARENT_RUNTIME_REQUESTED = "parent_runtime_requested"
+    TIMEOUT = "timeout"
+    BUDGET_EXHAUSTED = "budget_exhausted"
+    SYSTEM_SHUTDOWN = "system_shutdown"
+    SAFETY_STOP = "safety_stop"
 
 
 @dataclass(frozen=True)
@@ -161,6 +182,180 @@ class RuntimeBudgetViolation:
             raise RuntimeResourceError("source_refs must be a non-empty tuple")
 
 
+@dataclass(frozen=True)
+class RuntimeCancellationRequest:
+    """Audit-safe cancellation request for one runtime invocation."""
+
+    reason: RuntimeCancellationReason | str
+    requested_by: str
+    requested_at: str
+    safe_summary: str
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "reason", _coerce_cancellation_reason(self.reason))
+        _require_string(self.requested_by, "requested_by")
+        _require_string(self.requested_at, "requested_at")
+        _require_string(self.safe_summary, "safe_summary")
+
+
+@dataclass(frozen=True)
+class RuntimeCancellationToken:
+    """Immutable cancellation token; cancelling returns a new token."""
+
+    request: RuntimeCancellationRequest | None = None
+    audit_notes: tuple[str, ...] = ()
+
+    @property
+    def cancelled(self) -> bool:
+        """Return whether cancellation has been requested."""
+
+        return self.request is not None
+
+    def cancel(
+        self,
+        reason: RuntimeCancellationReason | str,
+        *,
+        requested_by: str,
+        safe_summary: str,
+        requested_at: str | None = None,
+    ) -> "RuntimeCancellationToken":
+        """Return a token with the first cancellation reason preserved."""
+
+        request = RuntimeCancellationRequest(
+            reason=reason,
+            requested_by=requested_by,
+            requested_at=requested_at or utc_timestamp(),
+            safe_summary=safe_summary,
+        )
+        if self.request is not None:
+            return RuntimeCancellationToken(
+                request=self.request,
+                audit_notes=self.audit_notes + (request.safe_summary,),
+            )
+        return RuntimeCancellationToken(request=request, audit_notes=self.audit_notes)
+
+
+@dataclass(frozen=True)
+class RuntimeDeadline:
+    """Monotonic-time deadline derived from an effective wall-time budget."""
+
+    started_at_seconds: float
+    timeout_seconds: int
+    now: Callable[[], float]
+
+    def __post_init__(self) -> None:
+        _non_negative_float(self.started_at_seconds, "started_at_seconds")
+        _positive_int(self.timeout_seconds, "timeout_seconds")
+        if not callable(self.now):
+            raise RuntimeResourceError("now must be callable")
+
+    @property
+    def expires_at_seconds(self) -> float:
+        """Return the monotonic timestamp at which the runtime times out."""
+
+        return self.started_at_seconds + self.timeout_seconds
+
+    def expired(self) -> bool:
+        """Return whether the current monotonic clock has passed the deadline."""
+
+        return self.now() >= self.expires_at_seconds
+
+    def elapsed_seconds(self) -> int:
+        """Return elapsed whole seconds for audit and usage accounting."""
+
+        return max(0, int(self.now() - self.started_at_seconds))
+
+
+@dataclass(frozen=True)
+class RuntimeControlScope:
+    """Outer resource-control state for one runtime invocation."""
+
+    budget: RuntimeBudgetSnapshot
+    cancellation_token: RuntimeCancellationToken
+    usage: RuntimeResourceUsage = field(default_factory=RuntimeResourceUsage)
+    deadline: RuntimeDeadline | None = None
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.budget, RuntimeBudgetSnapshot):
+            raise RuntimeResourceError("budget must be a RuntimeBudgetSnapshot")
+        if not isinstance(self.cancellation_token, RuntimeCancellationToken):
+            raise RuntimeResourceError(
+                "cancellation_token must be a RuntimeCancellationToken"
+            )
+        if not isinstance(self.usage, RuntimeResourceUsage):
+            raise RuntimeResourceError("usage must be a RuntimeResourceUsage")
+        if self.deadline is not None and not isinstance(self.deadline, RuntimeDeadline):
+            raise RuntimeResourceError("deadline must be a RuntimeDeadline")
+
+    def with_usage_delta(self, delta: RuntimeResourceUsage) -> "RuntimeControlScope":
+        """Return a new scope with cumulative resource usage."""
+
+        if not isinstance(delta, RuntimeResourceUsage):
+            raise RuntimeResourceError("delta must be a RuntimeResourceUsage")
+        return RuntimeControlScope(
+            budget=self.budget,
+            cancellation_token=self.cancellation_token,
+            usage=RuntimeResourceUsage(
+                input_tokens=self.usage.input_tokens + delta.input_tokens,
+                output_tokens=self.usage.output_tokens + delta.output_tokens,
+                cost_units=self.usage.cost_units + delta.cost_units,
+                wall_time_seconds=self.usage.wall_time_seconds + delta.wall_time_seconds,
+                output_bytes=self.usage.output_bytes + delta.output_bytes,
+                transcript_bytes=self.usage.transcript_bytes + delta.transcript_bytes,
+                retry_attempts=self.usage.retry_attempts + delta.retry_attempts,
+                concurrent_children=(
+                    self.usage.concurrent_children + delta.concurrent_children
+                ),
+            ),
+            deadline=self.deadline,
+        )
+
+    def with_cancellation(
+        self,
+        reason: RuntimeCancellationReason | str,
+        *,
+        requested_by: str,
+        safe_summary: str,
+        requested_at: str | None = None,
+    ) -> "RuntimeControlScope":
+        """Return a new scope after requesting cancellation."""
+
+        return RuntimeControlScope(
+            budget=self.budget,
+            cancellation_token=self.cancellation_token.cancel(
+                reason,
+                requested_by=requested_by,
+                safe_summary=safe_summary,
+                requested_at=requested_at,
+            ),
+            usage=self.usage,
+            deadline=self.deadline,
+        )
+
+    def check_deadline(self) -> "RuntimeControlScope":
+        """Return a timeout-cancelled scope when the deadline has expired."""
+
+        if self.deadline is None or not self.deadline.expired():
+            return self
+        return self.with_cancellation(
+            RuntimeCancellationReason.TIMEOUT,
+            requested_by="runtime_deadline",
+            safe_summary="Runtime deadline expired.",
+        )
+
+    def check_budget(self) -> "RuntimeControlScope":
+        """Return a budget-cancelled scope when current usage exceeds limits."""
+
+        violations = validate_runtime_usage(self.usage, self.budget)
+        if not violations:
+            return self
+        return self.with_cancellation(
+            RuntimeCancellationReason.BUDGET_EXHAUSTED,
+            requested_by="runtime_budget",
+            safe_summary=f"Runtime budget exceeded: {violations[0].kind.value}.",
+        )
+
+
 def runtime_budget_policy_from_execution_budget(
     budget: RuntimeExecutionBudget,
     *,
@@ -246,6 +441,73 @@ def validate_runtime_usage(
     )
 
 
+def runtime_cancellation_error(
+    cancellation: RuntimeCancellationRequest,
+) -> RuntimeErrorInfo:
+    """Convert a cancellation request into a low-sensitive runtime error."""
+
+    if not isinstance(cancellation, RuntimeCancellationRequest):
+        raise RuntimeResourceError(
+            "cancellation must be a RuntimeCancellationRequest"
+        )
+    if cancellation.reason == RuntimeCancellationReason.TIMEOUT:
+        code = RuntimeErrorCode.TIMED_OUT
+    elif cancellation.reason == RuntimeCancellationReason.BUDGET_EXHAUSTED:
+        code = RuntimeErrorCode.BUDGET_EXCEEDED
+    else:
+        code = RuntimeErrorCode.CANCELLED
+    return RuntimeErrorInfo(
+        code=code,
+        message=cancellation.reason.value,
+        safe_summary=cancellation.safe_summary,
+        retryable=False,
+        source=cancellation.requested_by,
+        created_at=cancellation.requested_at,
+    )
+
+
+def runtime_cancellation_event(
+    request: RuntimeRequest,
+    cancellation: RuntimeCancellationRequest,
+    *,
+    sequence: int,
+) -> RuntimeEvent:
+    """Create the standard low-sensitive cancellation runtime event."""
+
+    if not isinstance(request, RuntimeRequest):
+        raise RuntimeResourceError("request must be a RuntimeRequest")
+    if not isinstance(cancellation, RuntimeCancellationRequest):
+        raise RuntimeResourceError(
+            "cancellation must be a RuntimeCancellationRequest"
+        )
+    state = (
+        RuntimeState.TIMED_OUT
+        if cancellation.reason == RuntimeCancellationReason.TIMEOUT
+        else RuntimeState.CANCELLED
+    )
+    event_type = (
+        RuntimeEventType.ERROR
+        if cancellation.reason
+        in {
+            RuntimeCancellationReason.TIMEOUT,
+            RuntimeCancellationReason.BUDGET_EXHAUSTED,
+        }
+        else RuntimeEventType.CANCELLED
+    )
+    return RuntimeEvent(
+        event_id=f"{request.request_id}-cancel-{sequence}",
+        request_id=request.request_id,
+        task_id=request.task_id,
+        worker_id=request.worker_id,
+        runtime_type=request.runtime_type,
+        state=state,
+        event_type=event_type,
+        created_at=cancellation.requested_at,
+        sequence=sequence,
+        payload=runtime_cancellation_request_to_dict(cancellation),
+    )
+
+
 def runtime_resource_usage_to_audit_summary(
     usage: RuntimeResourceUsage,
 ) -> dict[str, int | float]:
@@ -261,6 +523,19 @@ def runtime_resource_usage_to_audit_summary(
         "transcript_bytes": usage.transcript_bytes,
         "retry_attempts": usage.retry_attempts,
         "concurrent_children": usage.concurrent_children,
+    }
+
+
+def runtime_cancellation_request_to_dict(
+    cancellation: RuntimeCancellationRequest,
+) -> dict[str, str]:
+    """Return a JSON-safe cancellation request."""
+
+    return {
+        "reason": cancellation.reason.value,
+        "requested_by": cancellation.requested_by,
+        "requested_at": cancellation.requested_at,
+        "safe_summary": cancellation.safe_summary,
     }
 
 
@@ -310,6 +585,17 @@ def _coerce_violation_kind(
         return RuntimeBudgetViolationKind(value)
     except ValueError as exc:
         raise RuntimeResourceError(f"Unknown runtime budget violation: {value!r}") from exc
+
+
+def _coerce_cancellation_reason(
+    value: RuntimeCancellationReason | str,
+) -> RuntimeCancellationReason:
+    try:
+        return RuntimeCancellationReason(value)
+    except ValueError as exc:
+        raise RuntimeResourceError(
+            f"Unknown runtime cancellation reason: {value!r}"
+        ) from exc
 
 
 def _require_string(value: Any, field_name: str) -> str:
