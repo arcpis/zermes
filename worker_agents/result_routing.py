@@ -75,6 +75,29 @@ class RoutedProposalKind(StrEnum):
     WORKER_LEARNING = "worker_learning"
 
 
+class RoutedApprovalKind(StrEnum):
+    """Approval request families handled by main-agent governance."""
+
+    TOOL_PERMISSION = "tool_permission"
+    WORKSPACE_PERMISSION = "workspace_permission"
+    MODEL_OR_BUDGET_INCREASE = "model_or_budget_increase"
+    EXTERNAL_SERVICE_ACCESS = "external_service_access"
+    DESTRUCTIVE_OR_IRREVERSIBLE_ACTION = "destructive_or_irreversible_action"
+    USER_DECISION = "user_decision"
+    SAFETY_REVIEW = "safety_review"
+
+
+class RoutedApprovalStatus(StrEnum):
+    """Lifecycle states for routed approval and safety requests."""
+
+    PENDING = "pending"
+    APPROVED = "approved"
+    DENIED = "denied"
+    EXPIRED = "expired"
+    CANCELLED = "cancelled"
+    SUPERSEDED = "superseded"
+
+
 _SENSITIVE_FIELD_NAMES = frozenset(
     {
         "api_key",
@@ -248,6 +271,70 @@ class ProposalAndManifestRoute:
             _require_string(item_id, "skipped_route_item_ids")
 
 
+@dataclass(frozen=True)
+class RoutedApprovalRequest:
+    """Pending governance request; it never grants access by itself."""
+
+    approval_request_id: str
+    approval_kind: RoutedApprovalKind | str
+    source_route_item_id: str
+    source_runtime_session_id: str
+    source_worker_id: str
+    task_id: str
+    requested_capability: str
+    reason: str
+    risk_summary: str
+    required_approver: str
+    status: RoutedApprovalStatus | str = RoutedApprovalStatus.PENDING
+    expires_at: str | None = None
+    metadata: Mapping[str, Any] = field(default_factory=dict)
+    schema_version: int = RESULT_ROUTING_SCHEMA_VERSION
+
+    def __post_init__(self) -> None:
+        _require_schema_version(self.schema_version)
+        _require_string(self.approval_request_id, "approval_request_id")
+        object.__setattr__(self, "approval_kind", _approval_kind(self.approval_kind))
+        _require_string(self.source_route_item_id, "source_route_item_id")
+        _require_string(self.source_runtime_session_id, "source_runtime_session_id")
+        _require_string(self.source_worker_id, "source_worker_id")
+        validate_task_id(self.task_id)
+        _require_string(self.requested_capability, "requested_capability")
+        _require_string(self.reason, "reason")
+        _require_string(self.risk_summary, "risk_summary")
+        _require_string(self.required_approver, "required_approver")
+        object.__setattr__(self, "status", _approval_status(self.status))
+        _optional_string(self.expires_at, "expires_at")
+        metadata = dict(_require_mapping(self.metadata, "metadata"))
+        _reject_sensitive_payload(metadata, "metadata")
+        object.__setattr__(self, "metadata", metadata)
+        if self.status == RoutedApprovalStatus.APPROVED:
+            raise ResultRoutingError("approval routing cannot create approved requests")
+
+
+@dataclass(frozen=True)
+class ApprovalAndSafetyRoute:
+    """Pending approval and safety requests derived from route items."""
+
+    pending_requests: tuple[RoutedApprovalRequest, ...]
+    skipped_route_item_ids: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.pending_requests, tuple):
+            raise ResultRoutingError("pending_requests must be a tuple")
+        if any(
+            not isinstance(request, RoutedApprovalRequest)
+            for request in self.pending_requests
+        ):
+            raise ResultRoutingError(
+                "pending_requests must contain RoutedApprovalRequest records"
+            )
+        object.__setattr__(
+            self, "skipped_route_item_ids", tuple(self.skipped_route_item_ids)
+        )
+        for item_id in self.skipped_route_item_ids:
+            _require_string(item_id, "skipped_route_item_ids")
+
+
 def classify_runtime_result(
     result: RuntimeResult, *, source_result_ref: str | None = None
 ) -> RuntimeResultClassification:
@@ -384,6 +471,61 @@ def route_pending_proposals_and_manifests(
     )
 
 
+def route_approval_and_safety_requests(
+    classification: RuntimeResultClassification,
+) -> ApprovalAndSafetyRoute:
+    """Return pending governance requests without granting new capability."""
+
+    if not isinstance(classification, RuntimeResultClassification):
+        raise ResultRoutingError("classification must be a RuntimeResultClassification")
+    requests: list[RoutedApprovalRequest] = []
+    skipped: list[str] = []
+    for item in classification.route_items:
+        if item.kind == ResultRouteItemKind.SAFETY_REQUEST:
+            requests.append(_safety_approval_request(item))
+        elif item.kind == ResultRouteItemKind.APPROVAL_REQUEST:
+            requests.append(_approval_request(item))
+        else:
+            skipped.append(item.route_item_id)
+    return ApprovalAndSafetyRoute(
+        pending_requests=tuple(requests),
+        skipped_route_item_ids=tuple(skipped),
+    )
+
+
+def approval_request_with_status(
+    request: RoutedApprovalRequest,
+    status: RoutedApprovalStatus | str,
+    *,
+    reason: str,
+) -> RoutedApprovalRequest:
+    """Return a status update record for a routed governance request."""
+
+    if not isinstance(request, RoutedApprovalRequest):
+        raise ResultRoutingError("request must be a RoutedApprovalRequest")
+    status = _approval_status(status)
+    if status == RoutedApprovalStatus.APPROVED:
+        raise ResultRoutingError("approval status updates must come from governance")
+    _require_string(reason, "reason")
+    metadata = dict(request.metadata)
+    metadata["status_reason"] = reason
+    return RoutedApprovalRequest(
+        approval_request_id=request.approval_request_id,
+        approval_kind=request.approval_kind,
+        source_route_item_id=request.source_route_item_id,
+        source_runtime_session_id=request.source_runtime_session_id,
+        source_worker_id=request.source_worker_id,
+        task_id=request.task_id,
+        requested_capability=request.requested_capability,
+        reason=request.reason,
+        risk_summary=request.risk_summary,
+        required_approver=request.required_approver,
+        status=status,
+        expires_at=request.expires_at,
+        metadata=metadata,
+    )
+
+
 def route_user_visible_result_messages(
     *,
     router: MessageRouter,
@@ -468,6 +610,39 @@ def runtime_result_classification_to_dict(
     }
 
 
+def routed_approval_request_to_dict(request: RoutedApprovalRequest) -> dict[str, Any]:
+    """Return a JSON-safe pending governance request."""
+
+    return {
+        "schema_version": request.schema_version,
+        "approval_request_id": request.approval_request_id,
+        "approval_kind": request.approval_kind.value,
+        "source_route_item_id": request.source_route_item_id,
+        "source_runtime_session_id": request.source_runtime_session_id,
+        "source_worker_id": request.source_worker_id,
+        "task_id": request.task_id,
+        "requested_capability": request.requested_capability,
+        "reason": request.reason,
+        "risk_summary": request.risk_summary,
+        "required_approver": request.required_approver,
+        "status": request.status.value,
+        "expires_at": request.expires_at,
+        "metadata": dict(request.metadata),
+    }
+
+
+def approval_and_safety_route_to_dict(result: ApprovalAndSafetyRoute) -> dict[str, Any]:
+    """Return an audit-safe summary of governance request routing."""
+
+    return {
+        "pending_requests": [
+            routed_approval_request_to_dict(request)
+            for request in result.pending_requests
+        ],
+        "skipped_route_item_ids": list(result.skipped_route_item_ids),
+    }
+
+
 def routed_proposal_record_to_dict(proposal: RoutedProposalRecord) -> dict[str, Any]:
     """Return a JSON-safe pending proposal record."""
 
@@ -536,6 +711,49 @@ def _safe_error_payload(error: RuntimeErrorInfo) -> dict[str, Any]:
     data = runtime_error_to_dict(error)
     data.pop("raw_error_ref", None)
     return data
+
+
+def _safety_approval_request(item: ResultRouteItem) -> RoutedApprovalRequest:
+    return RoutedApprovalRequest(
+        approval_request_id=_require_string(item.payload.get("request_id"), "request_id"),
+        approval_kind=RoutedApprovalKind.SAFETY_REVIEW,
+        source_route_item_id=item.route_item_id,
+        source_runtime_session_id=item.source_runtime_session_id,
+        source_worker_id=item.source_worker_id,
+        task_id=item.task_id,
+        requested_capability=_require_string(
+            item.payload.get("request_type"), "request_type"
+        ),
+        reason=_require_string(
+            item.payload.get("user_visible_summary"), "user_visible_summary"
+        ),
+        risk_summary=_require_string(item.payload.get("risk_level"), "risk_level"),
+        required_approver=_require_string(
+            item.payload.get("required_approver"), "required_approver"
+        ),
+        metadata={"blocking": item.payload.get("blocking", True)},
+    )
+
+
+def _approval_request(item: ResultRouteItem) -> RoutedApprovalRequest:
+    return RoutedApprovalRequest(
+        approval_request_id=_require_string(item.payload.get("request_id"), "request_id"),
+        approval_kind=_approval_kind(item.payload.get("approval_kind")),
+        source_route_item_id=item.route_item_id,
+        source_runtime_session_id=item.source_runtime_session_id,
+        source_worker_id=item.source_worker_id,
+        task_id=item.task_id,
+        requested_capability=_require_string(
+            item.payload.get("requested_capability"), "requested_capability"
+        ),
+        reason=_require_string(item.payload.get("reason"), "reason"),
+        risk_summary=_require_string(item.payload.get("risk_summary"), "risk_summary"),
+        required_approver=_require_string(
+            item.payload.get("required_approver"), "required_approver"
+        ),
+        expires_at=_optional_string(item.payload.get("expires_at"), "expires_at"),
+        metadata=dict(item.payload.get("metadata") or {}),
+    )
 
 
 def _artifact_manifest_proposal(item: ResultRouteItem) -> RoutedProposalRecord:
@@ -697,6 +915,22 @@ def _proposal_kind(value: RoutedProposalKind | str) -> RoutedProposalKind:
         return RoutedProposalKind(_require_string(raw, "proposal_kind"))
     except ValueError as exc:
         raise ResultRoutingError(f"Unknown proposal kind: {raw!r}") from exc
+
+
+def _approval_kind(value: RoutedApprovalKind | str) -> RoutedApprovalKind:
+    raw = value.value if isinstance(value, RoutedApprovalKind) else value
+    try:
+        return RoutedApprovalKind(_require_string(raw, "approval_kind"))
+    except ValueError as exc:
+        raise ResultRoutingError(f"Unknown approval kind: {raw!r}") from exc
+
+
+def _approval_status(value: RoutedApprovalStatus | str) -> RoutedApprovalStatus:
+    raw = value.value if isinstance(value, RoutedApprovalStatus) else value
+    try:
+        return RoutedApprovalStatus(_require_string(raw, "status"))
+    except ValueError as exc:
+        raise ResultRoutingError(f"Unknown approval status: {raw!r}") from exc
 
 
 def _route_kind(value: ResultRouteItemKind | str) -> ResultRouteItemKind:
