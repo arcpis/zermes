@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 import json
 from enum import StrEnum
 from pathlib import Path, PurePosixPath, PureWindowsPath
@@ -94,6 +94,24 @@ class DepartmentMemoryProposalCreateStatus(StrEnum):
 
     CREATED = "created"
     EXISTING = "existing"
+
+
+class DepartmentMemoryReviewerRole(StrEnum):
+    """Roles allowed to review department memory proposals."""
+
+    DEPARTMENT_LEAD = "department_lead"
+    MAIN_AGENT = "main_agent"
+    USER = "user"
+    GOVERNANCE_SERVICE = "governance_service"
+
+
+class DepartmentMemoryReviewDecision(StrEnum):
+    """Supported review decisions for a department memory proposal."""
+
+    APPROVE = "approve"
+    REJECT = "reject"
+    REQUEST_CHANGES = "request_changes"
+    EXPIRE = "expire"
 
 
 @dataclass(frozen=True)
@@ -221,6 +239,38 @@ class DepartmentMemoryProposalCreateResult:
         object.__setattr__(self, "status", _proposal_create_status(self.status))
 
 
+@dataclass(frozen=True)
+class DepartmentMemoryReviewAction:
+    """One explicit review decision made by an authorized actor."""
+
+    proposal_id: str
+    decision: DepartmentMemoryReviewDecision | str
+    actor_id: str
+    actor_role: DepartmentMemoryReviewerRole | str
+    reason: str
+    reviewed_at: str
+    user_confirmation_ref: str | None = None
+    supersede_memory_id: str | None = None
+    audit_refs: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        _validate_identifier(self.proposal_id, "proposal_id")
+        object.__setattr__(self, "decision", _review_decision(self.decision))
+        _require_string(self.actor_id, "actor_id")
+        object.__setattr__(self, "actor_role", _reviewer_role(self.actor_role))
+        _require_string(self.reason, "reason")
+        _require_string(self.reviewed_at, "reviewed_at")
+        if self.user_confirmation_ref is not None:
+            _validate_relative_ref(self.user_confirmation_ref, "user_confirmation_ref")
+        if self.supersede_memory_id is not None:
+            _validate_identifier(self.supersede_memory_id, "supersede_memory_id")
+        object.__setattr__(
+            self,
+            "audit_refs",
+            tuple(_validate_relative_ref(ref, "audit_refs") for ref in self.audit_refs),
+        )
+
+
 @dataclass
 class DepartmentMemoryProposalStore:
     """Profile-home store for pending department memory proposals."""
@@ -334,6 +384,160 @@ class DepartmentMemoryProposalStore:
             if proposal.source_hash == source_hash:
                 return proposal
         return None
+
+
+@dataclass
+class DepartmentMemoryReviewService:
+    """Review service that is allowed to promote proposals to active memory."""
+
+    store: DepartmentMemoryProposalStore = field(
+        default_factory=DepartmentMemoryProposalStore
+    )
+
+    @property
+    def root(self) -> Path:
+        return self.store.root
+
+    def accepted_dir(self, department_id: str) -> Path:
+        return department_memory_dir(self.root, department_id) / "accepted"
+
+    def history_dir(self, department_id: str, memory_id: str) -> Path:
+        _validate_identifier(memory_id, "memory_id")
+        return department_memory_dir(self.root, department_id) / "history" / memory_id
+
+    def memory_path(self, department_id: str, memory_id: str) -> Path:
+        _validate_identifier(memory_id, "memory_id")
+        return self.accepted_dir(department_id) / f"{memory_id}.json"
+
+    def history_path(
+        self, department_id: str, memory_id: str, revision: int
+    ) -> Path:
+        _require_positive_int(revision, "revision")
+        return self.history_dir(department_id, memory_id) / f"{revision}.json"
+
+    def load_memory(self, department_id: str, memory_id: str) -> DepartmentMemoryRecord:
+        path = self.memory_path(department_id, memory_id)
+        if not path.exists():
+            raise DepartmentMemoryError(
+                f"Department memory does not exist: {memory_id!r}"
+            )
+        return department_memory_from_dict(_load_json_object(path, "department memory"))
+
+    def approve(
+        self, department_id: str, proposal_id: str, action: DepartmentMemoryReviewAction
+    ) -> DepartmentMemoryRecord:
+        """Approve a proposal and write the active memory record."""
+
+        proposal = self.store.load_proposal(department_id, proposal_id)
+        self._validate_action(proposal, action, DepartmentMemoryReviewDecision.APPROVE)
+        if proposal.state not in {
+            DepartmentMemoryProposalState.PENDING,
+            DepartmentMemoryProposalState.CHANGES_REQUESTED,
+        }:
+            raise DepartmentMemoryError("only pending proposals can be approved")
+        if _requires_user_confirmation(proposal) and not action.user_confirmation_ref:
+            raise DepartmentMemoryError("user confirmation is required for this proposal")
+
+        memory_id = action.supersede_memory_id or proposal.proposal_id
+        revision = 1
+        if action.supersede_memory_id is not None:
+            current = self.load_memory(proposal.department_id, action.supersede_memory_id)
+            self._write_history(replace(current, active=False))
+            revision = current.revision + 1
+
+        memory = DepartmentMemoryRecord(
+            department_id=proposal.department_id,
+            memory_id=memory_id,
+            kind=proposal.kind,
+            summary=proposal.candidate_summary,
+            source_refs=proposal.source_refs + action.audit_refs,
+            visibility=proposal.visibility,
+            sensitivity=proposal.sensitivity,
+            revision=revision,
+            active=True,
+            accepted_at=action.reviewed_at,
+            created_at=proposal.created_at,
+            updated_at=action.reviewed_at,
+            audit_summary=_review_audit_summary(proposal, action),
+        )
+        atomic_json_write(self.memory_path(memory.department_id, memory.memory_id), department_memory_to_dict(memory))
+        updated_state = (
+            DepartmentMemoryProposalState.SUPERSEDED
+            if action.supersede_memory_id is not None
+            else DepartmentMemoryProposalState.APPROVED
+        )
+        self.store.save_proposal(
+            _proposal_with_review_state(proposal, updated_state, action)
+        )
+        return memory
+
+    def reject(
+        self, department_id: str, proposal_id: str, action: DepartmentMemoryReviewAction
+    ) -> DepartmentMemoryProposal:
+        return self._update_proposal_state(
+            department_id,
+            proposal_id,
+            action,
+            DepartmentMemoryReviewDecision.REJECT,
+            DepartmentMemoryProposalState.REJECTED,
+        )
+
+    def request_changes(
+        self, department_id: str, proposal_id: str, action: DepartmentMemoryReviewAction
+    ) -> DepartmentMemoryProposal:
+        return self._update_proposal_state(
+            department_id,
+            proposal_id,
+            action,
+            DepartmentMemoryReviewDecision.REQUEST_CHANGES,
+            DepartmentMemoryProposalState.CHANGES_REQUESTED,
+        )
+
+    def expire(
+        self, department_id: str, proposal_id: str, action: DepartmentMemoryReviewAction
+    ) -> DepartmentMemoryProposal:
+        return self._update_proposal_state(
+            department_id,
+            proposal_id,
+            action,
+            DepartmentMemoryReviewDecision.EXPIRE,
+            DepartmentMemoryProposalState.EXPIRED,
+        )
+
+    def _update_proposal_state(
+        self,
+        department_id: str,
+        proposal_id: str,
+        action: DepartmentMemoryReviewAction,
+        expected_decision: DepartmentMemoryReviewDecision,
+        new_state: DepartmentMemoryProposalState,
+    ) -> DepartmentMemoryProposal:
+        proposal = self.store.load_proposal(department_id, proposal_id)
+        self._validate_action(proposal, action, expected_decision)
+        if proposal.state is not DepartmentMemoryProposalState.PENDING:
+            raise DepartmentMemoryError("only pending proposals can change review state")
+        updated = _proposal_with_review_state(proposal, new_state, action)
+        self.store.save_proposal(updated)
+        return updated
+
+    def _validate_action(
+        self,
+        proposal: DepartmentMemoryProposal,
+        action: DepartmentMemoryReviewAction,
+        expected_decision: DepartmentMemoryReviewDecision,
+    ) -> None:
+        if action.proposal_id != proposal.proposal_id:
+            raise DepartmentMemoryError("review action proposal_id does not match")
+        if action.decision is not expected_decision:
+            raise DepartmentMemoryError("review action decision does not match")
+        # The enum coercion on the action constrains review to known actor roles.
+        if not action.actor_id:
+            raise DepartmentMemoryError("review action actor_id is required")
+
+    def _write_history(self, memory: DepartmentMemoryRecord) -> Path:
+        path = self.history_path(memory.department_id, memory.memory_id, memory.revision)
+        atomic_json_write(path, department_memory_to_dict(memory))
+        return path
 
 
 def validate_department_memory_payload(payload: Mapping[str, Any]) -> None:
@@ -728,6 +932,66 @@ def _proposal_create_status(
         raise DepartmentMemoryError(
             f"Unknown department memory proposal create status: {value!r}"
         ) from exc
+
+
+def _reviewer_role(
+    value: DepartmentMemoryReviewerRole | str,
+) -> DepartmentMemoryReviewerRole:
+    try:
+        return (
+            value
+            if isinstance(value, DepartmentMemoryReviewerRole)
+            else DepartmentMemoryReviewerRole(value)
+        )
+    except ValueError as exc:
+        raise DepartmentMemoryError(
+            f"Unknown department memory reviewer role: {value!r}"
+        ) from exc
+
+
+def _review_decision(
+    value: DepartmentMemoryReviewDecision | str,
+) -> DepartmentMemoryReviewDecision:
+    try:
+        return (
+            value
+            if isinstance(value, DepartmentMemoryReviewDecision)
+            else DepartmentMemoryReviewDecision(value)
+        )
+    except ValueError as exc:
+        raise DepartmentMemoryError(
+            f"Unknown department memory review decision: {value!r}"
+        ) from exc
+
+
+def _requires_user_confirmation(proposal: DepartmentMemoryProposal) -> bool:
+    return proposal.sensitivity in {
+        DepartmentMemorySensitivity.RESTRICTED,
+        DepartmentMemorySensitivity.USER_CONFIRMATION_REQUIRED,
+    }
+
+
+def _proposal_with_review_state(
+    proposal: DepartmentMemoryProposal,
+    state: DepartmentMemoryProposalState,
+    action: DepartmentMemoryReviewAction,
+) -> DepartmentMemoryProposal:
+    return replace(
+        proposal,
+        state=state,
+        updated_at=action.reviewed_at,
+        audit_summary=_review_audit_summary(proposal, action),
+    )
+
+
+def _review_audit_summary(
+    proposal: DepartmentMemoryProposal, action: DepartmentMemoryReviewAction
+) -> str:
+    return (
+        f"{action.actor_role.value} {action.actor_id} "
+        f"{action.decision.value}d department memory proposal "
+        f"{proposal.proposal_id}: {action.reason}"
+    )
 
 
 def _department_id_from_target_scope(target_scope: str) -> str:
