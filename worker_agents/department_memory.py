@@ -114,6 +114,14 @@ class DepartmentMemoryReviewDecision(StrEnum):
     EXPIRE = "expire"
 
 
+_SENSITIVITY_RANK = {
+    DepartmentMemorySensitivity.LOW: 0,
+    DepartmentMemorySensitivity.INTERNAL: 1,
+    DepartmentMemorySensitivity.RESTRICTED: 2,
+    DepartmentMemorySensitivity.USER_CONFIRMATION_REQUIRED: 3,
+}
+
+
 @dataclass(frozen=True)
 class DepartmentMemoryRecord:
     """Approved department memory; pending proposals use a separate record."""
@@ -269,6 +277,114 @@ class DepartmentMemoryReviewAction:
             "audit_refs",
             tuple(_validate_relative_ref(ref, "audit_refs") for ref in self.audit_refs),
         )
+
+
+@dataclass(frozen=True)
+class DepartmentMemoryReadRequest:
+    """Filters used to build a redacted department memory view."""
+
+    department_id: str
+    requester_scope: str
+    kinds: tuple[DepartmentMemoryKind | str, ...] = ()
+    maximum_sensitivity: DepartmentMemorySensitivity | str = (
+        DepartmentMemorySensitivity.INTERNAL
+    )
+    include_inherited: bool = False
+    inherited_department_ids: tuple[str, ...] = ()
+    source_ref_filters: tuple[str, ...] = ()
+    permission_refs: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        validate_org_node_id(self.department_id)
+        _require_string(self.requester_scope, "requester_scope")
+        object.__setattr__(
+            self, "kinds", tuple(_memory_kind(kind) for kind in self.kinds)
+        )
+        object.__setattr__(
+            self, "maximum_sensitivity", _memory_sensitivity(self.maximum_sensitivity)
+        )
+        if not isinstance(self.include_inherited, bool):
+            raise DepartmentMemoryError("include_inherited must be a boolean")
+        object.__setattr__(
+            self,
+            "inherited_department_ids",
+            tuple(validate_org_node_id(value) for value in self.inherited_department_ids),
+        )
+        object.__setattr__(
+            self,
+            "source_ref_filters",
+            tuple(
+                _validate_relative_ref(ref, "source_ref_filters")
+                for ref in self.source_ref_filters
+            ),
+        )
+        object.__setattr__(
+            self,
+            "permission_refs",
+            tuple(
+                _validate_relative_ref(ref, "permission_refs")
+                for ref in self.permission_refs
+            ),
+        )
+
+
+@dataclass(frozen=True)
+class DepartmentMemoryView:
+    """Redacted department memory view for UI, audit, or context policy."""
+
+    department_id: str
+    memory_id: str
+    kind: DepartmentMemoryKind | str
+    visibility: DepartmentMemoryVisibility | str
+    sensitivity: DepartmentMemorySensitivity | str
+    redacted_summary: str
+    revision: int
+    source_ref_summaries: tuple[str, ...] = ()
+    audit_summary: str = ""
+    inherited: bool = False
+    restricted: bool = False
+
+    def __post_init__(self) -> None:
+        validate_org_node_id(self.department_id)
+        _validate_identifier(self.memory_id, "memory_id")
+        object.__setattr__(self, "kind", _memory_kind(self.kind))
+        object.__setattr__(
+            self, "visibility", _memory_visibility(self.visibility)
+        )
+        object.__setattr__(
+            self, "sensitivity", _memory_sensitivity(self.sensitivity)
+        )
+        _require_string(self.redacted_summary, "redacted_summary")
+        _require_positive_int(self.revision, "revision")
+        object.__setattr__(
+            self,
+            "source_ref_summaries",
+            tuple(
+                _validate_relative_ref(ref, "source_ref_summaries")
+                for ref in self.source_ref_summaries
+            ),
+        )
+        if not isinstance(self.audit_summary, str):
+            raise DepartmentMemoryError("audit_summary must be a string")
+        if not isinstance(self.inherited, bool):
+            raise DepartmentMemoryError("inherited must be a boolean")
+        if not isinstance(self.restricted, bool):
+            raise DepartmentMemoryError("restricted must be a boolean")
+
+
+@dataclass(frozen=True)
+class DepartmentMemoryReadResult:
+    """Redacted department memory views plus low-sensitivity read audit."""
+
+    views: tuple[DepartmentMemoryView, ...]
+    audit_summary: str
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.views, tuple):
+            raise DepartmentMemoryError("views must be a tuple")
+        if any(not isinstance(view, DepartmentMemoryView) for view in self.views):
+            raise DepartmentMemoryError("views must contain DepartmentMemoryView items")
+        _require_string(self.audit_summary, "audit_summary")
 
 
 @dataclass
@@ -540,6 +656,90 @@ class DepartmentMemoryReviewService:
         return path
 
 
+@dataclass
+class DepartmentMemoryReadService:
+    """Read active department memories as redacted, policy-ready views."""
+
+    root: Path = field(default_factory=get_worker_agents_home)
+
+    def read(self, request: DepartmentMemoryReadRequest) -> DepartmentMemoryReadResult:
+        views: list[DepartmentMemoryView] = []
+        for memory in self._load_active_memories(request.department_id):
+            view = self._view_for_memory(memory, request, inherited=False)
+            if view is not None:
+                views.append(view)
+        if request.include_inherited:
+            for inherited_department_id in request.inherited_department_ids:
+                for memory in self._load_active_memories(inherited_department_id):
+                    if memory.visibility not in {
+                        DepartmentMemoryVisibility.INHERITABLE_SUMMARY,
+                        DepartmentMemoryVisibility.ORGANIZATION_SUMMARY,
+                    }:
+                        continue
+                    view = self._view_for_memory(memory, request, inherited=True)
+                    if view is not None:
+                        views.append(view)
+        sorted_views = tuple(
+            sorted(
+                views,
+                key=lambda view: (view.kind.value, view.department_id, view.memory_id),
+            )
+        )
+        return DepartmentMemoryReadResult(
+            views=sorted_views,
+            audit_summary=(
+                f"Read {len(sorted_views)} department memory view(s) for "
+                f"{request.department_id}."
+            ),
+        )
+
+    def _load_active_memories(self, department_id: str) -> list[DepartmentMemoryRecord]:
+        directory = department_memory_dir(self.root, department_id) / "accepted"
+        if not directory.exists():
+            return []
+        memories = [
+            department_memory_from_dict(_load_json_object(path, "department memory"))
+            for path in directory.glob("*.json")
+        ]
+        return [memory for memory in memories if memory.active]
+
+    def _view_for_memory(
+        self,
+        memory: DepartmentMemoryRecord,
+        request: DepartmentMemoryReadRequest,
+        *,
+        inherited: bool,
+    ) -> DepartmentMemoryView | None:
+        if request.kinds and memory.kind not in request.kinds:
+            return None
+        if _sensitivity_exceeds(memory.sensitivity, request.maximum_sensitivity):
+            return None
+        if request.source_ref_filters and not any(
+            ref in memory.source_refs for ref in request.source_ref_filters
+        ):
+            return None
+        restricted = _requires_read_permission(memory.sensitivity)
+        if restricted and not request.permission_refs:
+            summary = "Restricted department memory summary withheld."
+        else:
+            summary = memory.summary
+        view = DepartmentMemoryView(
+            department_id=memory.department_id,
+            memory_id=memory.memory_id,
+            kind=memory.kind,
+            visibility=memory.visibility,
+            sensitivity=memory.sensitivity,
+            redacted_summary=summary,
+            revision=memory.revision,
+            source_ref_summaries=_summarize_source_refs(memory.source_refs),
+            audit_summary=memory.audit_summary,
+            inherited=inherited,
+            restricted=restricted and not request.permission_refs,
+        )
+        validate_department_memory_payload(department_memory_view_to_dict(view))
+        return view
+
+
 def validate_department_memory_payload(payload: Mapping[str, Any]) -> None:
     """Reject raw, private, or secret-bearing fields before durable storage."""
 
@@ -734,6 +934,35 @@ def department_memory_proposal_from_dict(
         updated_at=_optional_string(data.get("updated_at"), "updated_at"),
         audit_summary=_string_value(data.get("audit_summary", ""), "audit_summary"),
     )
+
+
+def department_memory_view_to_dict(view: DepartmentMemoryView) -> dict[str, Any]:
+    """Return a JSON-safe redacted view, not the stored raw memory object."""
+
+    return {
+        "department_id": view.department_id,
+        "memory_id": view.memory_id,
+        "kind": view.kind.value,
+        "visibility": view.visibility.value,
+        "sensitivity": view.sensitivity.value,
+        "redacted_summary": view.redacted_summary,
+        "revision": view.revision,
+        "source_ref_summaries": list(view.source_ref_summaries),
+        "audit_summary": view.audit_summary,
+        "inherited": view.inherited,
+        "restricted": view.restricted,
+    }
+
+
+def department_memory_read_result_to_dict(
+    result: DepartmentMemoryReadResult,
+) -> dict[str, Any]:
+    """Return a JSON-safe read result for context policy or UI callers."""
+
+    return {
+        "views": [department_memory_view_to_dict(view) for view in result.views],
+        "audit_summary": result.audit_summary,
+    }
 
 
 _MEMORY_FIELDS = {
@@ -969,6 +1198,25 @@ def _requires_user_confirmation(proposal: DepartmentMemoryProposal) -> bool:
         DepartmentMemorySensitivity.RESTRICTED,
         DepartmentMemorySensitivity.USER_CONFIRMATION_REQUIRED,
     }
+
+
+def _requires_read_permission(sensitivity: DepartmentMemorySensitivity) -> bool:
+    return sensitivity in {
+        DepartmentMemorySensitivity.RESTRICTED,
+        DepartmentMemorySensitivity.USER_CONFIRMATION_REQUIRED,
+    }
+
+
+def _sensitivity_exceeds(
+    sensitivity: DepartmentMemorySensitivity,
+    maximum_sensitivity: DepartmentMemorySensitivity,
+) -> bool:
+    return _SENSITIVITY_RANK[sensitivity] > _SENSITIVITY_RANK[maximum_sensitivity]
+
+
+def _summarize_source_refs(source_refs: tuple[str, ...]) -> tuple[str, ...]:
+    # Keep source references useful for audit without exposing long path details.
+    return tuple(PurePosixPath(ref).name or ref for ref in source_refs)
 
 
 def _proposal_with_review_state(
