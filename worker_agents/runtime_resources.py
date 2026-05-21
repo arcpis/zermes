@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import StrEnum
+from pathlib import Path
 from typing import Any
 
 from .runtime_contract import (
@@ -17,6 +18,7 @@ from .runtime_contract import (
     RuntimeState,
     utc_timestamp,
 )
+from .storage import WorkerAgentRuntimeDataStore
 
 
 class RuntimeResourceError(ValueError):
@@ -77,6 +79,22 @@ class RuntimeConcurrencyDecisionKind(StrEnum):
     REJECTED = "rejected"
     QUEUED = "queued"
     NEEDS_APPROVAL = "needs_approval"
+
+
+class RuntimeTranscriptKind(StrEnum):
+    """Runtime transcript streams that stay in clearable task data."""
+
+    RAW_LOG = "raw_log"
+    TOOL_LOG = "tool_log"
+    EXTERNAL_OUTPUT = "external_output"
+    COMPACT_SUMMARY = "compact_summary"
+
+
+class RuntimeTranscriptRetentionClass(StrEnum):
+    """Retention class labels consumed by later cleanup policy."""
+
+    EPHEMERAL = "ephemeral"
+    TASK_AUDIT = "task_audit"
 
 
 @dataclass(frozen=True)
@@ -450,6 +468,158 @@ class RuntimeConcurrencyGate:
 
 
 @dataclass(frozen=True)
+class RuntimeTranscriptPolicy:
+    """Limits and redaction requirements for runtime transcript storage."""
+
+    allow_raw_transcript: bool = True
+    max_raw_bytes: int = 64_000
+    max_summary_bytes: int = 8_000
+    retention_class: RuntimeTranscriptRetentionClass | str = (
+        RuntimeTranscriptRetentionClass.EPHEMERAL
+    )
+    redaction_required: bool = True
+
+    def __post_init__(self) -> None:
+        _positive_int(self.max_raw_bytes, "max_raw_bytes")
+        _positive_int(self.max_summary_bytes, "max_summary_bytes")
+        object.__setattr__(
+            self,
+            "retention_class",
+            _coerce_transcript_retention_class(self.retention_class),
+        )
+        if not isinstance(self.allow_raw_transcript, bool):
+            raise RuntimeResourceError("allow_raw_transcript must be a boolean")
+        if not isinstance(self.redaction_required, bool):
+            raise RuntimeResourceError("redaction_required must be a boolean")
+
+
+@dataclass(frozen=True)
+class RuntimeTranscriptRef:
+    """Reference to runtime transcript data stored in clearable task storage."""
+
+    ref_id: str
+    task_id: str
+    runtime_session_id: str
+    kind: RuntimeTranscriptKind | str
+    storage_scope: str
+    relative_path: str
+    byte_count: int
+    redaction_status: str
+
+    def __post_init__(self) -> None:
+        _require_string(self.ref_id, "ref_id")
+        _require_string(self.task_id, "task_id")
+        _require_string(self.runtime_session_id, "runtime_session_id")
+        object.__setattr__(self, "kind", _coerce_transcript_kind(self.kind))
+        _require_string(self.storage_scope, "storage_scope")
+        if self.storage_scope != "runtime_data":
+            raise RuntimeResourceError("transcript refs must use runtime_data scope")
+        _require_string(self.relative_path, "relative_path")
+        _non_negative_int(self.byte_count, "byte_count")
+        _require_string(self.redaction_status, "redaction_status")
+
+
+@dataclass(frozen=True)
+class RuntimeTranscriptAuditSummary:
+    """Low-sensitive transcript summary suitable for task events."""
+
+    task_id: str
+    runtime_session_id: str
+    refs: tuple[RuntimeTranscriptRef, ...]
+    total_bytes: int
+    redaction_status: str
+    safe_summary: str
+    omitted_reason: str | None = None
+
+    def __post_init__(self) -> None:
+        _require_string(self.task_id, "task_id")
+        _require_string(self.runtime_session_id, "runtime_session_id")
+        if not isinstance(self.refs, tuple):
+            raise RuntimeResourceError("refs must be a tuple")
+        if any(not isinstance(ref, RuntimeTranscriptRef) for ref in self.refs):
+            raise RuntimeResourceError("refs must contain RuntimeTranscriptRef records")
+        _non_negative_int(self.total_bytes, "total_bytes")
+        _require_string(self.redaction_status, "redaction_status")
+        _require_string(self.safe_summary, "safe_summary")
+        if self.omitted_reason is not None:
+            _require_string(self.omitted_reason, "omitted_reason")
+
+
+@dataclass(frozen=True)
+class RuntimeTranscriptSink:
+    """Write runtime transcript data only under clearable task storage."""
+
+    runtime_store: WorkerAgentRuntimeDataStore
+    task_id: str
+    runtime_session_id: str
+    policy: RuntimeTranscriptPolicy = field(default_factory=RuntimeTranscriptPolicy)
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.runtime_store, WorkerAgentRuntimeDataStore):
+            raise RuntimeResourceError(
+                "runtime_store must be a WorkerAgentRuntimeDataStore"
+            )
+        _require_string(self.task_id, "task_id")
+        _require_string(self.runtime_session_id, "runtime_session_id")
+        if not isinstance(self.policy, RuntimeTranscriptPolicy):
+            raise RuntimeResourceError("policy must be a RuntimeTranscriptPolicy")
+
+    def write(
+        self,
+        kind: RuntimeTranscriptKind | str,
+        text: str,
+        *,
+        file_name: str | None = None,
+    ) -> RuntimeTranscriptRef:
+        """Persist transcript text under the task runtime directory and return a ref."""
+
+        transcript_kind = _coerce_transcript_kind(kind)
+        _require_string(text, "text")
+        if transcript_kind != RuntimeTranscriptKind.COMPACT_SUMMARY:
+            if not self.policy.allow_raw_transcript:
+                raise RuntimeResourceError("raw runtime transcript is disabled")
+            byte_limit = self.policy.max_raw_bytes
+        else:
+            byte_limit = self.policy.max_summary_bytes
+        sanitized = sanitize_runtime_text(text)
+        encoded = sanitized.encode("utf-8")
+        if len(encoded) > byte_limit:
+            raise RuntimeResourceError("runtime transcript exceeds byte limit")
+        safe_file_name = file_name or f"{transcript_kind.value}.txt"
+        _reject_unsafe_transcript_file_name(safe_file_name)
+        relative_path = Path("transcripts") / self.runtime_session_id / safe_file_name
+        path = self.runtime_store.task_runtime_path(self.task_id, relative_path)
+        _ensure_runtime_data_path(path, self.runtime_store.root)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(sanitized, encoding="utf-8")
+        return RuntimeTranscriptRef(
+            ref_id=f"{self.task_id}:{self.runtime_session_id}:{transcript_kind.value}",
+            task_id=self.task_id,
+            runtime_session_id=self.runtime_session_id,
+            kind=transcript_kind,
+            storage_scope="runtime_data",
+            relative_path=str(path.relative_to(self.runtime_store.root)),
+            byte_count=len(encoded),
+            redaction_status="redacted" if self.policy.redaction_required else "raw",
+        )
+
+    def audit_summary(
+        self, refs: tuple[RuntimeTranscriptRef, ...], *, safe_summary: str
+    ) -> RuntimeTranscriptAuditSummary:
+        """Build a low-sensitive audit summary from transcript references."""
+
+        return RuntimeTranscriptAuditSummary(
+            task_id=self.task_id,
+            runtime_session_id=self.runtime_session_id,
+            refs=refs,
+            total_bytes=sum(ref.byte_count for ref in refs),
+            redaction_status="redacted" if self.policy.redaction_required else "raw",
+            safe_summary=sanitize_runtime_text(safe_summary),
+            omitted_reason="raw transcript remains in runtime_data",
+        )
+
+
+@dataclass(frozen=True)
 class RuntimeDeadline:
     """Monotonic-time deadline derived from an effective wall-time budget."""
 
@@ -780,6 +950,53 @@ def runtime_concurrency_key_to_dict(
     return {"dimension": key.dimension.value, "value": key.value}
 
 
+def sanitize_runtime_text(text: str) -> str:
+    """Reject unsafe labels and redact simple secret-looking assignments."""
+
+    _require_string(text, "text")
+    lowered = text.lower()
+    for label in _SENSITIVE_TRANSCRIPT_LABELS:
+        if label in lowered:
+            raise RuntimeResourceError(
+                f"runtime transcript includes sensitive label: {label}"
+            )
+    sanitized_lines: list[str] = []
+    for line in text.splitlines():
+        sanitized_lines.append(_sanitize_secret_assignment(line))
+    return "\n".join(sanitized_lines)
+
+
+def runtime_transcript_ref_to_dict(ref: RuntimeTranscriptRef) -> dict[str, object]:
+    """Return a JSON-safe transcript reference."""
+
+    return {
+        "ref_id": ref.ref_id,
+        "task_id": ref.task_id,
+        "runtime_session_id": ref.runtime_session_id,
+        "kind": ref.kind.value,
+        "storage_scope": ref.storage_scope,
+        "relative_path": ref.relative_path,
+        "byte_count": ref.byte_count,
+        "redaction_status": ref.redaction_status,
+    }
+
+
+def runtime_transcript_audit_summary_to_dict(
+    summary: RuntimeTranscriptAuditSummary,
+) -> dict[str, object]:
+    """Return a JSON-safe transcript audit summary."""
+
+    return {
+        "task_id": summary.task_id,
+        "runtime_session_id": summary.runtime_session_id,
+        "refs": [runtime_transcript_ref_to_dict(ref) for ref in summary.refs],
+        "total_bytes": summary.total_bytes,
+        "redaction_status": summary.redaction_status,
+        "safe_summary": summary.safe_summary,
+        "omitted_reason": summary.omitted_reason,
+    }
+
+
 def runtime_budget_snapshot_to_dict(
     budget: RuntimeBudgetSnapshot,
 ) -> dict[str, object]:
@@ -859,6 +1076,65 @@ def _coerce_concurrency_decision_kind(
         raise RuntimeResourceError(
             f"Unknown runtime concurrency decision: {value!r}"
         ) from exc
+
+
+def _coerce_transcript_kind(value: RuntimeTranscriptKind | str) -> RuntimeTranscriptKind:
+    try:
+        return RuntimeTranscriptKind(value)
+    except ValueError as exc:
+        raise RuntimeResourceError(f"Unknown runtime transcript kind: {value!r}") from exc
+
+
+def _coerce_transcript_retention_class(
+    value: RuntimeTranscriptRetentionClass | str,
+) -> RuntimeTranscriptRetentionClass:
+    try:
+        return RuntimeTranscriptRetentionClass(value)
+    except ValueError as exc:
+        raise RuntimeResourceError(
+            f"Unknown runtime transcript retention class: {value!r}"
+        ) from exc
+
+
+_SENSITIVE_TRANSCRIPT_LABELS = frozenset(
+    {
+        "api_key",
+        "authorization:",
+        "credential",
+        "full_transcript",
+        "private_memory",
+        "raw_stderr",
+        "raw_stdout",
+        "raw_transcript",
+        "refresh_token",
+    }
+)
+
+
+def _sanitize_secret_assignment(line: str) -> str:
+    lowered = line.lower()
+    for marker in ("secret=", "token=", "password="):
+        index = lowered.find(marker)
+        if index >= 0:
+            return line[: index + len(marker)] + "[redacted]"
+    return line
+
+
+def _reject_unsafe_transcript_file_name(file_name: str) -> None:
+    _require_string(file_name, "file_name")
+    path = Path(file_name)
+    if path.name != file_name or file_name in {".", ".."}:
+        raise RuntimeResourceError("transcript file_name must be a single file name")
+    lowered = file_name.lower()
+    if any(part in lowered for part in ("memory", "manifest", "thread", "profile")):
+        raise RuntimeResourceError("transcript file_name must not target durable assets")
+
+
+def _ensure_runtime_data_path(path: Path, root: Path) -> None:
+    resolved_path = path.resolve()
+    resolved_root = root.resolve()
+    if resolved_path == resolved_root or resolved_root not in resolved_path.parents:
+        raise RuntimeResourceError("transcript path must stay under runtime data root")
 
 
 def _require_string(value: Any, field_name: str) -> str:
