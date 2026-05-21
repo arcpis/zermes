@@ -9,6 +9,11 @@ from worker_agents import (
     RuntimeResult,
     RuntimeState,
     RuntimeType,
+    TemporarySubagentProfileOverlay,
+    TemporarySubagentRequest,
+    TemporarySubagentRunner,
+    evaluate_temporary_subagent_policy,
+    run_temporary_subagent,
     validate_runtime_state_transition,
 )
 
@@ -36,3 +41,15 @@ def test_internal_runtime_api_is_available_from_worker_agents_package():
     assert finalize_internal_runtime_result.__name__ == (
         "finalize_internal_runtime_result"
     )
+
+
+def test_temporary_subagent_api_is_available_from_worker_agents_package():
+    assert TemporarySubagentProfileOverlay.__name__ == (
+        "TemporarySubagentProfileOverlay"
+    )
+    assert TemporarySubagentRequest.__name__ == "TemporarySubagentRequest"
+    assert TemporarySubagentRunner.__name__ == "TemporarySubagentRunner"
+    assert evaluate_temporary_subagent_policy.__name__ == (
+        "evaluate_temporary_subagent_policy"
+    )
+    assert run_temporary_subagent.__name__ == "run_temporary_subagent"

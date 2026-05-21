@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+import json
 
 import pytest
 
@@ -141,6 +142,29 @@ def test_runner_uses_effective_policy_for_shared_runtime(tmp_path):
     assert run.result_envelope is not None
     assert facade.run_config == run.session_config
     assert (tmp_path / "data" / "worker_agents" / "tasks" / "task-1").exists()
+
+
+def test_runner_writes_only_task_scoped_runtime_records(tmp_path):
+    profile_root = tmp_path / "profile" / "worker_agents"
+    runtime_root = tmp_path / "install" / "data" / "worker_agents"
+
+    run_temporary_subagent(
+        _profile(),
+        _request(),
+        facade=RecordingFacade(),
+        runtime_store=WorkerAgentRuntimeDataStore(runtime_root),
+    )
+
+    delegation_dir = runtime_root / "tasks" / "task-1" / "temporary-subagents" / "delegation-1"
+    request_data = json.loads((delegation_dir / "request.json").read_text())
+    policy_data = json.loads((delegation_dir / "policy.json").read_text())
+
+    assert request_data["parent_worker_id"] == "researcher"
+    assert policy_data["effective_policy"]["parent_worker_id"] == "researcher"
+    assert not (profile_root / "registry.json").exists()
+    assert not (profile_root / "workers" / "delegation-1").exists()
+    assert not (profile_root / "workers" / "researcher" / "memory").exists()
+    assert not (profile_root / "threads").exists()
 
 
 def test_runner_rejects_denied_policy_without_starting_runtime(tmp_path):
