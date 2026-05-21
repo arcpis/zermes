@@ -49,7 +49,10 @@ from .department_memory import (
     DepartmentMemoryError,
     DepartmentMemoryKind,
     DepartmentMemoryProposal,
+    DepartmentMemoryProposalCreateResult,
+    DepartmentMemoryProposalCreateStatus,
     DepartmentMemoryProposalState,
+    DepartmentMemoryProposalStore,
     DepartmentMemoryRecord,
     DepartmentMemorySensitivity,
     DepartmentMemoryVisibility,
@@ -58,6 +61,8 @@ from .department_memory import (
     department_memory_proposal_from_dict,
     department_memory_proposal_to_dict,
     department_memory_to_dict,
+    proposal_from_private_asset_input,
+    proposal_from_routed_department_asset,
     validate_department_memory_payload,
 )
 from .registry import (

@@ -3,11 +3,17 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import json
 from enum import StrEnum
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any, Mapping
 
+from utils import atomic_json_write
+
 from .organization import validate_org_node_id
+from .private_assets import PrivateAssetProposalInput
+from .result_routing import RoutedProposalKind, RoutedProposalRecord
+from .storage import get_worker_agents_home
 
 
 DEPARTMENT_MEMORY_SCHEMA_VERSION = 1
@@ -81,6 +87,13 @@ class DepartmentMemoryProposalState(StrEnum):
     REJECTED = "rejected"
     EXPIRED = "expired"
     SUPERSEDED = "superseded"
+
+
+class DepartmentMemoryProposalCreateStatus(StrEnum):
+    """Whether proposal creation wrote a new record or found a duplicate."""
+
+    CREATED = "created"
+    EXISTING = "existing"
 
 
 @dataclass(frozen=True)
@@ -193,10 +206,213 @@ class DepartmentMemoryProposal:
                 _require_string(value, field_name)
 
 
+@dataclass(frozen=True)
+class DepartmentMemoryProposalCreateResult:
+    """Result of creating a department memory proposal."""
+
+    proposal: DepartmentMemoryProposal
+    status: DepartmentMemoryProposalCreateStatus = (
+        DepartmentMemoryProposalCreateStatus.CREATED
+    )
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.proposal, DepartmentMemoryProposal):
+            raise DepartmentMemoryError("proposal must be a DepartmentMemoryProposal")
+        object.__setattr__(self, "status", _proposal_create_status(self.status))
+
+
+@dataclass
+class DepartmentMemoryProposalStore:
+    """Profile-home store for pending department memory proposals."""
+
+    root: Path = field(default_factory=get_worker_agents_home)
+
+    def department_memory_root(self, department_id: str) -> Path:
+        return department_memory_dir(self.root, department_id)
+
+    def proposals_dir(self, department_id: str) -> Path:
+        return self.department_memory_root(department_id) / "proposals"
+
+    def proposal_path(self, department_id: str, proposal_id: str) -> Path:
+        _validate_identifier(proposal_id, "proposal_id")
+        return self.proposals_dir(department_id) / f"{proposal_id}.json"
+
+    def create_proposal(
+        self, proposal: DepartmentMemoryProposal
+    ) -> DepartmentMemoryProposalCreateResult:
+        """Persist one pending proposal, returning an existing duplicate if found."""
+
+        if proposal.state is not DepartmentMemoryProposalState.PENDING:
+            raise DepartmentMemoryError("new department memory proposals must be pending")
+        existing = self.find_pending_duplicate(
+            department_id=proposal.department_id,
+            kind=proposal.kind,
+            source_hash=proposal.source_hash,
+        )
+        if existing is not None:
+            return DepartmentMemoryProposalCreateResult(
+                existing, DepartmentMemoryProposalCreateStatus.EXISTING
+            )
+        path = self.proposal_path(proposal.department_id, proposal.proposal_id)
+        if path.exists():
+            raise DepartmentMemoryError(
+                f"Department memory proposal already exists: {proposal.proposal_id!r}"
+            )
+        atomic_json_write(path, department_memory_proposal_to_dict(proposal))
+        return DepartmentMemoryProposalCreateResult(proposal)
+
+    def save_proposal(self, proposal: DepartmentMemoryProposal) -> Path:
+        """Overwrite one proposal after state changes made by review services."""
+
+        path = self.proposal_path(proposal.department_id, proposal.proposal_id)
+        atomic_json_write(path, department_memory_proposal_to_dict(proposal))
+        return path
+
+    def load_proposal(
+        self, department_id: str, proposal_id: str
+    ) -> DepartmentMemoryProposal:
+        path = self.proposal_path(department_id, proposal_id)
+        if not path.exists():
+            raise DepartmentMemoryError(
+                f"Department memory proposal does not exist: {proposal_id!r}"
+            )
+        return department_memory_proposal_from_dict(_load_json_object(path, "proposal"))
+
+    def list_proposals(
+        self,
+        department_id: str,
+        *,
+        state: DepartmentMemoryProposalState | str | None = None,
+        kind: DepartmentMemoryKind | str | None = None,
+        sensitivity: DepartmentMemorySensitivity | str | None = None,
+    ) -> list[DepartmentMemoryProposal]:
+        """Return department proposals sorted by creation time and id."""
+
+        directory = self.proposals_dir(department_id)
+        if not directory.exists():
+            return []
+        state_value = _proposal_state(state) if state is not None else None
+        kind_value = _memory_kind(kind) if kind is not None else None
+        sensitivity_value = (
+            _memory_sensitivity(sensitivity) if sensitivity is not None else None
+        )
+        proposals = [
+            department_memory_proposal_from_dict(_load_json_object(path, "proposal"))
+            for path in directory.glob("*.json")
+        ]
+        filtered = [
+            proposal
+            for proposal in proposals
+            if (state_value is None or proposal.state == state_value)
+            and (kind_value is None or proposal.kind == kind_value)
+            and (sensitivity_value is None or proposal.sensitivity == sensitivity_value)
+        ]
+        return sorted(
+            filtered,
+            key=lambda proposal: (
+                proposal.created_at or "",
+                proposal.proposal_id,
+            ),
+        )
+
+    def find_pending_duplicate(
+        self,
+        *,
+        department_id: str,
+        kind: DepartmentMemoryKind | str,
+        source_hash: str | None,
+    ) -> DepartmentMemoryProposal | None:
+        """Find a pending proposal with the same department, kind, and source hash."""
+
+        if source_hash is None:
+            return None
+        for proposal in self.list_proposals(
+            department_id,
+            state=DepartmentMemoryProposalState.PENDING,
+            kind=kind,
+        ):
+            if proposal.source_hash == source_hash:
+                return proposal
+        return None
+
+
 def validate_department_memory_payload(payload: Mapping[str, Any]) -> None:
     """Reject raw, private, or secret-bearing fields before durable storage."""
 
     _reject_sensitive_payload(payload, "payload")
+
+
+def proposal_from_routed_department_asset(
+    routed: RoutedProposalRecord,
+    *,
+    kind: DepartmentMemoryKind | str,
+    visibility: DepartmentMemoryVisibility | str = (
+        DepartmentMemoryVisibility.PRIVATE_TO_DEPARTMENT
+    ),
+    sensitivity: DepartmentMemorySensitivity | str = DepartmentMemorySensitivity.INTERNAL,
+    created_at: str | None = None,
+) -> DepartmentMemoryProposal:
+    """Convert a routed department asset candidate into a memory proposal."""
+
+    if routed.proposal_kind is not RoutedProposalKind.DEPARTMENT_ASSET:
+        raise DepartmentMemoryError("routed proposal must target a department asset")
+    department_id = _department_id_from_target_scope(routed.target_scope)
+    source_hash = routed.metadata.get("source_hash")
+    if source_hash is not None:
+        _require_string(source_hash, "source_hash")
+    review_reason = routed.metadata.get("review_reason") or ""
+    if not isinstance(review_reason, str):
+        raise DepartmentMemoryError("review_reason must be a string")
+    return DepartmentMemoryProposal(
+        proposal_id=routed.proposal_id,
+        department_id=department_id,
+        kind=kind,
+        candidate_summary=routed.summary,
+        source_actor=routed.source_worker_id,
+        source_refs=(f"tasks/{routed.task_id}/runtime/{routed.source_route_item_id}",),
+        rationale=review_reason,
+        source_hash=source_hash,
+        visibility=visibility,
+        sensitivity=sensitivity,
+        review_requirement="department_lead_or_main_agent",
+        created_at=created_at,
+        audit_summary=(
+            f"Routed department asset proposal {routed.proposal_id} "
+            f"from task {routed.task_id}."
+        ),
+    )
+
+
+def proposal_from_private_asset_input(
+    proposal_input: PrivateAssetProposalInput,
+    *,
+    proposal_id: str,
+    department_id: str,
+    kind: DepartmentMemoryKind | str,
+    source_actor: str | None = None,
+    visibility: DepartmentMemoryVisibility | str = (
+        DepartmentMemoryVisibility.PRIVATE_TO_DEPARTMENT
+    ),
+    sensitivity: DepartmentMemorySensitivity | str = DepartmentMemorySensitivity.INTERNAL,
+    created_at: str | None = None,
+) -> DepartmentMemoryProposal:
+    """Convert a low-sensitivity private asset input without reading private text."""
+
+    return DepartmentMemoryProposal(
+        proposal_id=proposal_id,
+        department_id=department_id,
+        kind=kind,
+        candidate_summary=proposal_input.summary,
+        source_actor=source_actor or proposal_input.source_worker_id,
+        source_refs=proposal_input.source_refs,
+        rationale=proposal_input.review_requirement,
+        source_hash=proposal_input.content_hash,
+        visibility=visibility,
+        sensitivity=sensitivity,
+        review_requirement=proposal_input.review_requirement,
+        created_at=created_at,
+        audit_summary=proposal_input.audit_summary,
+    )
 
 
 def department_memory_dir(worker_agents_home: str | Path, department_id: str) -> Path:
@@ -497,3 +713,36 @@ def _reject_sensitive_payload(value: Any, field_name: str) -> None:
     if isinstance(value, (list, tuple)):
         for index, nested in enumerate(value):
             _reject_sensitive_payload(nested, f"{field_name}[{index}]")
+
+
+def _proposal_create_status(
+    value: DepartmentMemoryProposalCreateStatus | str,
+) -> DepartmentMemoryProposalCreateStatus:
+    try:
+        return (
+            value
+            if isinstance(value, DepartmentMemoryProposalCreateStatus)
+            else DepartmentMemoryProposalCreateStatus(value)
+        )
+    except ValueError as exc:
+        raise DepartmentMemoryError(
+            f"Unknown department memory proposal create status: {value!r}"
+        ) from exc
+
+
+def _department_id_from_target_scope(target_scope: str) -> str:
+    _require_string(target_scope, "target_scope")
+    prefix = "department:"
+    if not target_scope.startswith(prefix):
+        raise DepartmentMemoryError("target_scope must start with 'department:'")
+    department_id = target_scope[len(prefix) :]
+    validate_org_node_id(department_id)
+    return department_id
+
+
+def _load_json_object(path: Path, field_name: str) -> Mapping[str, Any]:
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise DepartmentMemoryError(f"{field_name} JSON is invalid: {path}") from exc
+    return _require_mapping(data, field_name)
