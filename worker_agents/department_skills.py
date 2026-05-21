@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
+import json
 from enum import StrEnum
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any, Mapping
 
 from .organization import validate_org_node_id
+from .private_skill_experience import SkillExperienceProposalInput
+from .storage import get_worker_agents_home
+from utils import atomic_json_write
 
 
 DEPARTMENT_SKILL_SCHEMA_VERSION = 1
@@ -91,6 +95,40 @@ class DepartmentSkillProposalAction(StrEnum):
     RESTRICT_BINDING = "restrict_binding"
     DEPRECATE_BINDING = "deprecate_binding"
     DISABLE_BINDING = "disable_binding"
+
+
+class DepartmentSkillProposalCreateStatus(StrEnum):
+    """Whether proposal creation wrote a new record or found a duplicate."""
+
+    CREATED = "created"
+    EXISTING = "existing"
+
+
+class DepartmentSkillReviewerRole(StrEnum):
+    """Roles allowed to review department skill proposals."""
+
+    DEPARTMENT_LEAD = "department_lead"
+    MAIN_AGENT = "main_agent"
+    USER = "user"
+    GOVERNANCE_SERVICE = "governance_service"
+
+
+class DepartmentSkillReviewDecision(StrEnum):
+    """Supported review decisions for a department skill proposal."""
+
+    APPROVE = "approve"
+    REJECT = "reject"
+    REQUEST_CHANGES = "request_changes"
+    EXPIRE = "expire"
+
+
+_STATE_RANK = {
+    DepartmentSkillBindingState.RECOMMENDED: 10,
+    DepartmentSkillBindingState.DEFAULT: 20,
+    DepartmentSkillBindingState.RESTRICTED: 30,
+    DepartmentSkillBindingState.DEPRECATED: 40,
+    DepartmentSkillBindingState.DISABLED: 50,
+}
 
 
 @dataclass(frozen=True)
@@ -250,10 +288,446 @@ class DepartmentSkillBindingProposal:
         )
 
 
+@dataclass(frozen=True)
+class DepartmentSkillProposalCreateResult:
+    """Result of creating a department skill proposal."""
+
+    proposal: DepartmentSkillBindingProposal
+    status: DepartmentSkillProposalCreateStatus = (
+        DepartmentSkillProposalCreateStatus.CREATED
+    )
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.proposal, DepartmentSkillBindingProposal):
+            raise DepartmentSkillError("proposal must be a DepartmentSkillBindingProposal")
+        object.__setattr__(self, "status", _proposal_create_status(self.status))
+
+
+@dataclass(frozen=True)
+class DepartmentSkillReviewAction:
+    """One explicit review decision made by an authorized actor."""
+
+    proposal_id: str
+    decision: DepartmentSkillReviewDecision | str
+    actor_id: str
+    actor_role: DepartmentSkillReviewerRole | str
+    reason: str
+    reviewed_at: str
+    user_confirmation_ref: str | None = None
+    supersede_binding_id: str | None = None
+    audit_refs: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        _validate_identifier(self.proposal_id, "proposal_id")
+        object.__setattr__(self, "decision", _review_decision(self.decision))
+        _require_string(self.actor_id, "actor_id")
+        object.__setattr__(self, "actor_role", _reviewer_role(self.actor_role))
+        _require_string(self.reason, "reason")
+        _require_string(self.reviewed_at, "reviewed_at")
+        if self.user_confirmation_ref is not None:
+            _validate_relative_ref(self.user_confirmation_ref, "user_confirmation_ref")
+        if self.supersede_binding_id is not None:
+            _validate_identifier(self.supersede_binding_id, "supersede_binding_id")
+        object.__setattr__(
+            self,
+            "audit_refs",
+            tuple(_validate_relative_ref(ref, "audit_refs") for ref in self.audit_refs),
+        )
+
+
+@dataclass(frozen=True)
+class DepartmentSkillResolvedBinding:
+    """Resolved binding after department inheritance and conservative conflicts."""
+
+    binding: DepartmentSkillBindingRecord
+    inherited: bool = False
+    source_department_id: str | None = None
+    audit_summary: str = ""
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.binding, DepartmentSkillBindingRecord):
+            raise DepartmentSkillError("binding must be a DepartmentSkillBindingRecord")
+        if not isinstance(self.inherited, bool):
+            raise DepartmentSkillError("inherited must be a boolean")
+        if self.source_department_id is not None:
+            validate_org_node_id(self.source_department_id)
+        if not isinstance(self.audit_summary, str):
+            raise DepartmentSkillError("audit_summary must be a string")
+
+
+@dataclass
+class DepartmentSkillBindingStore:
+    """Profile-home store for department skill proposals and active bindings."""
+
+    root: Path = field(default_factory=get_worker_agents_home)
+
+    def department_skill_root(self, department_id: str) -> Path:
+        return department_skill_dir(self.root, department_id)
+
+    def proposals_dir(self, department_id: str) -> Path:
+        return self.department_skill_root(department_id) / "proposals"
+
+    def active_dir(self, department_id: str) -> Path:
+        return self.department_skill_root(department_id) / "active"
+
+    def history_dir(self, department_id: str, binding_id: str) -> Path:
+        _validate_identifier(binding_id, "binding_id")
+        return self.department_skill_root(department_id) / "history" / binding_id
+
+    def proposal_path(self, department_id: str, proposal_id: str) -> Path:
+        _validate_identifier(proposal_id, "proposal_id")
+        return self.proposals_dir(department_id) / f"{proposal_id}.json"
+
+    def binding_path(self, department_id: str, binding_id: str) -> Path:
+        _validate_identifier(binding_id, "binding_id")
+        return self.active_dir(department_id) / f"{binding_id}.json"
+
+    def history_path(self, department_id: str, binding_id: str, revision: int) -> Path:
+        _require_positive_int(revision, "revision")
+        return self.history_dir(department_id, binding_id) / f"{revision}.json"
+
+    def create_proposal(
+        self, proposal: DepartmentSkillBindingProposal
+    ) -> DepartmentSkillProposalCreateResult:
+        """Persist one pending proposal, returning an existing duplicate if found."""
+
+        if proposal.state is not DepartmentSkillProposalState.PENDING:
+            raise DepartmentSkillError("new department skill proposals must be pending")
+        existing = self.find_pending_duplicate(
+            department_id=proposal.department_id,
+            skill_id=proposal.skill_id,
+            source_hash=proposal.source_hash,
+        )
+        if existing is not None:
+            return DepartmentSkillProposalCreateResult(
+                existing, DepartmentSkillProposalCreateStatus.EXISTING
+            )
+        path = self.proposal_path(proposal.department_id, proposal.proposal_id)
+        if path.exists():
+            raise DepartmentSkillError(
+                f"Department skill proposal already exists: {proposal.proposal_id!r}"
+            )
+        atomic_json_write(path, department_skill_proposal_to_dict(proposal))
+        return DepartmentSkillProposalCreateResult(proposal)
+
+    def save_proposal(self, proposal: DepartmentSkillBindingProposal) -> Path:
+        path = self.proposal_path(proposal.department_id, proposal.proposal_id)
+        atomic_json_write(path, department_skill_proposal_to_dict(proposal))
+        return path
+
+    def load_proposal(
+        self, department_id: str, proposal_id: str
+    ) -> DepartmentSkillBindingProposal:
+        path = self.proposal_path(department_id, proposal_id)
+        if not path.exists():
+            raise DepartmentSkillError(
+                f"Department skill proposal does not exist: {proposal_id!r}"
+            )
+        return department_skill_proposal_from_dict(_load_json_object(path, "proposal"))
+
+    def list_proposals(
+        self,
+        department_id: str,
+        *,
+        state: DepartmentSkillProposalState | str | None = None,
+        skill_id: str | None = None,
+    ) -> list[DepartmentSkillBindingProposal]:
+        directory = self.proposals_dir(department_id)
+        if not directory.exists():
+            return []
+        state_value = _proposal_state(state) if state is not None else None
+        if skill_id is not None:
+            _validate_identifier(skill_id, "skill_id")
+        proposals = [
+            department_skill_proposal_from_dict(_load_json_object(path, "proposal"))
+            for path in directory.glob("*.json")
+        ]
+        filtered = [
+            proposal
+            for proposal in proposals
+            if (state_value is None or proposal.state == state_value)
+            and (skill_id is None or proposal.skill_id == skill_id)
+        ]
+        return sorted(
+            filtered,
+            key=lambda proposal: (proposal.created_at or "", proposal.proposal_id),
+        )
+
+    def find_pending_duplicate(
+        self,
+        *,
+        department_id: str,
+        skill_id: str,
+        source_hash: str | None,
+    ) -> DepartmentSkillBindingProposal | None:
+        if source_hash is None:
+            return None
+        for proposal in self.list_proposals(
+            department_id,
+            state=DepartmentSkillProposalState.PENDING,
+            skill_id=skill_id,
+        ):
+            if proposal.source_hash == source_hash:
+                return proposal
+        return None
+
+    def save_binding(self, binding: DepartmentSkillBindingRecord) -> Path:
+        path = self.binding_path(binding.department_id, binding.binding_id)
+        atomic_json_write(path, department_skill_binding_to_dict(binding))
+        return path
+
+    def load_binding(
+        self, department_id: str, binding_id: str
+    ) -> DepartmentSkillBindingRecord:
+        path = self.binding_path(department_id, binding_id)
+        if not path.exists():
+            raise DepartmentSkillError(
+                f"Department skill binding does not exist: {binding_id!r}"
+            )
+        return department_skill_binding_from_dict(_load_json_object(path, "binding"))
+
+    def list_active_bindings(self, department_id: str) -> list[DepartmentSkillBindingRecord]:
+        directory = self.active_dir(department_id)
+        if not directory.exists():
+            return []
+        bindings = [
+            department_skill_binding_from_dict(_load_json_object(path, "binding"))
+            for path in directory.glob("*.json")
+        ]
+        return sorted(
+            [binding for binding in bindings if binding.active],
+            key=lambda binding: (binding.skill_id, binding.binding_id),
+        )
+
+    def write_history(self, binding: DepartmentSkillBindingRecord) -> Path:
+        path = self.history_path(
+            binding.department_id, binding.binding_id, binding.revision
+        )
+        atomic_json_write(path, department_skill_binding_to_dict(binding))
+        return path
+
+
+@dataclass
+class DepartmentSkillReviewService:
+    """Review service that is allowed to promote proposals to active bindings."""
+
+    store: DepartmentSkillBindingStore = field(default_factory=DepartmentSkillBindingStore)
+
+    def approve(
+        self, department_id: str, proposal_id: str, action: DepartmentSkillReviewAction
+    ) -> DepartmentSkillBindingRecord:
+        """Approve a proposal and write the active binding record."""
+
+        proposal = self.store.load_proposal(department_id, proposal_id)
+        self._validate_action(proposal, action, DepartmentSkillReviewDecision.APPROVE)
+        if proposal.state not in {
+            DepartmentSkillProposalState.PENDING,
+            DepartmentSkillProposalState.CHANGES_REQUESTED,
+        }:
+            raise DepartmentSkillError("only pending proposals can be approved")
+        if _requires_user_confirmation(proposal) and not action.user_confirmation_ref:
+            raise DepartmentSkillError("user confirmation is required for this proposal")
+
+        binding_id = action.supersede_binding_id or proposal.proposal_id
+        revision = 1
+        if action.supersede_binding_id is not None:
+            current = self.store.load_binding(
+                proposal.department_id, action.supersede_binding_id
+            )
+            self.store.write_history(replace(current, active=False))
+            revision = current.revision + 1
+
+        binding = DepartmentSkillBindingRecord(
+            department_id=proposal.department_id,
+            binding_id=binding_id,
+            skill_id=proposal.skill_id,
+            skill_source=proposal.skill_source,
+            version_constraint=proposal.version_constraint,
+            state=proposal.candidate_state,
+            visibility=proposal.visibility,
+            sensitivity=proposal.sensitivity,
+            usage_guidance=proposal.candidate_guidance,
+            applicability=proposal.applicability,
+            disabled_conditions=proposal.disabled_conditions,
+            limitations=proposal.limitations,
+            risk_notes=proposal.risk_notes,
+            tool_assumptions=proposal.tool_assumptions,
+            owner=proposal.owner,
+            source_refs=proposal.source_refs + action.audit_refs,
+            revision=revision,
+            active=True,
+            accepted_at=action.reviewed_at,
+            created_at=proposal.created_at,
+            updated_at=action.reviewed_at,
+            audit_summary=_review_audit_summary(proposal, action),
+            replacement_skill_id=proposal.replacement_skill_id,
+        )
+        self.store.save_binding(binding)
+        updated_state = (
+            DepartmentSkillProposalState.SUPERSEDED
+            if action.supersede_binding_id is not None
+            else DepartmentSkillProposalState.APPROVED
+        )
+        self.store.save_proposal(
+            _proposal_with_review_state(proposal, updated_state, action)
+        )
+        return binding
+
+    def reject(
+        self, department_id: str, proposal_id: str, action: DepartmentSkillReviewAction
+    ) -> DepartmentSkillBindingProposal:
+        return self._update_proposal_state(
+            department_id,
+            proposal_id,
+            action,
+            DepartmentSkillReviewDecision.REJECT,
+            DepartmentSkillProposalState.REJECTED,
+        )
+
+    def request_changes(
+        self, department_id: str, proposal_id: str, action: DepartmentSkillReviewAction
+    ) -> DepartmentSkillBindingProposal:
+        return self._update_proposal_state(
+            department_id,
+            proposal_id,
+            action,
+            DepartmentSkillReviewDecision.REQUEST_CHANGES,
+            DepartmentSkillProposalState.CHANGES_REQUESTED,
+        )
+
+    def expire(
+        self, department_id: str, proposal_id: str, action: DepartmentSkillReviewAction
+    ) -> DepartmentSkillBindingProposal:
+        return self._update_proposal_state(
+            department_id,
+            proposal_id,
+            action,
+            DepartmentSkillReviewDecision.EXPIRE,
+            DepartmentSkillProposalState.EXPIRED,
+        )
+
+    def _update_proposal_state(
+        self,
+        department_id: str,
+        proposal_id: str,
+        action: DepartmentSkillReviewAction,
+        expected_decision: DepartmentSkillReviewDecision,
+        new_state: DepartmentSkillProposalState,
+    ) -> DepartmentSkillBindingProposal:
+        proposal = self.store.load_proposal(department_id, proposal_id)
+        self._validate_action(proposal, action, expected_decision)
+        if proposal.state is not DepartmentSkillProposalState.PENDING:
+            raise DepartmentSkillError("only pending proposals can change review state")
+        updated = _proposal_with_review_state(proposal, new_state, action)
+        self.store.save_proposal(updated)
+        return updated
+
+    def _validate_action(
+        self,
+        proposal: DepartmentSkillBindingProposal,
+        action: DepartmentSkillReviewAction,
+        expected_decision: DepartmentSkillReviewDecision,
+    ) -> None:
+        if action.proposal_id != proposal.proposal_id:
+            raise DepartmentSkillError("review action proposal_id does not match")
+        if action.decision is not expected_decision:
+            raise DepartmentSkillError("review action decision does not match")
+        if not action.actor_id:
+            raise DepartmentSkillError("review action actor_id is required")
+
+
 def validate_department_skill_payload(payload: Mapping[str, Any]) -> None:
     """Reject raw skill material, private experience text, and secrets."""
 
     _reject_sensitive_payload(payload, "payload")
+
+
+def proposal_from_skill_experience_input(
+    proposal_input: SkillExperienceProposalInput,
+    *,
+    proposal_id: str,
+    department_id: str,
+    proposed_action: DepartmentSkillProposalAction | str = (
+        DepartmentSkillProposalAction.ADD_BINDING
+    ),
+    candidate_state: DepartmentSkillBindingState | str = (
+        DepartmentSkillBindingState.RECOMMENDED
+    ),
+    source_actor: str | None = None,
+    created_at: str | None = None,
+) -> DepartmentSkillBindingProposal:
+    """Convert low-sensitivity private skill experience into a proposal."""
+
+    return DepartmentSkillBindingProposal(
+        proposal_id=proposal_id,
+        department_id=department_id,
+        proposed_action=proposed_action,
+        skill_id=proposal_input.skill_id,
+        candidate_guidance=proposal_input.summary,
+        source_actor=source_actor or proposal_input.source_worker_id,
+        source_refs=proposal_input.source_refs,
+        rationale=proposal_input.applicability,
+        source_hash=f"{proposal_input.source_worker_id}:{proposal_input.source_experience_id}",
+        candidate_state=candidate_state,
+        limitations=proposal_input.limitations,
+        risk_notes=proposal_input.risk_notes,
+        tool_assumptions=proposal_input.tool_assumptions,
+        review_requirement=proposal_input.review_requirement,
+        created_at=created_at,
+        audit_summary=(
+            f"Low-sensitivity skill experience proposal "
+            f"{proposal_input.proposal_input_id}."
+        ),
+    )
+
+
+def resolve_department_skill_bindings(
+    store: DepartmentSkillBindingStore,
+    department_id: str,
+    *,
+    inherited_department_ids: tuple[str, ...] = (),
+) -> tuple[DepartmentSkillResolvedBinding, ...]:
+    """Resolve active department bindings with conservative inheritance rules."""
+
+    validate_org_node_id(department_id)
+    resolved: dict[str, DepartmentSkillResolvedBinding] = {}
+
+    for inherited_department_id in inherited_department_ids:
+        validate_org_node_id(inherited_department_id)
+        for binding in store.list_active_bindings(inherited_department_id):
+            if binding.visibility not in {
+                DepartmentSkillBindingVisibility.INHERITABLE_GUIDANCE,
+                DepartmentSkillBindingVisibility.ORGANIZATION_GUIDANCE,
+            }:
+                continue
+            _merge_resolved_binding(
+                resolved,
+                DepartmentSkillResolvedBinding(
+                    binding=binding,
+                    inherited=True,
+                    source_department_id=inherited_department_id,
+                    audit_summary=(
+                        f"Inherited {binding.binding_id} from "
+                        f"{inherited_department_id}."
+                    ),
+                ),
+            )
+
+    for binding in store.list_active_bindings(department_id):
+        _merge_resolved_binding(
+            resolved,
+            DepartmentSkillResolvedBinding(
+                binding=binding,
+                inherited=False,
+                source_department_id=department_id,
+                audit_summary=f"Resolved local binding {binding.binding_id}.",
+            ),
+        )
+
+    return tuple(
+        resolved[skill_id]
+        for skill_id in sorted(resolved, key=lambda value: (value, resolved[value].binding.binding_id))
+    )
 
 
 def department_skill_dir(worker_agents_home: str | Path, department_id: str) -> Path:
@@ -433,6 +907,19 @@ def department_skill_proposal_from_dict(
             data.get("replacement_skill_id"), "replacement_skill_id"
         ),
     )
+
+
+def department_skill_resolved_binding_to_dict(
+    resolved: DepartmentSkillResolvedBinding,
+) -> dict[str, Any]:
+    """Return a JSON-safe resolved binding view for policy callers."""
+
+    return {
+        "binding": department_skill_binding_to_dict(resolved.binding),
+        "inherited": resolved.inherited,
+        "source_department_id": resolved.source_department_id,
+        "audit_summary": resolved.audit_summary,
+    }
 
 
 _BINDING_FIELDS = {
@@ -640,6 +1127,110 @@ def _proposal_action(
         raise DepartmentSkillError(
             f"Unknown department skill proposal action: {value!r}"
         ) from exc
+
+
+def _proposal_create_status(
+    value: DepartmentSkillProposalCreateStatus | str,
+) -> DepartmentSkillProposalCreateStatus:
+    try:
+        return (
+            value
+            if isinstance(value, DepartmentSkillProposalCreateStatus)
+            else DepartmentSkillProposalCreateStatus(value)
+        )
+    except ValueError as exc:
+        raise DepartmentSkillError(
+            f"Unknown department skill create status: {value!r}"
+        ) from exc
+
+
+def _reviewer_role(value: DepartmentSkillReviewerRole | str) -> DepartmentSkillReviewerRole:
+    try:
+        return (
+            value
+            if isinstance(value, DepartmentSkillReviewerRole)
+            else DepartmentSkillReviewerRole(value)
+        )
+    except ValueError as exc:
+        raise DepartmentSkillError(
+            f"Unknown department skill reviewer role: {value!r}"
+        ) from exc
+
+
+def _review_decision(
+    value: DepartmentSkillReviewDecision | str,
+) -> DepartmentSkillReviewDecision:
+    try:
+        return (
+            value
+            if isinstance(value, DepartmentSkillReviewDecision)
+            else DepartmentSkillReviewDecision(value)
+        )
+    except ValueError as exc:
+        raise DepartmentSkillError(
+            f"Unknown department skill review decision: {value!r}"
+        ) from exc
+
+
+def _requires_user_confirmation(proposal: DepartmentSkillBindingProposal) -> bool:
+    return (
+        proposal.sensitivity
+        is DepartmentSkillBindingSensitivity.USER_CONFIRMATION_REQUIRED
+    )
+
+
+def _review_audit_summary(
+    proposal: DepartmentSkillBindingProposal, action: DepartmentSkillReviewAction
+) -> str:
+    return (
+        f"{action.decision.value} department skill proposal "
+        f"{proposal.proposal_id} by {action.actor_role.value}:{action.actor_id}. "
+        f"Reason: {action.reason}"
+    )
+
+
+def _proposal_with_review_state(
+    proposal: DepartmentSkillBindingProposal,
+    state: DepartmentSkillProposalState,
+    action: DepartmentSkillReviewAction,
+) -> DepartmentSkillBindingProposal:
+    return replace(
+        proposal,
+        state=state,
+        updated_at=action.reviewed_at,
+        audit_summary=_review_audit_summary(proposal, action),
+    )
+
+
+def _merge_resolved_binding(
+    resolved: dict[str, DepartmentSkillResolvedBinding],
+    candidate: DepartmentSkillResolvedBinding,
+) -> None:
+    existing = resolved.get(candidate.binding.skill_id)
+    if existing is None or _is_more_conservative(candidate.binding, existing.binding):
+        resolved[candidate.binding.skill_id] = candidate
+
+
+def _is_more_conservative(
+    candidate: DepartmentSkillBindingRecord,
+    existing: DepartmentSkillBindingRecord,
+) -> bool:
+    candidate_rank = _STATE_RANK[candidate.state]
+    existing_rank = _STATE_RANK[existing.state]
+    if candidate_rank != existing_rank:
+        return candidate_rank > existing_rank
+    # For equal state, prefer local overrides and then the newest revision.
+    if candidate.department_id != existing.department_id:
+        return True
+    return candidate.revision >= existing.revision
+
+
+def _load_json_object(path: Path, field_name: str) -> Mapping[str, Any]:
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise DepartmentSkillError(f"{field_name} is not valid JSON: {path}") from exc
+    return _require_mapping(data, field_name)
 
 
 def _reject_sensitive_payload(value: Any, path: str) -> None:
