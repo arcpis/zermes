@@ -59,6 +59,26 @@ class RuntimeCancellationReason(StrEnum):
     SAFETY_STOP = "safety_stop"
 
 
+class RuntimeConcurrencyDimension(StrEnum):
+    """Dimensions that can independently limit runtime concurrency."""
+
+    USER = "user"
+    ORGANIZATION_NODE = "organization_node"
+    WORKER = "worker"
+    ADAPTER = "adapter"
+    RUNTIME_TYPE = "runtime_type"
+    PARENT_RUNTIME_SESSION = "parent_runtime_session"
+
+
+class RuntimeConcurrencyDecisionKind(StrEnum):
+    """Outcomes from attempting to acquire a runtime concurrency slot."""
+
+    ALLOWED = "allowed"
+    REJECTED = "rejected"
+    QUEUED = "queued"
+    NEEDS_APPROVAL = "needs_approval"
+
+
 @dataclass(frozen=True)
 class RuntimeBudgetPolicy:
     """One policy layer that may narrow runtime resource limits."""
@@ -233,6 +253,200 @@ class RuntimeCancellationToken:
                 audit_notes=self.audit_notes + (request.safe_summary,),
             )
         return RuntimeCancellationToken(request=request, audit_notes=self.audit_notes)
+
+
+@dataclass(frozen=True)
+class RuntimeConcurrencyKey:
+    """One counted concurrency bucket for a runtime invocation."""
+
+    dimension: RuntimeConcurrencyDimension | str
+    value: str
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self, "dimension", _coerce_concurrency_dimension(self.dimension)
+        )
+        _require_string(self.value, "value")
+
+
+@dataclass(frozen=True)
+class RuntimeConcurrencyLimit:
+    """Maximum active invocations for one concurrency bucket."""
+
+    key: RuntimeConcurrencyKey
+    max_active: int
+    decision_kind: RuntimeConcurrencyDecisionKind | str = (
+        RuntimeConcurrencyDecisionKind.REJECTED
+    )
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.key, RuntimeConcurrencyKey):
+            raise RuntimeResourceError("key must be a RuntimeConcurrencyKey")
+        _positive_int(self.max_active, "max_active")
+        object.__setattr__(
+            self,
+            "decision_kind",
+            _coerce_concurrency_decision_kind(self.decision_kind),
+        )
+
+
+@dataclass(frozen=True)
+class RuntimeConcurrencyRequest:
+    """Runtime identity fields used to compute concurrency buckets."""
+
+    request_id: str
+    worker_id: str
+    runtime_type: str
+    user_id: str | None = None
+    organization_node_id: str | None = None
+    adapter_id: str | None = None
+    parent_runtime_session_id: str | None = None
+
+    def __post_init__(self) -> None:
+        _require_string(self.request_id, "request_id")
+        _require_string(self.worker_id, "worker_id")
+        _require_string(self.runtime_type, "runtime_type")
+        for field_name in (
+            "user_id",
+            "organization_node_id",
+            "adapter_id",
+            "parent_runtime_session_id",
+        ):
+            value = getattr(self, field_name)
+            if value is not None:
+                _require_string(value, field_name)
+
+    def keys(self) -> tuple[RuntimeConcurrencyKey, ...]:
+        """Return the concurrency buckets occupied by this request."""
+
+        pairs = (
+            (RuntimeConcurrencyDimension.USER, self.user_id),
+            (RuntimeConcurrencyDimension.ORGANIZATION_NODE, self.organization_node_id),
+            (RuntimeConcurrencyDimension.WORKER, self.worker_id),
+            (RuntimeConcurrencyDimension.ADAPTER, self.adapter_id),
+            (RuntimeConcurrencyDimension.RUNTIME_TYPE, self.runtime_type),
+            (
+                RuntimeConcurrencyDimension.PARENT_RUNTIME_SESSION,
+                self.parent_runtime_session_id,
+            ),
+        )
+        return tuple(
+            RuntimeConcurrencyKey(dimension=dimension, value=value)
+            for dimension, value in pairs
+            if value is not None
+        )
+
+
+@dataclass(frozen=True)
+class RuntimeConcurrencyLease:
+    """A running invocation's acquired concurrency slots."""
+
+    lease_id: str
+    request_id: str
+    keys: tuple[RuntimeConcurrencyKey, ...]
+
+    def __post_init__(self) -> None:
+        _require_string(self.lease_id, "lease_id")
+        _require_string(self.request_id, "request_id")
+        if not isinstance(self.keys, tuple) or not self.keys:
+            raise RuntimeResourceError("keys must be a non-empty tuple")
+        if any(not isinstance(key, RuntimeConcurrencyKey) for key in self.keys):
+            raise RuntimeResourceError("keys must contain RuntimeConcurrencyKey records")
+
+
+@dataclass(frozen=True)
+class RuntimeConcurrencyDecision:
+    """Allow, reject, queue, or escalate one concurrency acquisition."""
+
+    kind: RuntimeConcurrencyDecisionKind | str
+    reason_code: str
+    safe_summary: str
+    lease: RuntimeConcurrencyLease | None = None
+    retry_after_seconds: int | None = None
+    limit_key: RuntimeConcurrencyKey | None = None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self, "kind", _coerce_concurrency_decision_kind(self.kind)
+        )
+        _require_string(self.reason_code, "reason_code")
+        _require_string(self.safe_summary, "safe_summary")
+        if self.lease is not None and not isinstance(
+            self.lease, RuntimeConcurrencyLease
+        ):
+            raise RuntimeResourceError("lease must be a RuntimeConcurrencyLease")
+        _optional_positive_int(self.retry_after_seconds, "retry_after_seconds")
+        if self.limit_key is not None and not isinstance(
+            self.limit_key, RuntimeConcurrencyKey
+        ):
+            raise RuntimeResourceError("limit_key must be a RuntimeConcurrencyKey")
+
+
+@dataclass
+class RuntimeConcurrencyGate:
+    """Local in-process gate for early runtime concurrency enforcement."""
+
+    active_leases: dict[str, RuntimeConcurrencyLease] = field(default_factory=dict)
+
+    def try_acquire(
+        self,
+        request: RuntimeConcurrencyRequest,
+        limits: tuple[RuntimeConcurrencyLimit, ...],
+    ) -> RuntimeConcurrencyDecision:
+        """Acquire a local concurrency lease or return a safe denial."""
+
+        if not isinstance(request, RuntimeConcurrencyRequest):
+            raise RuntimeResourceError("request must be a RuntimeConcurrencyRequest")
+        if any(not isinstance(limit, RuntimeConcurrencyLimit) for limit in limits):
+            raise RuntimeResourceError(
+                "limits must contain RuntimeConcurrencyLimit records"
+            )
+        keys = request.keys()
+        for limit in limits:
+            if limit.key not in keys:
+                continue
+            active_count = self.snapshot().get(limit.key, 0)
+            if active_count >= limit.max_active:
+                return RuntimeConcurrencyDecision(
+                    kind=limit.decision_kind,
+                    reason_code="concurrency_limit",
+                    safe_summary=(
+                        f"Runtime concurrency limit reached for "
+                        f"{limit.key.dimension.value}:{limit.key.value}."
+                    ),
+                    retry_after_seconds=30
+                    if limit.decision_kind == RuntimeConcurrencyDecisionKind.QUEUED
+                    else None,
+                    limit_key=limit.key,
+                )
+        lease = RuntimeConcurrencyLease(
+            lease_id=f"lease-{request.request_id}",
+            request_id=request.request_id,
+            keys=keys,
+        )
+        self.active_leases[lease.lease_id] = lease
+        return RuntimeConcurrencyDecision(
+            kind=RuntimeConcurrencyDecisionKind.ALLOWED,
+            reason_code="allowed",
+            safe_summary="Runtime concurrency slot acquired.",
+            lease=lease,
+        )
+
+    def release(self, lease: RuntimeConcurrencyLease | str) -> bool:
+        """Release a lease idempotently; return true when it existed."""
+
+        lease_id = lease.lease_id if isinstance(lease, RuntimeConcurrencyLease) else lease
+        _require_string(lease_id, "lease_id")
+        return self.active_leases.pop(lease_id, None) is not None
+
+    def snapshot(self) -> dict[RuntimeConcurrencyKey, int]:
+        """Return active counts by concurrency bucket."""
+
+        counts: dict[RuntimeConcurrencyKey, int] = {}
+        for lease in self.active_leases.values():
+            for key in lease.keys:
+                counts[key] = counts.get(key, 0) + 1
+        return counts
 
 
 @dataclass(frozen=True)
@@ -539,6 +753,33 @@ def runtime_cancellation_request_to_dict(
     }
 
 
+def runtime_concurrency_decision_to_dict(
+    decision: RuntimeConcurrencyDecision,
+) -> dict[str, object]:
+    """Return a JSON-safe concurrency decision."""
+
+    return {
+        "kind": decision.kind.value,
+        "reason_code": decision.reason_code,
+        "safe_summary": decision.safe_summary,
+        "lease_id": decision.lease.lease_id if decision.lease else None,
+        "retry_after_seconds": decision.retry_after_seconds,
+        "limit_key": (
+            runtime_concurrency_key_to_dict(decision.limit_key)
+            if decision.limit_key
+            else None
+        ),
+    }
+
+
+def runtime_concurrency_key_to_dict(
+    key: RuntimeConcurrencyKey,
+) -> dict[str, str]:
+    """Return a JSON-safe concurrency bucket key."""
+
+    return {"dimension": key.dimension.value, "value": key.value}
+
+
 def runtime_budget_snapshot_to_dict(
     budget: RuntimeBudgetSnapshot,
 ) -> dict[str, object]:
@@ -595,6 +836,28 @@ def _coerce_cancellation_reason(
     except ValueError as exc:
         raise RuntimeResourceError(
             f"Unknown runtime cancellation reason: {value!r}"
+        ) from exc
+
+
+def _coerce_concurrency_dimension(
+    value: RuntimeConcurrencyDimension | str,
+) -> RuntimeConcurrencyDimension:
+    try:
+        return RuntimeConcurrencyDimension(value)
+    except ValueError as exc:
+        raise RuntimeResourceError(
+            f"Unknown runtime concurrency dimension: {value!r}"
+        ) from exc
+
+
+def _coerce_concurrency_decision_kind(
+    value: RuntimeConcurrencyDecisionKind | str,
+) -> RuntimeConcurrencyDecisionKind:
+    try:
+        return RuntimeConcurrencyDecisionKind(value)
+    except ValueError as exc:
+        raise RuntimeResourceError(
+            f"Unknown runtime concurrency decision: {value!r}"
         ) from exc
 
 
