@@ -10,6 +10,40 @@ from .profile import (
     worker_profile_from_dict,
     worker_profile_to_dict,
 )
+from .private_assets import (
+    PRIVATE_ASSET_SCHEMA_VERSION,
+    PrivateAssetError,
+    PrivateAssetKind,
+    PrivateAssetProposalInput,
+    PrivateAssetSensitivity,
+    PrivateAssetShareStatus,
+    PrivateMemoryRecord,
+    department_assets_dir,
+    private_memory_to_dict,
+    private_memory_to_proposal_input,
+    proposal_input_to_dict,
+    validate_private_asset_payload,
+    worker_private_assets_dir,
+)
+from .private_skill_experience import (
+    PrivateSkillExperience,
+    SkillExperienceKind,
+    SkillExperienceProposalInput,
+    skill_experience_proposal_to_dict,
+    skill_experience_to_dict,
+    skill_experience_to_proposal_input,
+    validate_skill_experience_payload,
+)
+from .tool_permission_snapshot import (
+    ToolPolicyCandidate,
+    ToolPolicyCompatibilityResult,
+    ToolPolicyViolationCode,
+    WorkerToolPermissionSnapshot,
+    build_tool_permission_snapshot,
+    check_tool_policy_within_worker_snapshot,
+    compatibility_result_to_dict,
+    tool_permission_snapshot_to_dict,
+)
 from .registry import (
     WORKER_REGISTRY_SCHEMA_VERSION,
     WorkerDeleteMode,
