@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import StrEnum
+from pathlib import PurePosixPath, PureWindowsPath
 from typing import Any, Mapping
 
 from .message_router import (
@@ -65,6 +66,15 @@ class ResultRouteSensitivity(StrEnum):
     REVIEW_REQUIRED = "review_required"
 
 
+class RoutedProposalKind(StrEnum):
+    """Pending proposal families produced by result routing."""
+
+    ARTIFACT_MANIFEST = "artifact_manifest"
+    WORKER_MEMORY = "worker_memory"
+    DEPARTMENT_ASSET = "department_asset"
+    WORKER_LEARNING = "worker_learning"
+
+
 _SENSITIVE_FIELD_NAMES = frozenset(
     {
         "api_key",
@@ -123,7 +133,8 @@ class ResultRouteItem:
         object.__setattr__(self, "payload", payload)
         if not isinstance(self.requires_main_agent_review, bool):
             raise ResultRoutingError("requires_main_agent_review must be a boolean")
-        _require_string(self.audit_summary, "audit_summary")
+        if not isinstance(self.audit_summary, str):
+            raise ResultRoutingError("audit_summary must be a string")
 
 
 @dataclass(frozen=True)
@@ -171,6 +182,64 @@ class MessageRouterResultRoute:
         ):
             raise ResultRoutingError(
                 "delivered_messages must contain WorkerMessageEnvelope records"
+            )
+        object.__setattr__(
+            self, "skipped_route_item_ids", tuple(self.skipped_route_item_ids)
+        )
+        for item_id in self.skipped_route_item_ids:
+            _require_string(item_id, "skipped_route_item_ids")
+
+
+@dataclass(frozen=True)
+class RoutedProposalRecord:
+    """Pending proposal record; it is not an accepted long-term asset."""
+
+    proposal_id: str
+    proposal_kind: RoutedProposalKind | str
+    source_route_item_id: str
+    source_runtime_session_id: str
+    source_worker_id: str
+    task_id: str
+    target_scope: str
+    summary: str
+    payload_ref: str | None = None
+    review_status: str = "pending"
+    metadata: Mapping[str, Any] = field(default_factory=dict)
+    schema_version: int = RESULT_ROUTING_SCHEMA_VERSION
+
+    def __post_init__(self) -> None:
+        _require_schema_version(self.schema_version)
+        _require_string(self.proposal_id, "proposal_id")
+        object.__setattr__(self, "proposal_kind", _proposal_kind(self.proposal_kind))
+        _require_string(self.source_route_item_id, "source_route_item_id")
+        _require_string(self.source_runtime_session_id, "source_runtime_session_id")
+        _require_string(self.source_worker_id, "source_worker_id")
+        validate_task_id(self.task_id)
+        _require_string(self.target_scope, "target_scope")
+        _require_string(self.summary, "summary")
+        _optional_string(self.payload_ref, "payload_ref")
+        _require_string(self.review_status, "review_status")
+        metadata = dict(_require_mapping(self.metadata, "metadata"))
+        _reject_sensitive_payload(metadata, "metadata")
+        object.__setattr__(self, "metadata", metadata)
+
+
+@dataclass(frozen=True)
+class ProposalAndManifestRoute:
+    """Pending proposal records derived from route items."""
+
+    pending_proposals: tuple[RoutedProposalRecord, ...]
+    skipped_route_item_ids: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.pending_proposals, tuple):
+            raise ResultRoutingError("pending_proposals must be a tuple")
+        if any(
+            not isinstance(proposal, RoutedProposalRecord)
+            for proposal in self.pending_proposals
+        ):
+            raise ResultRoutingError(
+                "pending_proposals must contain RoutedProposalRecord records"
             )
         object.__setattr__(
             self, "skipped_route_item_ids", tuple(self.skipped_route_item_ids)
@@ -289,6 +358,32 @@ def classify_runtime_result(
     )
 
 
+def route_pending_proposals_and_manifests(
+    classification: RuntimeResultClassification,
+) -> ProposalAndManifestRoute:
+    """Return pending proposal records without accepting long-term assets."""
+
+    if not isinstance(classification, RuntimeResultClassification):
+        raise ResultRoutingError("classification must be a RuntimeResultClassification")
+    proposals: list[RoutedProposalRecord] = []
+    skipped: list[str] = []
+    for item in classification.route_items:
+        if item.kind == ResultRouteItemKind.ARTIFACT_MANIFEST:
+            proposals.append(_artifact_manifest_proposal(item))
+        elif item.kind == ResultRouteItemKind.MEMORY_PROPOSAL:
+            proposals.append(_memory_proposal(item))
+        elif item.kind == ResultRouteItemKind.DEPARTMENT_ASSET_PROPOSAL:
+            proposals.append(_department_asset_proposal(item))
+        elif item.kind == ResultRouteItemKind.LEARNING_PROPOSAL:
+            proposals.append(_learning_proposal(item))
+        else:
+            skipped.append(item.route_item_id)
+    return ProposalAndManifestRoute(
+        pending_proposals=tuple(proposals),
+        skipped_route_item_ids=tuple(skipped),
+    )
+
+
 def route_user_visible_result_messages(
     *,
     router: MessageRouter,
@@ -373,6 +468,39 @@ def runtime_result_classification_to_dict(
     }
 
 
+def routed_proposal_record_to_dict(proposal: RoutedProposalRecord) -> dict[str, Any]:
+    """Return a JSON-safe pending proposal record."""
+
+    return {
+        "schema_version": proposal.schema_version,
+        "proposal_id": proposal.proposal_id,
+        "proposal_kind": proposal.proposal_kind.value,
+        "source_route_item_id": proposal.source_route_item_id,
+        "source_runtime_session_id": proposal.source_runtime_session_id,
+        "source_worker_id": proposal.source_worker_id,
+        "task_id": proposal.task_id,
+        "target_scope": proposal.target_scope,
+        "summary": proposal.summary,
+        "payload_ref": proposal.payload_ref,
+        "review_status": proposal.review_status,
+        "metadata": dict(proposal.metadata),
+    }
+
+
+def proposal_and_manifest_route_to_dict(
+    result: ProposalAndManifestRoute,
+) -> dict[str, Any]:
+    """Return an audit-safe summary of pending proposal routing."""
+
+    return {
+        "pending_proposals": [
+            routed_proposal_record_to_dict(proposal)
+            for proposal in result.pending_proposals
+        ],
+        "skipped_route_item_ids": list(result.skipped_route_item_ids),
+    }
+
+
 def message_router_result_route_to_dict(
     result: MessageRouterResultRoute,
 ) -> dict[str, Any]:
@@ -408,6 +536,81 @@ def _safe_error_payload(error: RuntimeErrorInfo) -> dict[str, Any]:
     data = runtime_error_to_dict(error)
     data.pop("raw_error_ref", None)
     return data
+
+
+def _artifact_manifest_proposal(item: ResultRouteItem) -> RoutedProposalRecord:
+    manifest_ref = _require_string(item.payload.get("manifest_ref"), "manifest_ref")
+    _validate_relative_payload_ref(manifest_ref, "manifest_ref")
+    summary = _require_string(item.payload.get("summary"), "summary")
+    return _proposal_record(
+        item,
+        proposal_id=f"{item.route_item_id}-proposal",
+        proposal_kind=RoutedProposalKind.ARTIFACT_MANIFEST,
+        target_scope=f"worker:{item.source_worker_id}:manifests",
+        summary=summary,
+        payload_ref=manifest_ref,
+        metadata={
+            "artifact_type": item.payload.get("artifact_type"),
+            "retention_policy_ref": item.payload.get("retention_policy_ref"),
+        },
+    )
+
+
+def _memory_proposal(item: ResultRouteItem) -> RoutedProposalRecord:
+    return _proposal_record(
+        item,
+        proposal_id=_require_string(item.payload.get("proposal_id"), "proposal_id"),
+        proposal_kind=RoutedProposalKind.WORKER_MEMORY,
+        target_scope=_require_string(item.payload.get("target_scope"), "target_scope"),
+        summary=_require_string(item.payload.get("redacted_summary"), "redacted_summary"),
+        metadata={"review_reason": item.payload.get("review_reason")},
+    )
+
+
+def _department_asset_proposal(item: ResultRouteItem) -> RoutedProposalRecord:
+    return _proposal_record(
+        item,
+        proposal_id=_require_string(item.payload.get("proposal_id"), "proposal_id"),
+        proposal_kind=RoutedProposalKind.DEPARTMENT_ASSET,
+        target_scope=_require_string(item.payload.get("target_scope"), "target_scope"),
+        summary=_require_string(item.payload.get("redacted_summary"), "redacted_summary"),
+        metadata={"review_reason": item.payload.get("review_reason")},
+    )
+
+
+def _learning_proposal(item: ResultRouteItem) -> RoutedProposalRecord:
+    return _proposal_record(
+        item,
+        proposal_id=_require_string(item.payload.get("proposal_id"), "proposal_id"),
+        proposal_kind=RoutedProposalKind.WORKER_LEARNING,
+        target_scope=_require_string(item.payload.get("target_scope"), "target_scope"),
+        summary=_require_string(item.payload.get("redacted_summary"), "redacted_summary"),
+        metadata={"review_reason": item.payload.get("review_reason")},
+    )
+
+
+def _proposal_record(
+    item: ResultRouteItem,
+    *,
+    proposal_id: str,
+    proposal_kind: RoutedProposalKind,
+    target_scope: str,
+    summary: str,
+    payload_ref: str | None = None,
+    metadata: Mapping[str, Any] | None = None,
+) -> RoutedProposalRecord:
+    return RoutedProposalRecord(
+        proposal_id=proposal_id,
+        proposal_kind=proposal_kind,
+        source_route_item_id=item.route_item_id,
+        source_runtime_session_id=item.source_runtime_session_id,
+        source_worker_id=item.source_worker_id,
+        task_id=item.task_id,
+        target_scope=target_scope,
+        summary=summary,
+        payload_ref=payload_ref,
+        metadata=dict(metadata or {}),
+    )
 
 
 def _single_source_worker(classification: RuntimeResultClassification) -> str:
@@ -479,6 +682,23 @@ def _reject_sensitive_payload(value: Any, field_name: str) -> None:
             _reject_sensitive_payload(nested, f"{field_name}[{index}]")
 
 
+def _validate_relative_payload_ref(value: str, field_name: str) -> None:
+    posix = PurePosixPath(value)
+    windows = PureWindowsPath(value)
+    if posix.is_absolute() or windows.is_absolute():
+        raise ResultRoutingError(f"{field_name} must be a relative reference")
+    if ".." in posix.parts or ".." in windows.parts:
+        raise ResultRoutingError(f"{field_name} must not traverse parent directories")
+
+
+def _proposal_kind(value: RoutedProposalKind | str) -> RoutedProposalKind:
+    raw = value.value if isinstance(value, RoutedProposalKind) else value
+    try:
+        return RoutedProposalKind(_require_string(raw, "proposal_kind"))
+    except ValueError as exc:
+        raise ResultRoutingError(f"Unknown proposal kind: {raw!r}") from exc
+
+
 def _route_kind(value: ResultRouteItemKind | str) -> ResultRouteItemKind:
     raw = value.value if isinstance(value, ResultRouteItemKind) else value
     try:
@@ -526,3 +746,9 @@ def _require_string(value: Any, field_name: str) -> str:
     if not isinstance(value, str) or not value:
         raise ResultRoutingError(f"{field_name} must be a non-empty string")
     return value
+
+
+def _optional_string(value: Any, field_name: str) -> str | None:
+    if value is None:
+        return None
+    return _require_string(value, field_name)
