@@ -218,6 +218,45 @@ from .internal_runtime_task_integration import (
     record_internal_runtime_event,
     runtime_error_code_to_final_state,
 )
+from .external_adapters import (
+    ExternalAdapterCapability,
+    ExternalAdapterDefinition,
+    ExternalAdapterError,
+    ExternalAdapterHealthCheck,
+    ExternalAdapterHealthCheckKind,
+    ExternalAdapterInputType,
+    ExternalAdapterOutputType,
+    ExternalAdapterRegistry,
+    ExternalAdapterSecurityLevel,
+    build_fake_external_adapter_definition,
+    external_adapter_definition_to_dict,
+    validate_external_adapter_request,
+)
+from .external_adapter_runner import (
+    ExternalAdapterBackend,
+    ExternalAdapterBackendSnapshot,
+    ExternalAdapterBackendStart,
+    ExternalAdapterBackendState,
+    ExternalAdapterHealthReport,
+    ExternalAdapterInputBundle,
+    ExternalAdapterInvocation,
+    ExternalAdapterRunRequest,
+    ExternalAdapterRunner,
+    ExternalAdapterRunnerError,
+    FakeExternalAdapterBackend,
+    build_external_adapter_input_bundle,
+    external_adapter_input_bundle_to_dict,
+    external_adapter_invocation_to_dict,
+)
+from .external_adapter_output import (
+    ExternalAdapterAuditSummary,
+    ExternalAdapterOutputError,
+    ExternalAdapterRawOutput,
+    external_adapter_audit_summary,
+    external_adapter_audit_summary_to_dict,
+    failed_external_adapter_parse_result,
+    normalize_external_adapter_output,
+)
 
 __all__ = [
     "WORKER_PROFILE_FILE_NAME",
