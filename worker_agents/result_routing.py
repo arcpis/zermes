@@ -6,6 +6,14 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any, Mapping
 
+from .message_router import (
+    ChatMessageType,
+    ChatParticipantKind,
+    ChatParticipantRef,
+    MessageRouter,
+    MessageRouterError,
+    WorkerMessageEnvelope,
+)
 from .runtime_contract import (
     RuntimeErrorInfo,
     RuntimeResult,
@@ -147,6 +155,30 @@ class RuntimeResultClassification:
             _reject_sensitive_payload(dict(item), "rejected_items")
 
 
+@dataclass(frozen=True)
+class MessageRouterResultRoute:
+    """Messages appended through the managed worker Message Router."""
+
+    delivered_messages: tuple[WorkerMessageEnvelope, ...]
+    skipped_route_item_ids: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.delivered_messages, tuple):
+            raise ResultRoutingError("delivered_messages must be a tuple")
+        if any(
+            not isinstance(message, WorkerMessageEnvelope)
+            for message in self.delivered_messages
+        ):
+            raise ResultRoutingError(
+                "delivered_messages must contain WorkerMessageEnvelope records"
+            )
+        object.__setattr__(
+            self, "skipped_route_item_ids", tuple(self.skipped_route_item_ids)
+        )
+        for item_id in self.skipped_route_item_ids:
+            _require_string(item_id, "skipped_route_item_ids")
+
+
 def classify_runtime_result(
     result: RuntimeResult, *, source_result_ref: str | None = None
 ) -> RuntimeResultClassification:
@@ -257,6 +289,54 @@ def classify_runtime_result(
     )
 
 
+def route_user_visible_result_messages(
+    *,
+    router: MessageRouter,
+    classification: RuntimeResultClassification,
+    thread_id: str,
+    created_at: str,
+    parent_worker_id: str | None = None,
+) -> MessageRouterResultRoute:
+    """Append user-visible result items through the managed Message Router."""
+
+    if not isinstance(router, MessageRouter):
+        raise ResultRoutingError("router must be a MessageRouter")
+    if not isinstance(classification, RuntimeResultClassification):
+        raise ResultRoutingError("classification must be a RuntimeResultClassification")
+    _require_string(thread_id, "thread_id")
+    _require_string(created_at, "created_at")
+    sender_worker_id = parent_worker_id or _single_source_worker(classification)
+    if parent_worker_id is not None:
+        _require_string(parent_worker_id, "parent_worker_id")
+
+    delivered: list[WorkerMessageEnvelope] = []
+    skipped: list[str] = []
+    for item in classification.route_items:
+        if item.kind not in {
+            ResultRouteItemKind.PUBLIC_MESSAGE,
+            ResultRouteItemKind.FAILURE_REPORT,
+        }:
+            skipped.append(item.route_item_id)
+            continue
+        if item.visibility != ResultRouteVisibility.USER_VISIBLE:
+            skipped.append(item.route_item_id)
+            continue
+        message = _message_for_route_item(
+            item,
+            thread_id=thread_id,
+            sender_worker_id=sender_worker_id,
+            created_at=created_at,
+        )
+        try:
+            delivered.append(router.append_message(message))
+        except MessageRouterError as exc:
+            raise ResultRoutingError(str(exc)) from exc
+    return MessageRouterResultRoute(
+        delivered_messages=tuple(delivered),
+        skipped_route_item_ids=tuple(skipped),
+    )
+
+
 def route_item_to_dict(item: ResultRouteItem) -> dict[str, Any]:
     """Return a JSON-safe representation of one classified route item."""
 
@@ -293,6 +373,19 @@ def runtime_result_classification_to_dict(
     }
 
 
+def message_router_result_route_to_dict(
+    result: MessageRouterResultRoute,
+) -> dict[str, Any]:
+    """Return an audit-safe summary of Message Router routing side effects."""
+
+    return {
+        "delivered_message_ids": [
+            message.message_id for message in result.delivered_messages
+        ],
+        "skipped_route_item_ids": list(result.skipped_route_item_ids),
+    }
+
+
 def _needs_failure_report(result: RuntimeResult) -> bool:
     return bool(
         result.partial_success
@@ -315,6 +408,51 @@ def _safe_error_payload(error: RuntimeErrorInfo) -> dict[str, Any]:
     data = runtime_error_to_dict(error)
     data.pop("raw_error_ref", None)
     return data
+
+
+def _single_source_worker(classification: RuntimeResultClassification) -> str:
+    worker_ids = {item.source_worker_id for item in classification.route_items}
+    if not worker_ids:
+        raise ResultRoutingError("classification has no route items to send")
+    if len(worker_ids) > 1:
+        raise ResultRoutingError("classification contains multiple source workers")
+    return next(iter(worker_ids))
+
+
+def _message_for_route_item(
+    item: ResultRouteItem,
+    *,
+    thread_id: str,
+    sender_worker_id: str,
+    created_at: str,
+) -> WorkerMessageEnvelope:
+    if item.kind == ResultRouteItemKind.PUBLIC_MESSAGE:
+        body_preview = _require_string(
+            item.payload.get("body_preview"), "public message body_preview"
+        )
+        message_type = ChatMessageType.NORMAL
+    elif item.kind == ResultRouteItemKind.FAILURE_REPORT:
+        body_preview = _failure_body_preview(item.payload)
+        message_type = ChatMessageType.SUMMARY
+    else:
+        raise ResultRoutingError(f"route item is not user-visible: {item.kind.value}")
+    return WorkerMessageEnvelope(
+        message_id=f"{item.route_item_id}-message",
+        thread_id=thread_id,
+        sender=ChatParticipantRef(ChatParticipantKind.WORKER, sender_worker_id),
+        message_type=message_type,
+        created_at=created_at,
+        body_preview=body_preview,
+        audit_summary=item.audit_summary,
+    )
+
+
+def _failure_body_preview(payload: Mapping[str, Any]) -> str:
+    error = payload.get("error")
+    if isinstance(error, Mapping) and error.get("safe_summary"):
+        return _require_string(error.get("safe_summary"), "failure safe_summary")
+    final_state = _require_string(payload.get("final_state"), "final_state")
+    return f"Runtime finished with state: {final_state}."
 
 
 def _default_audit_summary(result: RuntimeResult) -> str:
