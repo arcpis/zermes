@@ -198,6 +198,12 @@ from .runtime_contract import (
     validate_runtime_state_transition,
 )
 from .runtime_facade import AgentRuntimeInvocation, SharedAgentRuntimeFacade
+from .internal_runtime_context import (
+    InternalWorkerRuntimeContext,
+    InternalWorkerRuntimeContextError,
+    InternalWorkerRuntimeContextRequest,
+    build_internal_worker_runtime_context,
+)
 
 __all__ = [
     "WORKER_PROFILE_FILE_NAME",
@@ -215,6 +221,9 @@ __all__ = [
     "ChatRecipientScope",
     "ChatThreadType",
     "AgentRuntimeBoundaryError",
+    "InternalWorkerRuntimeContext",
+    "InternalWorkerRuntimeContextError",
+    "InternalWorkerRuntimeContextRequest",
     "AgentRuntimeLifecycle",
     "AgentRuntimePersona",
     "AgentRuntimeRole",
@@ -317,6 +326,7 @@ __all__ = [
     "department_chat_binding_to_dict",
     "department_chat_summary_to_dict",
     "default_retention_policy",
+    "build_internal_worker_runtime_context",
     "dump_chat_thread_json",
     "dump_department_chat_binding_json",
     "dump_message_envelope_json",
