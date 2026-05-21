@@ -278,6 +278,14 @@ from .temporary_subagent_policy import (
     temporary_subagent_effective_policy_to_dict,
     temporary_subagent_policy_decision_to_dict,
 )
+from .temporary_subagent_runner import (
+    DelegateTaskAdapter,
+    TemporarySubagentRun,
+    TemporarySubagentRunner,
+    TemporarySubagentRunnerError,
+    run_temporary_subagent,
+    temporary_subagent_run_to_dict,
+)
 
 __all__ = [
     "WORKER_PROFILE_FILE_NAME",
@@ -382,6 +390,9 @@ __all__ = [
     "TemporarySubagentResultEnvelope",
     "TemporarySubagentResultReturnPolicy",
     "TemporarySubagentRuntimeKind",
+    "TemporarySubagentRun",
+    "TemporarySubagentRunner",
+    "TemporarySubagentRunnerError",
     "TemporarySubagentTerminalState",
     "WorkerAgentProfile",
     "WorkerAgentProfileStore",
@@ -413,6 +424,7 @@ __all__ = [
     "department_chat_binding_summary_to_dict",
     "department_chat_binding_to_dict",
     "department_chat_summary_to_dict",
+    "DelegateTaskAdapter",
     "default_retention_policy",
     "build_internal_worker_runtime_context",
     "prepare_internal_worker_runtime_run",
@@ -467,6 +479,7 @@ __all__ = [
     "runtime_request_to_dict",
     "runtime_result_from_dict",
     "runtime_result_to_dict",
+    "run_temporary_subagent",
     "summarize_chat_thread",
     "summarize_department_chat_binding",
     "summarize_message",
@@ -483,6 +496,7 @@ __all__ = [
     "temporary_subagent_request_to_dict",
     "temporary_subagent_request_to_runtime_request",
     "temporary_subagent_result_envelope_to_dict",
+    "temporary_subagent_run_to_dict",
     "validate_org_tree_references",
     "worker_profile_from_dict",
     "worker_profile_to_dict",
