@@ -122,6 +122,15 @@ class DepartmentSkillReviewDecision(StrEnum):
     EXPIRE = "expire"
 
 
+class DepartmentSkillApplicabilityDecision(StrEnum):
+    """Whether a binding may be presented for one task context."""
+
+    ALLOWED = "allowed"
+    CANDIDATE_ONLY = "candidate_only"
+    NEEDS_REVIEW = "needs_review"
+    BLOCKED = "blocked"
+
+
 _STATE_RANK = {
     DepartmentSkillBindingState.RECOMMENDED: 10,
     DepartmentSkillBindingState.DEFAULT: 20,
@@ -129,6 +138,26 @@ _STATE_RANK = {
     DepartmentSkillBindingState.DEPRECATED: 40,
     DepartmentSkillBindingState.DISABLED: 50,
 }
+
+_SENSITIVITY_RANK = {
+    DepartmentSkillBindingSensitivity.LOW: 0,
+    DepartmentSkillBindingSensitivity.INTERNAL: 1,
+    DepartmentSkillBindingSensitivity.RESTRICTED: 2,
+    DepartmentSkillBindingSensitivity.USER_CONFIRMATION_REQUIRED: 3,
+}
+
+_BLOCKING_APPLICABILITY_REASONS = frozenset(
+    {
+        "deprecated_binding",
+        "disabled_binding",
+        "missing_permission",
+        "profile_disallows_skill",
+        "sensitive_task_blocked",
+        "unsupported_task_type",
+        "wrong_department",
+        "wrong_worker_role",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -351,6 +380,94 @@ class DepartmentSkillResolvedBinding:
             raise DepartmentSkillError("inherited must be a boolean")
         if self.source_department_id is not None:
             validate_org_node_id(self.source_department_id)
+        if not isinstance(self.audit_summary, str):
+            raise DepartmentSkillError("audit_summary must be a string")
+
+
+@dataclass(frozen=True)
+class DepartmentSkillApplicabilityRequest:
+    """Task and worker context used to filter department skill guidance."""
+
+    task_type: str
+    worker_id: str
+    worker_role: str
+    department_id: str
+    runtime_type: str
+    allowed_skill_ids: tuple[str, ...] = ()
+    permission_names: tuple[str, ...] = ()
+    sensitivity: DepartmentSkillBindingSensitivity | str = (
+        DepartmentSkillBindingSensitivity.INTERNAL
+    )
+    context_purpose: str = "runtime_context"
+    confirmation_refs: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        _require_string(self.task_type, "task_type")
+        _validate_identifier(self.worker_id, "worker_id")
+        _require_string(self.worker_role, "worker_role")
+        validate_org_node_id(self.department_id)
+        _require_string(self.runtime_type, "runtime_type")
+        object.__setattr__(
+            self,
+            "allowed_skill_ids",
+            tuple(
+                _validate_identifier(value, "allowed_skill_ids")
+                for value in self.allowed_skill_ids
+            ),
+        )
+        object.__setattr__(
+            self,
+            "permission_names",
+            tuple(
+                _require_string(value, "permission_names")
+                for value in self.permission_names
+            ),
+        )
+        object.__setattr__(self, "sensitivity", _binding_sensitivity(self.sensitivity))
+        _require_string(self.context_purpose, "context_purpose")
+        object.__setattr__(
+            self,
+            "confirmation_refs",
+            tuple(
+                _validate_relative_ref(ref, "confirmation_refs")
+                for ref in self.confirmation_refs
+            ),
+        )
+
+
+@dataclass(frozen=True)
+class DepartmentSkillApplicabilityResult:
+    """Applicability decision with stable reasons for audit and guardrails."""
+
+    skill_id: str
+    binding_id: str
+    decision: DepartmentSkillApplicabilityDecision | str
+    reasons: tuple[str, ...] = ()
+    safe_guidance_summary: str = ""
+    required_review_refs: tuple[str, ...] = ()
+    audit_summary: str = ""
+
+    def __post_init__(self) -> None:
+        _validate_identifier(self.skill_id, "skill_id")
+        _validate_identifier(self.binding_id, "binding_id")
+        object.__setattr__(
+            self, "decision", _applicability_decision(self.decision)
+        )
+        object.__setattr__(
+            self,
+            "reasons",
+            tuple(_require_string(value, "reasons") for value in self.reasons),
+        )
+        if not isinstance(self.safe_guidance_summary, str):
+            raise DepartmentSkillError("safe_guidance_summary must be a string")
+        object.__setattr__(
+            self,
+            "required_review_refs",
+            tuple(
+                _validate_relative_ref(ref, "required_review_refs")
+                for ref in self.required_review_refs
+            ),
+        )
         if not isinstance(self.audit_summary, str):
             raise DepartmentSkillError("audit_summary must be a string")
 
@@ -730,6 +847,81 @@ def resolve_department_skill_bindings(
     )
 
 
+def validate_department_skill_applicability(
+    binding: DepartmentSkillBindingRecord | DepartmentSkillResolvedBinding,
+    request: DepartmentSkillApplicabilityRequest,
+) -> DepartmentSkillApplicabilityResult:
+    """Check whether one binding is safe to present as task skill guidance."""
+
+    record = binding.binding if isinstance(binding, DepartmentSkillResolvedBinding) else binding
+    reasons: list[str] = []
+    required_review_refs: list[str] = []
+
+    if not record.active or record.state is DepartmentSkillBindingState.DISABLED:
+        reasons.append("disabled_binding")
+    if record.state is DepartmentSkillBindingState.DEPRECATED:
+        reasons.append("deprecated_binding")
+    if record.department_id != request.department_id:
+        inherited = (
+            isinstance(binding, DepartmentSkillResolvedBinding) and binding.inherited
+        )
+        if not inherited:
+            reasons.append("wrong_department")
+    if record.applicability and request.task_type not in record.applicability:
+        reasons.append("unsupported_task_type")
+    if request.worker_role in record.disabled_conditions:
+        reasons.append("wrong_worker_role")
+    if record.skill_id not in request.allowed_skill_ids:
+        reasons.append("profile_disallows_skill")
+
+    missing_permissions = tuple(
+        permission
+        for permission in record.tool_assumptions
+        if permission not in request.permission_names
+    )
+    if missing_permissions:
+        reasons.append("missing_permission")
+
+    if _sensitivity_exceeds(record.sensitivity, request.sensitivity):
+        reasons.append("sensitive_task_blocked")
+    if record.sensitivity is DepartmentSkillBindingSensitivity.USER_CONFIRMATION_REQUIRED:
+        if request.confirmation_refs:
+            required_review_refs.extend(request.confirmation_refs)
+        else:
+            reasons.append("user_confirmation_required")
+    if record.state is DepartmentSkillBindingState.RESTRICTED:
+        reasons.append("restricted_binding")
+
+    unique_reasons = tuple(dict.fromkeys(reasons))
+    if any(reason in _BLOCKING_APPLICABILITY_REASONS for reason in unique_reasons):
+        decision = DepartmentSkillApplicabilityDecision.BLOCKED
+        summary = ""
+    elif unique_reasons:
+        decision = DepartmentSkillApplicabilityDecision.NEEDS_REVIEW
+        summary = record.usage_guidance
+    elif record.state is DepartmentSkillBindingState.RECOMMENDED:
+        decision = DepartmentSkillApplicabilityDecision.CANDIDATE_ONLY
+        summary = record.usage_guidance
+    else:
+        decision = DepartmentSkillApplicabilityDecision.ALLOWED
+        summary = record.usage_guidance
+
+    result = DepartmentSkillApplicabilityResult(
+        skill_id=record.skill_id,
+        binding_id=record.binding_id,
+        decision=decision,
+        reasons=unique_reasons,
+        safe_guidance_summary=summary,
+        required_review_refs=tuple(required_review_refs),
+        audit_summary=(
+            f"Applicability for {record.skill_id} in task type "
+            f"{request.task_type}: {decision.value}."
+        ),
+    )
+    validate_department_skill_payload(department_skill_applicability_result_to_dict(result))
+    return result
+
+
 def department_skill_dir(worker_agents_home: str | Path, department_id: str) -> Path:
     """Return the durable department skill root without creating it."""
 
@@ -919,6 +1111,22 @@ def department_skill_resolved_binding_to_dict(
         "inherited": resolved.inherited,
         "source_department_id": resolved.source_department_id,
         "audit_summary": resolved.audit_summary,
+    }
+
+
+def department_skill_applicability_result_to_dict(
+    result: DepartmentSkillApplicabilityResult,
+) -> dict[str, Any]:
+    """Return a JSON-safe applicability result for guardrail callers."""
+
+    return {
+        "skill_id": result.skill_id,
+        "binding_id": result.binding_id,
+        "decision": result.decision.value,
+        "reasons": list(result.reasons),
+        "safe_guidance_summary": result.safe_guidance_summary,
+        "required_review_refs": list(result.required_review_refs),
+        "audit_summary": result.audit_summary,
     }
 
 
@@ -1129,6 +1337,21 @@ def _proposal_action(
         ) from exc
 
 
+def _applicability_decision(
+    value: DepartmentSkillApplicabilityDecision | str,
+) -> DepartmentSkillApplicabilityDecision:
+    try:
+        return (
+            value
+            if isinstance(value, DepartmentSkillApplicabilityDecision)
+            else DepartmentSkillApplicabilityDecision(value)
+        )
+    except ValueError as exc:
+        raise DepartmentSkillError(
+            f"Unknown department skill applicability decision: {value!r}"
+        ) from exc
+
+
 def _proposal_create_status(
     value: DepartmentSkillProposalCreateStatus | str,
 ) -> DepartmentSkillProposalCreateStatus:
@@ -1223,6 +1446,13 @@ def _is_more_conservative(
     if candidate.department_id != existing.department_id:
         return True
     return candidate.revision >= existing.revision
+
+
+def _sensitivity_exceeds(
+    value: DepartmentSkillBindingSensitivity,
+    maximum: DepartmentSkillBindingSensitivity,
+) -> bool:
+    return _SENSITIVITY_RANK[value] > _SENSITIVITY_RANK[maximum]
 
 
 def _load_json_object(path: Path, field_name: str) -> Mapping[str, Any]:
