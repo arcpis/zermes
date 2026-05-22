@@ -8,6 +8,7 @@ from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any, Mapping
 
 from .organization import validate_org_node_id
+from .tool_permission_snapshot import WorkerToolPermissionSnapshot
 
 
 DEPARTMENT_TOOL_POLICY_SCHEMA_VERSION = 1
@@ -117,6 +118,15 @@ class DepartmentToolPolicyConflictReason(StrEnum):
     BUDGET_INCREASED = "budget_increased"
     RISK_LEVEL_LOWERED = "risk_level_lowered"
     APPROVAL_REQUIREMENT_REMOVED = "approval_requirement_removed"
+
+
+class WorkerToolPolicyBlockReason(StrEnum):
+    """Stable reasons a resolved department policy cannot apply to one worker."""
+
+    PROFILE_DISALLOWS_TOOL = "profile_disallows_tool"
+    WORKSPACE_OUT_OF_SCOPE = "workspace_out_of_scope"
+    BUDGET_EXCEEDS_PROFILE = "budget_exceeds_profile"
+    EXTERNAL_RUNTIME_RESTRICTED = "external_runtime_restricted"
 
 
 @dataclass(frozen=True)
@@ -453,6 +463,114 @@ class ResolvedDepartmentToolPolicy:
         )
 
 
+@dataclass(frozen=True)
+class WorkerToolPolicyCheckInput:
+    """Inputs needed to intersect department policy with worker permissions."""
+
+    resolved_policy: ResolvedDepartmentToolPolicy
+    worker_snapshot: WorkerToolPermissionSnapshot
+    runtime_type: str = "internal_worker"
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.resolved_policy, ResolvedDepartmentToolPolicy):
+            raise DepartmentToolPolicyError(
+                "resolved_policy must be a ResolvedDepartmentToolPolicy"
+            )
+        if not isinstance(self.worker_snapshot, WorkerToolPermissionSnapshot):
+            raise DepartmentToolPolicyError(
+                "worker_snapshot must be a WorkerToolPermissionSnapshot"
+            )
+        _require_string(self.runtime_type, "runtime_type")
+
+
+@dataclass(frozen=True)
+class WorkerToolPolicyBlockedItem:
+    """One tool or scope blocked by worker profile or runtime boundary."""
+
+    item_ref: str
+    reason: WorkerToolPolicyBlockReason | str
+    source_ref: str
+    audit_summary: str
+
+    def __post_init__(self) -> None:
+        _require_string(self.item_ref, "item_ref")
+        object.__setattr__(self, "reason", _worker_block_reason(self.reason))
+        _require_string(self.source_ref, "source_ref")
+        _require_string(self.audit_summary, "audit_summary")
+
+
+@dataclass(frozen=True)
+class WorkerEffectiveToolPolicy:
+    """Effective tool policy after worker profile and runtime boundary checks."""
+
+    worker_id: str
+    department_id: str
+    allowed_tools: tuple[str, ...] = ()
+    denied_tools: tuple[str, ...] = ()
+    approval_required_tools: tuple[str, ...] = ()
+    user_confirmation_required_tools: tuple[str, ...] = ()
+    blocked_items: tuple[WorkerToolPolicyBlockedItem, ...] = ()
+    workspace_read_roots: tuple[str, ...] = ()
+    workspace_write_roots: tuple[str, ...] = ()
+    max_task_tokens: int | None = None
+    max_turn_tokens: int | None = None
+    max_task_cost_usd: float | None = None
+    profile_snapshot_hash: str = ""
+    department_policy_refs: tuple[str, ...] = ()
+    external_runtime_summary_only: bool = False
+    audit_summary: str = ""
+    schema_version: int = DEPARTMENT_TOOL_POLICY_SCHEMA_VERSION
+
+    def __post_init__(self) -> None:
+        _require_schema_version(self.schema_version)
+        _validate_identifier(self.worker_id, "worker_id")
+        validate_org_node_id(self.department_id)
+        for field_name in (
+            "allowed_tools",
+            "denied_tools",
+            "approval_required_tools",
+            "user_confirmation_required_tools",
+        ):
+            _coerce_string_tuple(self, field_name)
+        if any(not isinstance(item, WorkerToolPolicyBlockedItem) for item in self.blocked_items):
+            raise DepartmentToolPolicyError(
+                "blocked_items must contain WorkerToolPolicyBlockedItem values"
+            )
+        object.__setattr__(
+            self,
+            "workspace_read_roots",
+            tuple(
+                _validate_relative_ref(value, "workspace_read_roots")
+                for value in self.workspace_read_roots
+            ),
+        )
+        object.__setattr__(
+            self,
+            "workspace_write_roots",
+            tuple(
+                _validate_relative_ref(value, "workspace_write_roots")
+                for value in self.workspace_write_roots
+            ),
+        )
+        _optional_non_negative_int(self.max_task_tokens, "max_task_tokens")
+        _optional_non_negative_int(self.max_turn_tokens, "max_turn_tokens")
+        _optional_non_negative_float(self.max_task_cost_usd, "max_task_cost_usd")
+        _require_string(self.profile_snapshot_hash, "profile_snapshot_hash")
+        object.__setattr__(
+            self,
+            "department_policy_refs",
+            tuple(
+                _validate_relative_ref(value, "department_policy_refs")
+                for value in self.department_policy_refs
+            ),
+        )
+        if not isinstance(self.external_runtime_summary_only, bool):
+            raise DepartmentToolPolicyError(
+                "external_runtime_summary_only must be a boolean"
+            )
+        _string_value(self.audit_summary, "audit_summary")
+
+
 def validate_department_tool_policy_payload(payload: Mapping[str, Any]) -> None:
     """Reject secrets, credentials, raw transcripts, and raw external output."""
 
@@ -784,6 +902,162 @@ def resolved_department_tool_policy_to_dict(
     }
 
 
+def cross_check_department_tool_policy_with_worker(
+    request: WorkerToolPolicyCheckInput,
+) -> WorkerEffectiveToolPolicy:
+    """Intersect resolved department policy with one worker permission snapshot."""
+
+    snapshot = request.resolved_policy.snapshot
+    worker = request.worker_snapshot
+    worker_allowed = set(worker.allowed_tools)
+    worker_approval = set(worker.approval_required_tools)
+    allowed: list[str] = []
+    approval_required: list[str] = []
+    user_confirmation_required: list[str] = []
+    blocked: list[WorkerToolPolicyBlockedItem] = []
+
+    for tool_ref in snapshot.allowed_tools:
+        if tool_ref in worker_allowed:
+            allowed.append(tool_ref)
+        elif tool_ref in worker_approval:
+            approval_required.append(tool_ref)
+        else:
+            blocked.append(
+                _blocked_item(
+                    tool_ref,
+                    WorkerToolPolicyBlockReason.PROFILE_DISALLOWS_TOOL,
+                    worker.profile_hash,
+                )
+            )
+
+    for tool_ref in snapshot.approval_required_tools:
+        if tool_ref in worker_allowed or tool_ref in worker_approval:
+            approval_required.append(tool_ref)
+        else:
+            blocked.append(
+                _blocked_item(
+                    tool_ref,
+                    WorkerToolPolicyBlockReason.PROFILE_DISALLOWS_TOOL,
+                    worker.profile_hash,
+                )
+            )
+
+    for tool_ref in snapshot.user_confirmation_required_tools:
+        if tool_ref in worker_allowed or tool_ref in worker_approval:
+            user_confirmation_required.append(tool_ref)
+        else:
+            blocked.append(
+                _blocked_item(
+                    tool_ref,
+                    WorkerToolPolicyBlockReason.PROFILE_DISALLOWS_TOOL,
+                    worker.profile_hash,
+                )
+            )
+
+    read_roots = _scoped_roots(
+        snapshot.workspace_read_roots,
+        worker.read_roots,
+        WorkerToolPolicyBlockReason.WORKSPACE_OUT_OF_SCOPE,
+        worker.profile_hash,
+        blocked,
+    )
+    write_roots = _scoped_roots(
+        snapshot.workspace_write_roots,
+        worker.write_roots,
+        WorkerToolPolicyBlockReason.WORKSPACE_OUT_OF_SCOPE,
+        worker.profile_hash,
+        blocked,
+    )
+    max_task_tokens = _profile_limited_int(
+        snapshot.max_task_tokens,
+        worker.max_task_tokens,
+        "max_task_tokens",
+        worker.profile_hash,
+        blocked,
+    )
+    max_turn_tokens = _profile_limited_int(
+        snapshot.max_turn_tokens,
+        worker.max_turn_tokens,
+        "max_turn_tokens",
+        worker.profile_hash,
+        blocked,
+    )
+    max_task_cost_usd = _profile_limited_float(
+        snapshot.max_task_cost_usd,
+        worker.max_task_cost_usd,
+        "max_task_cost_usd",
+        worker.profile_hash,
+        blocked,
+    )
+    external_runtime_summary_only = request.runtime_type != "internal_worker"
+    if external_runtime_summary_only:
+        blocked.append(
+            _blocked_item(
+                request.runtime_type,
+                WorkerToolPolicyBlockReason.EXTERNAL_RUNTIME_RESTRICTED,
+                worker.profile_hash,
+            )
+        )
+
+    return WorkerEffectiveToolPolicy(
+        worker_id=worker.worker_id,
+        department_id=snapshot.department_id,
+        allowed_tools=_unique_tuple(allowed),
+        denied_tools=snapshot.denied_tools,
+        approval_required_tools=_unique_tuple(approval_required),
+        user_confirmation_required_tools=_unique_tuple(user_confirmation_required),
+        blocked_items=tuple(blocked),
+        workspace_read_roots=read_roots,
+        workspace_write_roots=write_roots,
+        max_task_tokens=max_task_tokens,
+        max_turn_tokens=max_turn_tokens,
+        max_task_cost_usd=max_task_cost_usd,
+        profile_snapshot_hash=worker.profile_hash,
+        department_policy_refs=snapshot.policy_refs,
+        external_runtime_summary_only=external_runtime_summary_only,
+        audit_summary=(
+            "Effective tool policy is the intersection of department policy "
+            "and worker profile permissions."
+        ),
+    )
+
+
+def worker_effective_tool_policy_to_dict(
+    policy: WorkerEffectiveToolPolicy,
+) -> dict[str, Any]:
+    """Return a JSON-safe effective policy for runtime context callers."""
+
+    return {
+        "worker_id": policy.worker_id,
+        "department_id": policy.department_id,
+        "schema_version": policy.schema_version,
+        "allowed_tools": list(policy.allowed_tools),
+        "denied_tools": list(policy.denied_tools),
+        "approval_required_tools": list(policy.approval_required_tools),
+        "user_confirmation_required_tools": list(
+            policy.user_confirmation_required_tools
+        ),
+        "blocked_items": [
+            {
+                "item_ref": item.item_ref,
+                "reason": item.reason.value,
+                "source_ref": item.source_ref,
+                "audit_summary": item.audit_summary,
+            }
+            for item in policy.blocked_items
+        ],
+        "workspace_read_roots": list(policy.workspace_read_roots),
+        "workspace_write_roots": list(policy.workspace_write_roots),
+        "max_task_tokens": policy.max_task_tokens,
+        "max_turn_tokens": policy.max_turn_tokens,
+        "max_task_cost_usd": policy.max_task_cost_usd,
+        "profile_snapshot_hash": policy.profile_snapshot_hash,
+        "department_policy_refs": list(policy.department_policy_refs),
+        "external_runtime_summary_only": policy.external_runtime_summary_only,
+        "audit_summary": policy.audit_summary,
+    }
+
+
 _POLICY_FIELDS = {
     "department_id",
     "policy_id",
@@ -1062,6 +1336,21 @@ def _conflict_reason(
         ) from exc
 
 
+def _worker_block_reason(
+    value: WorkerToolPolicyBlockReason | str,
+) -> WorkerToolPolicyBlockReason:
+    try:
+        return (
+            value
+            if isinstance(value, WorkerToolPolicyBlockReason)
+            else WorkerToolPolicyBlockReason(value)
+        )
+    except ValueError as exc:
+        raise DepartmentToolPolicyError(
+            f"Unknown worker tool policy block reason: {value!r}"
+        ) from exc
+
+
 def _reject_sensitive_payload(value: Any, path: str) -> None:
     if isinstance(value, Mapping):
         for key, item in value.items():
@@ -1256,3 +1545,69 @@ def _strictest_optional_float(
 
 def _unique_tuple(values: list[str]) -> tuple[str, ...]:
     return tuple(dict.fromkeys(values))
+
+
+def _blocked_item(
+    item_ref: str, reason: WorkerToolPolicyBlockReason, source_ref: str
+) -> WorkerToolPolicyBlockedItem:
+    return WorkerToolPolicyBlockedItem(
+        item_ref=item_ref,
+        reason=reason,
+        source_ref=source_ref,
+        audit_summary=f"{item_ref} blocked by {reason.value}.",
+    )
+
+
+def _scoped_roots(
+    requested_roots: tuple[str, ...],
+    allowed_roots: tuple[str, ...],
+    reason: WorkerToolPolicyBlockReason,
+    source_ref: str,
+    blocked: list[WorkerToolPolicyBlockedItem],
+) -> tuple[str, ...]:
+    scoped: list[str] = []
+    allowed = set(allowed_roots)
+    for root in requested_roots:
+        if root in allowed:
+            scoped.append(root)
+        else:
+            blocked.append(_blocked_item(root, reason, source_ref))
+    return _unique_tuple(scoped)
+
+
+def _profile_limited_int(
+    requested: int | None,
+    profile_limit: int,
+    item_ref: str,
+    source_ref: str,
+    blocked: list[WorkerToolPolicyBlockedItem],
+) -> int | None:
+    if requested is None:
+        return None
+    if requested > profile_limit:
+        blocked.append(
+            _blocked_item(
+                item_ref, WorkerToolPolicyBlockReason.BUDGET_EXCEEDS_PROFILE, source_ref
+            )
+        )
+        return profile_limit
+    return requested
+
+
+def _profile_limited_float(
+    requested: float | None,
+    profile_limit: float | None,
+    item_ref: str,
+    source_ref: str,
+    blocked: list[WorkerToolPolicyBlockedItem],
+) -> float | None:
+    if requested is None:
+        return None
+    if profile_limit is None or requested > profile_limit:
+        blocked.append(
+            _blocked_item(
+                item_ref, WorkerToolPolicyBlockReason.BUDGET_EXCEEDS_PROFILE, source_ref
+            )
+        )
+        return profile_limit
+    return requested
