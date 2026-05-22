@@ -129,6 +129,32 @@ class WorkerToolPolicyBlockReason(StrEnum):
     EXTERNAL_RUNTIME_RESTRICTED = "external_runtime_restricted"
 
 
+class HighRiskToolApprovalReason(StrEnum):
+    """Stable reasons a tool policy item needs explicit approval."""
+
+    WRITE_ACCESS = "write_access"
+    NETWORK_ACCESS = "network_access"
+    EXTERNAL_EXECUTION = "external_execution"
+    SENSITIVE_PATH_ACCESS = "sensitive_path_access"
+    CREDENTIAL_BOUNDARY = "credential_boundary"
+    BUDGET_INCREASE = "budget_increase"
+    POLICY_RELAXATION = "policy_relaxation"
+    MODEL_OR_RUNTIME_COST = "model_or_runtime_cost"
+    EXTERNAL_RUNTIME_ACCESS = "external_runtime_access"
+    USER_CONFIRMATION = "user_confirmation"
+
+
+class ToolApprovalDecisionState(StrEnum):
+    """Review state for one high-risk tool approval request."""
+
+    APPROVED = "approved"
+    REJECTED = "rejected"
+    EXPIRED = "expired"
+    REVOKED = "revoked"
+    NEEDS_USER_CONFIRMATION = "needs_user_confirmation"
+    NEEDS_OWNER_REVIEW = "needs_owner_review"
+
+
 @dataclass(frozen=True)
 class DepartmentToolPolicyRecord:
     """Approved or active department tool policy.
@@ -568,6 +594,125 @@ class WorkerEffectiveToolPolicy:
             raise DepartmentToolPolicyError(
                 "external_runtime_summary_only must be a boolean"
             )
+        _string_value(self.audit_summary, "audit_summary")
+
+
+@dataclass(frozen=True)
+class ToolApprovalBuildInput:
+    """Input for creating high-risk approval requests from an effective policy."""
+
+    effective_policy: WorkerEffectiveToolPolicy
+    task_id: str
+    request_prefix: str = "tool-approval"
+    blocked_relaxation_refs: tuple[str, ...] = ()
+    created_at: str | None = None
+    expires_at: str | None = None
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.effective_policy, WorkerEffectiveToolPolicy):
+            raise DepartmentToolPolicyError(
+                "effective_policy must be a WorkerEffectiveToolPolicy"
+            )
+        _validate_identifier(self.task_id, "task_id")
+        _validate_identifier(self.request_prefix, "request_prefix")
+        object.__setattr__(
+            self,
+            "blocked_relaxation_refs",
+            tuple(
+                _validate_relative_ref(ref, "blocked_relaxation_refs")
+                for ref in self.blocked_relaxation_refs
+            ),
+        )
+        if self.created_at is not None:
+            _require_string(self.created_at, "created_at")
+        if self.expires_at is not None:
+            _require_string(self.expires_at, "expires_at")
+
+
+@dataclass(frozen=True)
+class ToolApprovalRequest:
+    """Credential-free request asking governance to approve one tool scope."""
+
+    request_id: str
+    department_id: str
+    worker_id: str
+    task_id: str
+    tool_refs: tuple[str, ...]
+    risk_reasons: tuple[HighRiskToolApprovalReason | str, ...]
+    requested_scope_summary: str
+    current_allowed_scope_summary: str
+    policy_refs: tuple[str, ...]
+    profile_snapshot_hash: str
+    review_requirement: str
+    created_at: str | None = None
+    expires_at: str | None = None
+    audit_summary: str = ""
+    schema_version: int = DEPARTMENT_TOOL_POLICY_SCHEMA_VERSION
+
+    def __post_init__(self) -> None:
+        _require_schema_version(self.schema_version)
+        _validate_identifier(self.request_id, "request_id")
+        validate_org_node_id(self.department_id)
+        _validate_identifier(self.worker_id, "worker_id")
+        _validate_identifier(self.task_id, "task_id")
+        object.__setattr__(
+            self,
+            "tool_refs",
+            tuple(_require_string(value, "tool_refs") for value in self.tool_refs),
+        )
+        if not self.tool_refs:
+            raise DepartmentToolPolicyError("tool_refs must not be empty")
+        object.__setattr__(
+            self,
+            "risk_reasons",
+            tuple(_approval_reason(reason) for reason in self.risk_reasons),
+        )
+        if not self.risk_reasons:
+            raise DepartmentToolPolicyError("risk_reasons must not be empty")
+        _require_string(self.requested_scope_summary, "requested_scope_summary")
+        _require_string(
+            self.current_allowed_scope_summary, "current_allowed_scope_summary"
+        )
+        object.__setattr__(
+            self,
+            "policy_refs",
+            tuple(_validate_relative_ref(value, "policy_refs") for value in self.policy_refs),
+        )
+        _require_string(self.profile_snapshot_hash, "profile_snapshot_hash")
+        _require_string(self.review_requirement, "review_requirement")
+        if self.created_at is not None:
+            _require_string(self.created_at, "created_at")
+        if self.expires_at is not None:
+            _require_string(self.expires_at, "expires_at")
+        _string_value(self.audit_summary, "audit_summary")
+
+
+@dataclass(frozen=True)
+class ToolApprovalDecision:
+    """Decision for one tool approval request."""
+
+    request_id: str
+    decision: ToolApprovalDecisionState | str
+    reviewer_id: str
+    profile_snapshot_hash: str
+    decided_at: str
+    approved_tool_refs: tuple[str, ...] = ()
+    expires_at: str | None = None
+    audit_summary: str = ""
+
+    def __post_init__(self) -> None:
+        _validate_identifier(self.request_id, "request_id")
+        object.__setattr__(self, "decision", _approval_decision(self.decision))
+        _require_string(self.reviewer_id, "reviewer_id")
+        _require_string(self.profile_snapshot_hash, "profile_snapshot_hash")
+        _require_string(self.decided_at, "decided_at")
+        object.__setattr__(
+            self,
+            "approved_tool_refs",
+            tuple(_require_string(value, "approved_tool_refs") for value in self.approved_tool_refs),
+        )
+        if self.expires_at is not None:
+            _require_string(self.expires_at, "expires_at")
         _string_value(self.audit_summary, "audit_summary")
 
 
@@ -1058,6 +1203,149 @@ def worker_effective_tool_policy_to_dict(
     }
 
 
+def build_tool_approval_requests(
+    request: ToolApprovalBuildInput,
+) -> tuple[ToolApprovalRequest, ...]:
+    """Build approval requests for high-risk or confirmation-gated tool items."""
+
+    effective = request.effective_policy
+    approval_requests: list[ToolApprovalRequest] = []
+    for index, tool_ref in enumerate(effective.approval_required_tools, start=1):
+        approval_requests.append(
+            _approval_request(
+                request,
+                index,
+                (tool_ref,),
+                _risk_reasons_for_tool(tool_ref),
+                "owner_review",
+            )
+        )
+    offset = len(approval_requests)
+    for index, tool_ref in enumerate(
+        effective.user_confirmation_required_tools, start=offset + 1
+    ):
+        approval_requests.append(
+            _approval_request(
+                request,
+                index,
+                (tool_ref,),
+                (
+                    HighRiskToolApprovalReason.USER_CONFIRMATION,
+                    *_risk_reasons_for_tool(tool_ref),
+                ),
+                "user_confirmation",
+            )
+        )
+
+    next_index = len(approval_requests) + 1
+    budget_items = tuple(
+        item.item_ref
+        for item in effective.blocked_items
+        if item.reason is WorkerToolPolicyBlockReason.BUDGET_EXCEEDS_PROFILE
+    )
+    if budget_items:
+        approval_requests.append(
+            _approval_request(
+                request,
+                next_index,
+                budget_items,
+                (
+                    HighRiskToolApprovalReason.BUDGET_INCREASE,
+                    HighRiskToolApprovalReason.MODEL_OR_RUNTIME_COST,
+                ),
+                "user_confirmation",
+            )
+        )
+        next_index += 1
+
+    if request.blocked_relaxation_refs:
+        approval_requests.append(
+            _approval_request(
+                request,
+                next_index,
+                request.blocked_relaxation_refs,
+                (HighRiskToolApprovalReason.POLICY_RELAXATION,),
+                "department_owner_review",
+            )
+        )
+        next_index += 1
+
+    external_items = tuple(
+        item.item_ref
+        for item in effective.blocked_items
+        if item.reason is WorkerToolPolicyBlockReason.EXTERNAL_RUNTIME_RESTRICTED
+    )
+    if external_items:
+        approval_requests.append(
+            _approval_request(
+                request,
+                next_index,
+                external_items,
+                (HighRiskToolApprovalReason.EXTERNAL_RUNTIME_ACCESS,),
+                "user_confirmation",
+            )
+        )
+
+    return tuple(approval_requests)
+
+
+def approved_tool_policy_refs_from_decisions(
+    requests: tuple[ToolApprovalRequest, ...],
+    decisions: tuple[ToolApprovalDecision, ...],
+) -> tuple[str, ...]:
+    """Return approval refs that can be safely consumed by policy resolution."""
+
+    by_request_id = {request.request_id: request for request in requests}
+    approved: list[str] = []
+    for decision in decisions:
+        approval_request = by_request_id.get(decision.request_id)
+        if approval_request is None:
+            continue
+        if decision.decision is not ToolApprovalDecisionState.APPROVED:
+            continue
+        if decision.profile_snapshot_hash != approval_request.profile_snapshot_hash:
+            continue
+        approved.extend(decision.approved_tool_refs or approval_request.tool_refs)
+    return _unique_tuple(approved)
+
+
+def tool_approval_request_to_dict(request: ToolApprovalRequest) -> dict[str, Any]:
+    """Return a JSON-safe approval request for UI cards and audit logs."""
+
+    return {
+        "request_id": request.request_id,
+        "department_id": request.department_id,
+        "worker_id": request.worker_id,
+        "task_id": request.task_id,
+        "schema_version": request.schema_version,
+        "tool_refs": list(request.tool_refs),
+        "risk_reasons": [reason.value for reason in request.risk_reasons],
+        "requested_scope_summary": request.requested_scope_summary,
+        "current_allowed_scope_summary": request.current_allowed_scope_summary,
+        "policy_refs": list(request.policy_refs),
+        "profile_snapshot_hash": request.profile_snapshot_hash,
+        "review_requirement": request.review_requirement,
+        "created_at": request.created_at,
+        "expires_at": request.expires_at,
+        "audit_summary": request.audit_summary,
+    }
+
+
+def tool_approval_decision_to_dict(decision: ToolApprovalDecision) -> dict[str, Any]:
+    """Return a JSON-safe approval decision."""
+
+    return {
+        "request_id": decision.request_id,
+        "decision": decision.decision.value,
+        "reviewer_id": decision.reviewer_id,
+        "profile_snapshot_hash": decision.profile_snapshot_hash,
+        "decided_at": decision.decided_at,
+        "approved_tool_refs": list(decision.approved_tool_refs),
+        "expires_at": decision.expires_at,
+        "audit_summary": decision.audit_summary,
+    }
+
+
 _POLICY_FIELDS = {
     "department_id",
     "policy_id",
@@ -1351,6 +1639,36 @@ def _worker_block_reason(
         ) from exc
 
 
+def _approval_reason(
+    value: HighRiskToolApprovalReason | str,
+) -> HighRiskToolApprovalReason:
+    try:
+        return (
+            value
+            if isinstance(value, HighRiskToolApprovalReason)
+            else HighRiskToolApprovalReason(value)
+        )
+    except ValueError as exc:
+        raise DepartmentToolPolicyError(
+            f"Unknown high-risk tool approval reason: {value!r}"
+        ) from exc
+
+
+def _approval_decision(
+    value: ToolApprovalDecisionState | str,
+) -> ToolApprovalDecisionState:
+    try:
+        return (
+            value
+            if isinstance(value, ToolApprovalDecisionState)
+            else ToolApprovalDecisionState(value)
+        )
+    except ValueError as exc:
+        raise DepartmentToolPolicyError(
+            f"Unknown tool approval decision: {value!r}"
+        ) from exc
+
+
 def _reject_sensitive_payload(value: Any, path: str) -> None:
     if isinstance(value, Mapping):
         for key, item in value.items():
@@ -1611,3 +1929,46 @@ def _profile_limited_float(
         )
         return profile_limit
     return requested
+
+
+def _approval_request(
+    build_input: ToolApprovalBuildInput,
+    sequence: int,
+    tool_refs: tuple[str, ...],
+    risk_reasons: tuple[HighRiskToolApprovalReason, ...],
+    review_requirement: str,
+) -> ToolApprovalRequest:
+    effective = build_input.effective_policy
+    return ToolApprovalRequest(
+        request_id=f"{build_input.request_prefix}-{build_input.task_id}-{sequence}",
+        department_id=effective.department_id,
+        worker_id=effective.worker_id,
+        task_id=build_input.task_id,
+        tool_refs=tool_refs,
+        risk_reasons=tuple(dict.fromkeys(risk_reasons)),
+        requested_scope_summary=", ".join(tool_refs),
+        current_allowed_scope_summary=", ".join(effective.allowed_tools) or "none",
+        policy_refs=effective.department_policy_refs,
+        profile_snapshot_hash=effective.profile_snapshot_hash,
+        review_requirement=review_requirement,
+        created_at=build_input.created_at,
+        expires_at=build_input.expires_at,
+        audit_summary="High-risk tool policy requires explicit approval.",
+    )
+
+
+def _risk_reasons_for_tool(tool_ref: str) -> tuple[HighRiskToolApprovalReason, ...]:
+    lowered = tool_ref.lower()
+    reasons: list[HighRiskToolApprovalReason] = []
+    if "write" in lowered or "patch" in lowered or "edit" in lowered:
+        reasons.append(HighRiskToolApprovalReason.WRITE_ACCESS)
+    if "network" in lowered or "http" in lowered or "web" in lowered:
+        reasons.append(HighRiskToolApprovalReason.NETWORK_ACCESS)
+    if "shell" in lowered or "exec" in lowered or "terminal" in lowered:
+        reasons.append(HighRiskToolApprovalReason.EXTERNAL_EXECUTION)
+    if "secret" in lowered or "credential" in lowered or "token" in lowered:
+        reasons.append(HighRiskToolApprovalReason.CREDENTIAL_BOUNDARY)
+        reasons.append(HighRiskToolApprovalReason.SENSITIVE_PATH_ACCESS)
+    if not reasons:
+        reasons.append(HighRiskToolApprovalReason.MODEL_OR_RUNTIME_COST)
+    return tuple(reasons)
