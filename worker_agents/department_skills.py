@@ -131,6 +131,33 @@ class DepartmentSkillApplicabilityDecision(StrEnum):
     BLOCKED = "blocked"
 
 
+class DepartmentSkillGuardrailDecision(StrEnum):
+    """Final guardrail outcome before context injection considers a skill."""
+
+    ALLOWED_CANDIDATE = "allowed_candidate"
+    BLOCKED = "blocked"
+    NEEDS_USER_CONFIRMATION = "needs_user_confirmation"
+    NEEDS_OWNER_REVIEW = "needs_owner_review"
+    WARNING_ONLY = "warning_only"
+
+
+class DepartmentSkillGuardrailReason(StrEnum):
+    """Stable reason codes shared by context policy, audit, and UI callers."""
+
+    DEPRECATED_BINDING = "deprecated_binding"
+    DISABLED_BINDING = "disabled_binding"
+    EXTERNAL_RUNTIME_SUMMARY_ONLY = "external_runtime_summary_only"
+    MISSING_PERMISSION = "missing_permission"
+    OWNER_REVIEW_REQUIRED = "owner_review_required"
+    PROFILE_DISALLOWS_SKILL = "profile_disallows_skill"
+    RESTRICTED_BINDING = "restricted_binding"
+    SENSITIVE_TASK_BLOCKED = "sensitive_task_blocked"
+    UNSUPPORTED_TASK_TYPE = "unsupported_task_type"
+    USER_CONFIRMATION_REQUIRED = "user_confirmation_required"
+    WRONG_DEPARTMENT = "wrong_department"
+    WRONG_WORKER_ROLE = "wrong_worker_role"
+
+
 _STATE_RANK = {
     DepartmentSkillBindingState.RECOMMENDED: 10,
     DepartmentSkillBindingState.DEFAULT: 20,
@@ -157,6 +184,14 @@ _BLOCKING_APPLICABILITY_REASONS = frozenset(
         "wrong_department",
         "wrong_worker_role",
     }
+)
+
+_USER_CONFIRMATION_REASONS = frozenset(
+    {DepartmentSkillGuardrailReason.USER_CONFIRMATION_REQUIRED.value}
+)
+
+_OWNER_REVIEW_REASONS = frozenset(
+    {DepartmentSkillGuardrailReason.RESTRICTED_BINDING.value}
 )
 
 
@@ -468,6 +503,70 @@ class DepartmentSkillApplicabilityResult:
                 for ref in self.required_review_refs
             ),
         )
+        if not isinstance(self.audit_summary, str):
+            raise DepartmentSkillError("audit_summary must be a string")
+
+
+@dataclass(frozen=True)
+class DepartmentSkillSafeCandidate:
+    """Minimal skill guidance that may be consumed by context policy."""
+
+    skill_id: str
+    binding_id: str
+    title: str
+    guidance_summary: str
+    constraints: tuple[str, ...] = ()
+    audit_refs: tuple[str, ...] = ()
+    replacement_skill_id: str | None = None
+
+    def __post_init__(self) -> None:
+        _validate_identifier(self.skill_id, "skill_id")
+        _validate_identifier(self.binding_id, "binding_id")
+        _require_string(self.title, "title")
+        _require_string(self.guidance_summary, "guidance_summary")
+        object.__setattr__(
+            self,
+            "constraints",
+            tuple(_require_string(value, "constraints") for value in self.constraints),
+        )
+        object.__setattr__(
+            self,
+            "audit_refs",
+            tuple(_validate_relative_ref(ref, "audit_refs") for ref in self.audit_refs),
+        )
+        if self.replacement_skill_id is not None:
+            _validate_identifier(self.replacement_skill_id, "replacement_skill_id")
+
+
+@dataclass(frozen=True)
+class DepartmentSkillGuardrailResult:
+    """Guardrail result consumed before any skill guidance reaches context."""
+
+    skill_id: str
+    binding_id: str
+    decision: DepartmentSkillGuardrailDecision | str
+    reasons: tuple[str, ...] = ()
+    safe_candidate: DepartmentSkillSafeCandidate | None = None
+    review_requirement: str = ""
+    audit_summary: str = ""
+
+    def __post_init__(self) -> None:
+        _validate_identifier(self.skill_id, "skill_id")
+        _validate_identifier(self.binding_id, "binding_id")
+        object.__setattr__(self, "decision", _guardrail_decision(self.decision))
+        object.__setattr__(
+            self,
+            "reasons",
+            tuple(_require_string(value, "reasons") for value in self.reasons),
+        )
+        if self.safe_candidate is not None and not isinstance(
+            self.safe_candidate, DepartmentSkillSafeCandidate
+        ):
+            raise DepartmentSkillError(
+                "safe_candidate must be a DepartmentSkillSafeCandidate"
+            )
+        if not isinstance(self.review_requirement, str):
+            raise DepartmentSkillError("review_requirement must be a string")
         if not isinstance(self.audit_summary, str):
             raise DepartmentSkillError("audit_summary must be a string")
 
@@ -922,6 +1021,80 @@ def validate_department_skill_applicability(
     return result
 
 
+def guard_department_skill_usage(
+    binding: DepartmentSkillBindingRecord | DepartmentSkillResolvedBinding,
+    applicability: DepartmentSkillApplicabilityResult,
+    *,
+    runtime_type: str,
+) -> DepartmentSkillGuardrailResult:
+    """Convert applicability into a final safe-candidate guardrail result."""
+
+    _require_string(runtime_type, "runtime_type")
+    record = binding.binding if isinstance(binding, DepartmentSkillResolvedBinding) else binding
+    reasons = list(applicability.reasons)
+    if runtime_type != "internal_worker":
+        reasons.append(DepartmentSkillGuardrailReason.EXTERNAL_RUNTIME_SUMMARY_ONLY.value)
+    unique_reasons = tuple(dict.fromkeys(reasons))
+
+    if _only_deprecated_reason(unique_reasons):
+        decision = DepartmentSkillGuardrailDecision.WARNING_ONLY
+    elif applicability.decision is DepartmentSkillApplicabilityDecision.BLOCKED:
+        decision = DepartmentSkillGuardrailDecision.BLOCKED
+    elif DepartmentSkillGuardrailReason.USER_CONFIRMATION_REQUIRED.value in unique_reasons:
+        decision = DepartmentSkillGuardrailDecision.NEEDS_USER_CONFIRMATION
+    elif any(reason in _OWNER_REVIEW_REASONS for reason in unique_reasons):
+        decision = DepartmentSkillGuardrailDecision.NEEDS_OWNER_REVIEW
+    elif DepartmentSkillGuardrailReason.DEPRECATED_BINDING.value in unique_reasons:
+        decision = DepartmentSkillGuardrailDecision.WARNING_ONLY
+    else:
+        decision = DepartmentSkillGuardrailDecision.ALLOWED_CANDIDATE
+
+    safe_candidate = None
+    if decision in {
+        DepartmentSkillGuardrailDecision.ALLOWED_CANDIDATE,
+        DepartmentSkillGuardrailDecision.NEEDS_OWNER_REVIEW,
+        DepartmentSkillGuardrailDecision.NEEDS_USER_CONFIRMATION,
+    }:
+        guidance = applicability.safe_guidance_summary or record.usage_guidance
+        safe_candidate = DepartmentSkillSafeCandidate(
+            skill_id=record.skill_id,
+            binding_id=record.binding_id,
+            title=record.skill_id.replace("_", " ").title(),
+            guidance_summary=guidance,
+            constraints=record.limitations + record.risk_notes,
+            audit_refs=record.source_refs,
+            replacement_skill_id=record.replacement_skill_id,
+        )
+    elif (
+        decision is DepartmentSkillGuardrailDecision.WARNING_ONLY
+        and record.replacement_skill_id is not None
+    ):
+        safe_candidate = DepartmentSkillSafeCandidate(
+            skill_id=record.skill_id,
+            binding_id=record.binding_id,
+            title=record.skill_id.replace("_", " ").title(),
+            guidance_summary="Deprecated department skill binding withheld.",
+            constraints=("Use replacement skill reference instead.",),
+            audit_refs=record.source_refs,
+            replacement_skill_id=record.replacement_skill_id,
+        )
+
+    result = DepartmentSkillGuardrailResult(
+        skill_id=record.skill_id,
+        binding_id=record.binding_id,
+        decision=decision,
+        reasons=unique_reasons,
+        safe_candidate=safe_candidate,
+        review_requirement=_guardrail_review_requirement(decision),
+        audit_summary=(
+            f"Guardrail for {record.skill_id}: {decision.value}; "
+            f"reasons={','.join(unique_reasons) or 'none'}."
+        ),
+    )
+    validate_department_skill_payload(department_skill_guardrail_result_to_dict(result))
+    return result
+
+
 def department_skill_dir(worker_agents_home: str | Path, department_id: str) -> Path:
     """Return the durable department skill root without creating it."""
 
@@ -1126,6 +1299,42 @@ def department_skill_applicability_result_to_dict(
         "reasons": list(result.reasons),
         "safe_guidance_summary": result.safe_guidance_summary,
         "required_review_refs": list(result.required_review_refs),
+        "audit_summary": result.audit_summary,
+    }
+
+
+def department_skill_safe_candidate_to_dict(
+    candidate: DepartmentSkillSafeCandidate,
+) -> dict[str, Any]:
+    """Return the field-limited skill view allowed past guardrails."""
+
+    return {
+        "skill_id": candidate.skill_id,
+        "binding_id": candidate.binding_id,
+        "title": candidate.title,
+        "guidance_summary": candidate.guidance_summary,
+        "constraints": list(candidate.constraints),
+        "audit_refs": list(candidate.audit_refs),
+        "replacement_skill_id": candidate.replacement_skill_id,
+    }
+
+
+def department_skill_guardrail_result_to_dict(
+    result: DepartmentSkillGuardrailResult,
+) -> dict[str, Any]:
+    """Return a JSON-safe guardrail result for context policy callers."""
+
+    return {
+        "skill_id": result.skill_id,
+        "binding_id": result.binding_id,
+        "decision": result.decision.value,
+        "reasons": list(result.reasons),
+        "safe_candidate": (
+            department_skill_safe_candidate_to_dict(result.safe_candidate)
+            if result.safe_candidate is not None
+            else None
+        ),
+        "review_requirement": result.review_requirement,
         "audit_summary": result.audit_summary,
     }
 
@@ -1350,6 +1559,37 @@ def _applicability_decision(
         raise DepartmentSkillError(
             f"Unknown department skill applicability decision: {value!r}"
         ) from exc
+
+
+def _guardrail_decision(
+    value: DepartmentSkillGuardrailDecision | str,
+) -> DepartmentSkillGuardrailDecision:
+    try:
+        return (
+            value
+            if isinstance(value, DepartmentSkillGuardrailDecision)
+            else DepartmentSkillGuardrailDecision(value)
+        )
+    except ValueError as exc:
+        raise DepartmentSkillError(
+            f"Unknown department skill guardrail decision: {value!r}"
+        ) from exc
+
+
+def _guardrail_review_requirement(
+    decision: DepartmentSkillGuardrailDecision,
+) -> str:
+    if decision is DepartmentSkillGuardrailDecision.NEEDS_USER_CONFIRMATION:
+        return "user_confirmation"
+    if decision is DepartmentSkillGuardrailDecision.NEEDS_OWNER_REVIEW:
+        return "department_owner_review"
+    if decision is DepartmentSkillGuardrailDecision.WARNING_ONLY:
+        return "deprecated_binding_review"
+    return ""
+
+
+def _only_deprecated_reason(reasons: tuple[str, ...]) -> bool:
+    return reasons == (DepartmentSkillGuardrailReason.DEPRECATED_BINDING.value,)
 
 
 def _proposal_create_status(
