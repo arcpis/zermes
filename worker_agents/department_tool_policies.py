@@ -107,6 +107,18 @@ class DepartmentToolPolicyProposalState(StrEnum):
     SUPERSEDED = "superseded"
 
 
+class DepartmentToolPolicyConflictReason(StrEnum):
+    """Stable reason codes for policy inheritance and resolution conflicts."""
+
+    APPROVAL_MISSING = "approval_missing"
+    LOCAL_RELAXES_PARENT = "local_relaxes_parent"
+    PARENT_DENIES_TOOL = "parent_denies_tool"
+    WORKSPACE_SCOPE_EXPANDED = "workspace_scope_expanded"
+    BUDGET_INCREASED = "budget_increased"
+    RISK_LEVEL_LOWERED = "risk_level_lowered"
+    APPROVAL_REQUIREMENT_REMOVED = "approval_requirement_removed"
+
+
 @dataclass(frozen=True)
 class DepartmentToolPolicyRecord:
     """Approved or active department tool policy.
@@ -359,6 +371,88 @@ class DepartmentToolPolicySnapshot:
         _string_value(self.audit_summary, "audit_summary")
 
 
+@dataclass(frozen=True)
+class DepartmentToolPolicyResolutionInput:
+    """Read-only policy inputs for one department policy resolution."""
+
+    target_department_id: str
+    policies: tuple[DepartmentToolPolicyRecord, ...]
+    inherited_department_ids: tuple[str, ...] = ()
+    task_constraints: tuple[DepartmentToolPolicyRecord, ...] = ()
+    approved_relaxation_refs: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        validate_org_node_id(self.target_department_id)
+        if any(not isinstance(policy, DepartmentToolPolicyRecord) for policy in self.policies):
+            raise DepartmentToolPolicyError(
+                "policies must contain DepartmentToolPolicyRecord values"
+            )
+        if any(
+            not isinstance(policy, DepartmentToolPolicyRecord)
+            for policy in self.task_constraints
+        ):
+            raise DepartmentToolPolicyError(
+                "task_constraints must contain DepartmentToolPolicyRecord values"
+            )
+        object.__setattr__(
+            self,
+            "inherited_department_ids",
+            tuple(
+                validate_org_node_id(department_id)
+                for department_id in self.inherited_department_ids
+            ),
+        )
+        object.__setattr__(
+            self,
+            "approved_relaxation_refs",
+            tuple(
+                _validate_relative_ref(ref, "approved_relaxation_refs")
+                for ref in self.approved_relaxation_refs
+            ),
+        )
+
+
+@dataclass(frozen=True)
+class DepartmentToolPolicyConflict:
+    """Audit-safe conflict produced during inheritance resolution."""
+
+    tool_ref: str
+    policy_id: str
+    reason: DepartmentToolPolicyConflictReason | str
+    audit_summary: str
+
+    def __post_init__(self) -> None:
+        _validate_identifier(self.tool_ref, "tool_ref")
+        _validate_identifier(self.policy_id, "policy_id")
+        object.__setattr__(self, "reason", _conflict_reason(self.reason))
+        _require_string(self.audit_summary, "audit_summary")
+
+
+@dataclass(frozen=True)
+class ResolvedDepartmentToolPolicy:
+    """Resolved department policy before worker profile cross-checking."""
+
+    snapshot: DepartmentToolPolicySnapshot
+    conflicts: tuple[DepartmentToolPolicyConflict, ...] = ()
+    blocked_relaxation_refs: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.snapshot, DepartmentToolPolicySnapshot):
+            raise DepartmentToolPolicyError("snapshot must be a DepartmentToolPolicySnapshot")
+        if any(not isinstance(conflict, DepartmentToolPolicyConflict) for conflict in self.conflicts):
+            raise DepartmentToolPolicyError(
+                "conflicts must contain DepartmentToolPolicyConflict values"
+            )
+        object.__setattr__(
+            self,
+            "blocked_relaxation_refs",
+            tuple(
+                _validate_relative_ref(ref, "blocked_relaxation_refs")
+                for ref in self.blocked_relaxation_refs
+            ),
+        )
+
+
 def validate_department_tool_policy_payload(payload: Mapping[str, Any]) -> None:
     """Reject secrets, credentials, raw transcripts, and raw external output."""
 
@@ -573,6 +667,120 @@ def department_tool_policy_snapshot_to_dict(
         "policy_refs": list(snapshot.policy_refs),
         "denial_reasons": list(snapshot.denial_reasons),
         "audit_summary": snapshot.audit_summary,
+    }
+
+
+def resolve_department_tool_policies(
+    request: DepartmentToolPolicyResolutionInput,
+) -> ResolvedDepartmentToolPolicy:
+    """Resolve department policies with conservative inheritance rules."""
+
+    decisions: dict[str, _ResolvedToolDecision] = {}
+    conflicts: list[DepartmentToolPolicyConflict] = []
+    blocked_relaxation_refs: list[str] = []
+    policy_refs: list[str] = []
+
+    for policy in _resolution_order(request):
+        if not _policy_participates(policy, request):
+            continue
+        policy_refs.append(_policy_ref(policy))
+        for tool_ref in policy.tool_refs:
+            existing = decisions.get(tool_ref)
+            if existing is None:
+                decisions[tool_ref] = _decision_from_policy(policy)
+                continue
+            if _is_relaxation(existing.policy, policy):
+                if _policy_is_approved(policy, request.approved_relaxation_refs):
+                    decisions[tool_ref] = _decision_from_policy(policy)
+                    continue
+                reasons = _relaxation_reasons(existing.policy, policy)
+                blocked_relaxation_refs.append(_policy_ref(policy))
+                for reason in reasons:
+                    conflicts.append(
+                        DepartmentToolPolicyConflict(
+                            tool_ref=tool_ref,
+                            policy_id=policy.policy_id,
+                            reason=reason,
+                            audit_summary=(
+                                f"Policy {policy.policy_id} relaxes "
+                                f"{existing.policy.policy_id} without approval."
+                            ),
+                        )
+                    )
+                continue
+            if _is_stricter(policy, existing.policy):
+                decisions[tool_ref] = _decision_from_policy(policy)
+
+    allowed: list[str] = []
+    denied: list[str] = []
+    approval_required: list[str] = []
+    user_confirmation_required: list[str] = []
+    read_roots: list[str] = []
+    write_roots: list[str] = []
+    max_task_tokens: int | None = None
+    max_turn_tokens: int | None = None
+    max_task_cost_usd: float | None = None
+
+    for tool_ref, decision in sorted(decisions.items()):
+        if decision.effect is DepartmentToolRuleEffect.DENY:
+            denied.append(tool_ref)
+        elif decision.effect is DepartmentToolRuleEffect.REQUIRES_APPROVAL:
+            approval_required.append(tool_ref)
+        elif decision.effect is DepartmentToolRuleEffect.REQUIRES_USER_CONFIRMATION:
+            user_confirmation_required.append(tool_ref)
+        else:
+            allowed.append(tool_ref)
+        read_roots.extend(decision.policy.workspace_read_roots)
+        write_roots.extend(decision.policy.workspace_write_roots)
+        max_task_tokens = _strictest_optional_int(
+            max_task_tokens, decision.policy.max_task_tokens
+        )
+        max_turn_tokens = _strictest_optional_int(
+            max_turn_tokens, decision.policy.max_turn_tokens
+        )
+        max_task_cost_usd = _strictest_optional_float(
+            max_task_cost_usd, decision.policy.max_task_cost_usd
+        )
+
+    snapshot = DepartmentToolPolicySnapshot(
+        department_id=request.target_department_id,
+        allowed_tools=tuple(allowed),
+        denied_tools=tuple(denied),
+        approval_required_tools=tuple(approval_required),
+        user_confirmation_required_tools=tuple(user_confirmation_required),
+        workspace_read_roots=_unique_tuple(read_roots),
+        workspace_write_roots=_unique_tuple(write_roots),
+        max_task_tokens=max_task_tokens,
+        max_turn_tokens=max_turn_tokens,
+        max_task_cost_usd=max_task_cost_usd,
+        policy_refs=_unique_tuple(policy_refs),
+        denial_reasons=tuple(conflict.reason.value for conflict in conflicts),
+        audit_summary="Resolved department tool policies without executing tools.",
+    )
+    return ResolvedDepartmentToolPolicy(
+        snapshot=snapshot,
+        conflicts=tuple(conflicts),
+        blocked_relaxation_refs=_unique_tuple(blocked_relaxation_refs),
+    )
+
+
+def resolved_department_tool_policy_to_dict(
+    resolved: ResolvedDepartmentToolPolicy,
+) -> dict[str, Any]:
+    """Return a JSON-safe resolved policy with stable conflict reasons."""
+
+    return {
+        "snapshot": department_tool_policy_snapshot_to_dict(resolved.snapshot),
+        "conflicts": [
+            {
+                "tool_ref": conflict.tool_ref,
+                "policy_id": conflict.policy_id,
+                "reason": conflict.reason.value,
+                "audit_summary": conflict.audit_summary,
+            }
+            for conflict in resolved.conflicts
+        ],
+        "blocked_relaxation_refs": list(resolved.blocked_relaxation_refs),
     }
 
 
@@ -839,6 +1047,21 @@ def _proposal_state(
         ) from exc
 
 
+def _conflict_reason(
+    value: DepartmentToolPolicyConflictReason | str,
+) -> DepartmentToolPolicyConflictReason:
+    try:
+        return (
+            value
+            if isinstance(value, DepartmentToolPolicyConflictReason)
+            else DepartmentToolPolicyConflictReason(value)
+        )
+    except ValueError as exc:
+        raise DepartmentToolPolicyError(
+            f"Unknown department tool policy conflict reason: {value!r}"
+        ) from exc
+
+
 def _reject_sensitive_payload(value: Any, path: str) -> None:
     if isinstance(value, Mapping):
         for key, item in value.items():
@@ -851,3 +1074,185 @@ def _reject_sensitive_payload(value: Any, path: str) -> None:
     elif isinstance(value, (list, tuple)):
         for index, item in enumerate(value):
             _reject_sensitive_payload(item, f"{path}[{index}]")
+
+
+@dataclass(frozen=True)
+class _ResolvedToolDecision:
+    policy: DepartmentToolPolicyRecord
+    effect: DepartmentToolRuleEffect
+
+
+_EFFECT_STRICTNESS = {
+    DepartmentToolRuleEffect.ALLOW: 0,
+    DepartmentToolRuleEffect.REQUIRES_APPROVAL: 1,
+    DepartmentToolRuleEffect.REQUIRES_USER_CONFIRMATION: 2,
+    DepartmentToolRuleEffect.DENY: 3,
+}
+
+_RISK_STRICTNESS = {
+    DepartmentToolRiskLevel.LOW: 0,
+    DepartmentToolRiskLevel.MEDIUM: 1,
+    DepartmentToolRiskLevel.HIGH: 2,
+    DepartmentToolRiskLevel.RESTRICTED: 3,
+}
+
+
+def _resolution_order(
+    request: DepartmentToolPolicyResolutionInput,
+) -> tuple[DepartmentToolPolicyRecord, ...]:
+    inherited = tuple(
+        policy
+        for department_id in request.inherited_department_ids
+        for policy in request.policies
+        if policy.department_id == department_id
+    )
+    local = tuple(
+        policy
+        for policy in request.policies
+        if policy.department_id == request.target_department_id
+    )
+    return inherited + local + request.task_constraints
+
+
+def _policy_participates(
+    policy: DepartmentToolPolicyRecord, request: DepartmentToolPolicyResolutionInput
+) -> bool:
+    if not policy.active or policy.state in {
+        DepartmentToolPolicyState.ARCHIVED,
+        DepartmentToolPolicyState.DRAFT,
+    }:
+        return False
+    if policy.state is DepartmentToolPolicyState.DISABLED:
+        return True
+    if policy.department_id == request.target_department_id:
+        return True
+    return policy.visibility in {
+        DepartmentToolPolicyVisibility.INHERITABLE_POLICY,
+        DepartmentToolPolicyVisibility.ORGANIZATION_POLICY,
+    }
+
+
+def _decision_from_policy(policy: DepartmentToolPolicyRecord) -> _ResolvedToolDecision:
+    effect = (
+        DepartmentToolRuleEffect.DENY
+        if policy.state is DepartmentToolPolicyState.DISABLED
+        else policy.effect
+    )
+    return _ResolvedToolDecision(policy=policy, effect=effect)
+
+
+def _is_relaxation(
+    current: DepartmentToolPolicyRecord, candidate: DepartmentToolPolicyRecord
+) -> bool:
+    return bool(_relaxation_reasons(current, candidate))
+
+
+def _relaxation_reasons(
+    current: DepartmentToolPolicyRecord, candidate: DepartmentToolPolicyRecord
+) -> tuple[DepartmentToolPolicyConflictReason, ...]:
+    reasons: list[DepartmentToolPolicyConflictReason] = []
+    if (
+        current.effect is DepartmentToolRuleEffect.DENY
+        and candidate.effect is not DepartmentToolRuleEffect.DENY
+    ):
+        reasons.append(DepartmentToolPolicyConflictReason.PARENT_DENIES_TOOL)
+    if _EFFECT_STRICTNESS[candidate.effect] < _EFFECT_STRICTNESS[current.effect]:
+        reasons.append(DepartmentToolPolicyConflictReason.APPROVAL_REQUIREMENT_REMOVED)
+    if _RISK_STRICTNESS[candidate.risk_level] < _RISK_STRICTNESS[current.risk_level]:
+        reasons.append(DepartmentToolPolicyConflictReason.RISK_LEVEL_LOWERED)
+    if _expands_scope(candidate.workspace_read_roots, current.workspace_read_roots):
+        reasons.append(DepartmentToolPolicyConflictReason.WORKSPACE_SCOPE_EXPANDED)
+    if _expands_scope(candidate.workspace_write_roots, current.workspace_write_roots):
+        reasons.append(DepartmentToolPolicyConflictReason.WORKSPACE_SCOPE_EXPANDED)
+    if _raises_optional_int(candidate.max_task_tokens, current.max_task_tokens):
+        reasons.append(DepartmentToolPolicyConflictReason.BUDGET_INCREASED)
+    if _raises_optional_int(candidate.max_turn_tokens, current.max_turn_tokens):
+        reasons.append(DepartmentToolPolicyConflictReason.BUDGET_INCREASED)
+    if _raises_optional_float(candidate.max_task_cost_usd, current.max_task_cost_usd):
+        reasons.append(DepartmentToolPolicyConflictReason.BUDGET_INCREASED)
+    if reasons and DepartmentToolPolicyConflictReason.PARENT_DENIES_TOOL not in reasons:
+        reasons.insert(0, DepartmentToolPolicyConflictReason.LOCAL_RELAXES_PARENT)
+    if reasons:
+        reasons.append(DepartmentToolPolicyConflictReason.APPROVAL_MISSING)
+    return tuple(dict.fromkeys(reasons))
+
+
+def _is_stricter(
+    candidate: DepartmentToolPolicyRecord, current: DepartmentToolPolicyRecord
+) -> bool:
+    if _EFFECT_STRICTNESS[candidate.effect] > _EFFECT_STRICTNESS[current.effect]:
+        return True
+    if _RISK_STRICTNESS[candidate.risk_level] > _RISK_STRICTNESS[current.risk_level]:
+        return True
+    if _narrows_scope(candidate.workspace_read_roots, current.workspace_read_roots):
+        return True
+    if _narrows_scope(candidate.workspace_write_roots, current.workspace_write_roots):
+        return True
+    return (
+        _lowers_optional_int(candidate.max_task_tokens, current.max_task_tokens)
+        or _lowers_optional_int(candidate.max_turn_tokens, current.max_turn_tokens)
+        or _lowers_optional_float(
+            candidate.max_task_cost_usd, current.max_task_cost_usd
+        )
+    )
+
+
+def _policy_is_approved(
+    policy: DepartmentToolPolicyRecord, approved_refs: tuple[str, ...]
+) -> bool:
+    refs = {_policy_ref(policy), policy.policy_id}
+    return bool(refs.intersection(approved_refs))
+
+
+def _policy_ref(policy: DepartmentToolPolicyRecord) -> str:
+    return f"{policy.department_id}/{policy.policy_id}"
+
+
+def _expands_scope(candidate: tuple[str, ...], current: tuple[str, ...]) -> bool:
+    return bool(candidate) and not set(candidate).issubset(set(current))
+
+
+def _narrows_scope(candidate: tuple[str, ...], current: tuple[str, ...]) -> bool:
+    return bool(current) and bool(candidate) and set(candidate).issubset(set(current))
+
+
+def _raises_optional_int(candidate: int | None, current: int | None) -> bool:
+    if candidate is None:
+        return False
+    return current is None or candidate > current
+
+
+def _raises_optional_float(candidate: float | None, current: float | None) -> bool:
+    if candidate is None:
+        return False
+    return current is None or candidate > current
+
+
+def _lowers_optional_int(candidate: int | None, current: int | None) -> bool:
+    return candidate is not None and current is not None and candidate < current
+
+
+def _lowers_optional_float(candidate: float | None, current: float | None) -> bool:
+    return candidate is not None and current is not None and candidate < current
+
+
+def _strictest_optional_int(current: int | None, candidate: int | None) -> int | None:
+    if current is None:
+        return candidate
+    if candidate is None:
+        return current
+    return min(current, candidate)
+
+
+def _strictest_optional_float(
+    current: float | None, candidate: float | None
+) -> float | None:
+    if current is None:
+        return candidate
+    if candidate is None:
+        return current
+    return min(current, candidate)
+
+
+def _unique_tuple(values: list[str]) -> tuple[str, ...]:
+    return tuple(dict.fromkeys(values))
