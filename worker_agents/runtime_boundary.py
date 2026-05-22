@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
 
+from .department_context_rendering import RenderedDepartmentContext
+
 from .profile import validate_worker_id
 from .task_state import validate_task_id
 
@@ -342,6 +344,7 @@ class AgentRuntimeSessionConfig:
     permissions: RuntimePermissionSnapshot
     budget: RuntimeBudgetSnapshot
     context: RuntimeContextBundle
+    department_context: RenderedDepartmentContext | None = None
     cleanup_policy: str | None = None
 
     def __post_init__(self) -> None:
@@ -361,6 +364,12 @@ class AgentRuntimeSessionConfig:
             raise AgentRuntimeBoundaryError("budget must be a RuntimeBudgetSnapshot")
         if not isinstance(self.context, RuntimeContextBundle):
             raise AgentRuntimeBoundaryError("context must be a RuntimeContextBundle")
+        if self.department_context is not None and not isinstance(
+            self.department_context, RenderedDepartmentContext
+        ):
+            raise AgentRuntimeBoundaryError(
+                "department_context must be a RenderedDepartmentContext"
+            )
         self._validate_scope_matches_persona(scope)
 
     def _validate_scope_matches_persona(self, scope: AgentRuntimeSessionScope) -> None:
