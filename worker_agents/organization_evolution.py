@@ -13,6 +13,7 @@ from .profile import WorkerProfileError, validate_worker_id
 
 
 EVOLUTION_PROPOSAL_SCHEMA_VERSION = 1
+CHILD_AGENT_LIFECYCLE_SCHEMA_VERSION = 1
 
 SENSITIVE_EVOLUTION_PROPOSAL_FIELDS = frozenset(
     {
@@ -83,6 +84,272 @@ class EvolutionApprovalLevel(StrEnum):
     POLICY_APPROVED = "policy_approved"
     MAIN_AGENT_APPROVAL = "main_agent_approval"
     USER_APPROVAL = "user_approval"
+
+
+class ChildAgentNodeKind(StrEnum):
+    """Durable organization node kinds that can be proposed for creation."""
+
+    WORKER = "worker"
+    DEPARTMENT = "department"
+    TEAM = "team"
+    ROLE = "role"
+
+
+class ChildAgentRuntimeKind(StrEnum):
+    """Runtime identity for a proposed durable child agent."""
+
+    INTERNAL_WORKER = "internal_worker"
+    EXTERNAL_AGENT = "external_agent"
+    ORGANIZATION_ONLY = "organization_only"
+
+
+class ChildAgentChatPolicy(StrEnum):
+    """Default chat handling for a proposed child agent or node."""
+
+    DIRECT_USER_CHAT = "direct_user_chat"
+    PARENT_GROUP_CHAT = "parent_group_chat"
+    DEPARTMENT_GROUP_CANDIDATE = "department_group_candidate"
+    NONE = "none"
+
+
+@dataclass(frozen=True)
+class ChildAgentPermissionBoundary:
+    """Requested tool permissions plus the parent/main policy ceilings."""
+
+    requested_tools: tuple[str, ...]
+    parent_policy_allowed_tools: tuple[str, ...]
+    main_policy_allowed_tools: tuple[str, ...]
+    policy_ref: str
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "requested_tools",
+            _string_tuple(self.requested_tools, "requested_tools"),
+        )
+        object.__setattr__(
+            self,
+            "parent_policy_allowed_tools",
+            _string_tuple(
+                self.parent_policy_allowed_tools,
+                "parent_policy_allowed_tools",
+            ),
+        )
+        object.__setattr__(
+            self,
+            "main_policy_allowed_tools",
+            _string_tuple(self.main_policy_allowed_tools, "main_policy_allowed_tools"),
+        )
+        object.__setattr__(
+            self,
+            "policy_ref",
+            _validate_relative_ref(self.policy_ref, "policy_ref"),
+        )
+        requested = set(self.requested_tools)
+        if not requested <= set(self.parent_policy_allowed_tools):
+            raise OrganizationEvolutionError(
+                "requested_tools must not exceed parent_policy_allowed_tools"
+            )
+        if not requested <= set(self.main_policy_allowed_tools):
+            raise OrganizationEvolutionError(
+                "requested_tools must not exceed main_policy_allowed_tools"
+            )
+
+
+@dataclass(frozen=True)
+class ChildAgentBudgetPolicy:
+    """Explicit finite budget limits for a proposed durable child agent."""
+
+    max_task_tokens: int
+    max_turn_tokens: int
+    max_task_cost_usd: float | None
+    budget_ref: str
+
+    def __post_init__(self) -> None:
+        _positive_int(self.max_task_tokens, "max_task_tokens")
+        _positive_int(self.max_turn_tokens, "max_turn_tokens")
+        if self.max_task_cost_usd is None:
+            raise OrganizationEvolutionError("max_task_cost_usd must be explicit")
+        _non_negative_number(self.max_task_cost_usd, "max_task_cost_usd")
+        object.__setattr__(
+            self,
+            "budget_ref",
+            _validate_relative_ref(self.budget_ref, "budget_ref"),
+        )
+
+
+@dataclass(frozen=True)
+class ChildAgentModelPolicy:
+    """Explicit model allow-list for a proposed durable child agent."""
+
+    default_model: str
+    allowed_models: tuple[str, ...]
+    model_policy_ref: str
+
+    def __post_init__(self) -> None:
+        _require_string(self.default_model, "default_model")
+        object.__setattr__(
+            self,
+            "allowed_models",
+            _string_tuple(self.allowed_models, "allowed_models"),
+        )
+        if self.default_model not in self.allowed_models:
+            raise OrganizationEvolutionError(
+                "default_model must be listed in allowed_models"
+            )
+        object.__setattr__(
+            self,
+            "model_policy_ref",
+            _validate_relative_ref(self.model_policy_ref, "model_policy_ref"),
+        )
+
+
+@dataclass(frozen=True)
+class ChildAgentExternalAdapterRequirement:
+    """Low-sensitivity external adapter requirements without credentials."""
+
+    adapter_type: str
+    health_check_requirement: str
+    credential_requirement_summary: str
+
+    def __post_init__(self) -> None:
+        _require_string(self.adapter_type, "adapter_type")
+        _require_string(
+            self.health_check_requirement,
+            "health_check_requirement",
+        )
+        _require_string(
+            self.credential_requirement_summary,
+            "credential_requirement_summary",
+        )
+
+
+@dataclass(frozen=True)
+class ChildAgentCreatePlan:
+    """Proposal sub-plan for creating a durable child agent or org node.
+
+    This is a contract only: it records the intended child node, policy ceilings,
+    profile references, and chat strategy. It does not create profiles, registry
+    records, active organization nodes, or chat bindings.
+    """
+
+    plan_id: str
+    child_node_id: str
+    child_name: str
+    node_kind: ChildAgentNodeKind | str
+    runtime_kind: ChildAgentRuntimeKind | str
+    parent_node_id: str
+    responsibility_summary: str
+    capability_boundaries: tuple[str, ...]
+    permission_boundary: ChildAgentPermissionBoundary
+    budget_policy: ChildAgentBudgetPolicy
+    model_policy: ChildAgentModelPolicy
+    chat_policy: ChildAgentChatPolicy | str
+    leader_worker_id: str | None = None
+    child_worker_id: str | None = None
+    initial_profile_ref: str | None = None
+    initial_profile_template_summary: str | None = None
+    external_adapter: ChildAgentExternalAdapterRequirement | None = None
+    source_refs: tuple[str, ...] = ()
+    schema_version: int = CHILD_AGENT_LIFECYCLE_SCHEMA_VERSION
+
+    def __post_init__(self) -> None:
+        _validate_schema_version_value(
+            self.schema_version,
+            CHILD_AGENT_LIFECYCLE_SCHEMA_VERSION,
+            "child agent lifecycle",
+        )
+        _validate_identifier(self.plan_id, "plan_id")
+        _reject_temporary_child_identifier(self.plan_id, "plan_id")
+        object.__setattr__(
+            self,
+            "child_node_id",
+            _validate_org_node_reference(self.child_node_id),
+        )
+        _reject_temporary_child_identifier(self.child_node_id, "child_node_id")
+        _require_string(self.child_name, "child_name")
+        object.__setattr__(self, "node_kind", _child_node_kind(self.node_kind))
+        object.__setattr__(self, "runtime_kind", _child_runtime_kind(self.runtime_kind))
+        object.__setattr__(
+            self,
+            "parent_node_id",
+            _validate_org_node_reference(self.parent_node_id),
+        )
+        _require_string(self.responsibility_summary, "responsibility_summary")
+        object.__setattr__(
+            self,
+            "capability_boundaries",
+            _string_tuple(self.capability_boundaries, "capability_boundaries"),
+        )
+        if not self.capability_boundaries:
+            raise OrganizationEvolutionError(
+                "capability_boundaries must not be empty"
+            )
+        if not isinstance(self.permission_boundary, ChildAgentPermissionBoundary):
+            raise OrganizationEvolutionError(
+                "permission_boundary must be a ChildAgentPermissionBoundary"
+            )
+        if not isinstance(self.budget_policy, ChildAgentBudgetPolicy):
+            raise OrganizationEvolutionError(
+                "budget_policy must be a ChildAgentBudgetPolicy"
+            )
+        if not isinstance(self.model_policy, ChildAgentModelPolicy):
+            raise OrganizationEvolutionError(
+                "model_policy must be a ChildAgentModelPolicy"
+            )
+        object.__setattr__(self, "chat_policy", _child_chat_policy(self.chat_policy))
+        if self.leader_worker_id is not None:
+            object.__setattr__(
+                self,
+                "leader_worker_id",
+                _validate_worker_reference(self.leader_worker_id),
+            )
+        if self.child_worker_id is not None:
+            object.__setattr__(
+                self,
+                "child_worker_id",
+                _validate_worker_reference(self.child_worker_id),
+            )
+            _reject_temporary_child_identifier(self.child_worker_id, "child_worker_id")
+        if self.initial_profile_ref is not None:
+            object.__setattr__(
+                self,
+                "initial_profile_ref",
+                _validate_relative_ref(self.initial_profile_ref, "initial_profile_ref"),
+            )
+            _reject_temporary_child_identifier(
+                self.initial_profile_ref,
+                "initial_profile_ref",
+            )
+        if self.initial_profile_template_summary is not None:
+            _require_string(
+                self.initial_profile_template_summary,
+                "initial_profile_template_summary",
+            )
+        if self.initial_profile_ref is None and self.initial_profile_template_summary is None:
+            raise OrganizationEvolutionError(
+                "initial_profile_ref or initial_profile_template_summary is required"
+            )
+        if self.runtime_kind is ChildAgentRuntimeKind.EXTERNAL_AGENT:
+            if self.external_adapter is None:
+                raise OrganizationEvolutionError(
+                    "external_agent create plans require external_adapter"
+                )
+        elif self.external_adapter is not None:
+            raise OrganizationEvolutionError(
+                "external_adapter is only valid for external_agent plans"
+            )
+        if self.node_kind is ChildAgentNodeKind.WORKER and self.child_worker_id is None:
+            raise OrganizationEvolutionError("worker create plans require child_worker_id")
+        if self.node_kind is not ChildAgentNodeKind.WORKER and self.child_worker_id is not None:
+            raise OrganizationEvolutionError(
+                "child_worker_id is only valid for worker create plans"
+            )
+        object.__setattr__(
+            self,
+            "source_refs",
+            _relative_ref_tuple(self.source_refs, "source_refs"),
+        )
 
 
 @dataclass(frozen=True)
@@ -292,6 +559,49 @@ class OrganizationEvolutionProposal:
 
 
 _INITIATOR_FIELDS = {"kind", "initiator_id", "display_name"}
+_CHILD_PERMISSION_BOUNDARY_FIELDS = {
+    "requested_tools",
+    "parent_policy_allowed_tools",
+    "main_policy_allowed_tools",
+    "policy_ref",
+}
+_CHILD_BUDGET_POLICY_FIELDS = {
+    "max_task_tokens",
+    "max_turn_tokens",
+    "max_task_cost_usd",
+    "budget_ref",
+}
+_CHILD_MODEL_POLICY_FIELDS = {
+    "default_model",
+    "allowed_models",
+    "model_policy_ref",
+}
+_CHILD_EXTERNAL_ADAPTER_FIELDS = {
+    "adapter_type",
+    "health_check_requirement",
+    "credential_requirement_summary",
+}
+_CHILD_CREATE_PLAN_FIELDS = {
+    "plan_id",
+    "schema_version",
+    "child_node_id",
+    "child_name",
+    "node_kind",
+    "runtime_kind",
+    "parent_node_id",
+    "responsibility_summary",
+    "capability_boundaries",
+    "permission_boundary",
+    "budget_policy",
+    "model_policy",
+    "chat_policy",
+    "leader_worker_id",
+    "child_worker_id",
+    "initial_profile_ref",
+    "initial_profile_template_summary",
+    "external_adapter",
+    "source_refs",
+}
 _PROPOSAL_FIELDS = {
     "proposal_id",
     "proposal_type",
@@ -312,6 +622,18 @@ _PROPOSAL_FIELDS = {
     "created_at",
     "updated_at",
 }
+
+
+def validate_child_agent_create_plan(
+    plan: ChildAgentCreatePlan | Mapping[str, Any],
+) -> ChildAgentCreatePlan:
+    """Return a validated durable child-agent create plan."""
+    if isinstance(plan, ChildAgentCreatePlan):
+        data = child_agent_create_plan_to_dict(plan)
+    else:
+        data = plan
+    _reject_sensitive_payload(data, "child_agent_create_plan")
+    return child_agent_create_plan_from_dict(data)
 
 
 def validate_evolution_proposal(
@@ -478,6 +800,217 @@ def evolution_proposal_initiator_from_dict(
     )
 
 
+def child_agent_permission_boundary_to_dict(
+    boundary: ChildAgentPermissionBoundary,
+) -> dict[str, Any]:
+    return {
+        "requested_tools": list(boundary.requested_tools),
+        "parent_policy_allowed_tools": list(boundary.parent_policy_allowed_tools),
+        "main_policy_allowed_tools": list(boundary.main_policy_allowed_tools),
+        "policy_ref": boundary.policy_ref,
+    }
+
+
+def child_agent_permission_boundary_from_dict(
+    data: Mapping[str, Any],
+) -> ChildAgentPermissionBoundary:
+    data = _require_mapping(data, "permission_boundary")
+    _reject_unknown_fields(
+        data,
+        _CHILD_PERMISSION_BOUNDARY_FIELDS,
+        "permission_boundary",
+    )
+    return ChildAgentPermissionBoundary(
+        requested_tools=_string_tuple(
+            data.get("requested_tools"), "requested_tools"
+        ),
+        parent_policy_allowed_tools=_string_tuple(
+            data.get("parent_policy_allowed_tools"),
+            "parent_policy_allowed_tools",
+        ),
+        main_policy_allowed_tools=_string_tuple(
+            data.get("main_policy_allowed_tools"),
+            "main_policy_allowed_tools",
+        ),
+        policy_ref=_require_string(data.get("policy_ref"), "policy_ref"),
+    )
+
+
+def child_agent_budget_policy_to_dict(
+    policy: ChildAgentBudgetPolicy,
+) -> dict[str, Any]:
+    return {
+        "max_task_tokens": policy.max_task_tokens,
+        "max_turn_tokens": policy.max_turn_tokens,
+        "max_task_cost_usd": policy.max_task_cost_usd,
+        "budget_ref": policy.budget_ref,
+    }
+
+
+def child_agent_budget_policy_from_dict(
+    data: Mapping[str, Any],
+) -> ChildAgentBudgetPolicy:
+    data = _require_mapping(data, "budget_policy")
+    _reject_unknown_fields(data, _CHILD_BUDGET_POLICY_FIELDS, "budget_policy")
+    return ChildAgentBudgetPolicy(
+        max_task_tokens=_positive_int(data.get("max_task_tokens"), "max_task_tokens"),
+        max_turn_tokens=_positive_int(data.get("max_turn_tokens"), "max_turn_tokens"),
+        max_task_cost_usd=_non_negative_number(
+            data.get("max_task_cost_usd"),
+            "max_task_cost_usd",
+        ),
+        budget_ref=_require_string(data.get("budget_ref"), "budget_ref"),
+    )
+
+
+def child_agent_model_policy_to_dict(
+    policy: ChildAgentModelPolicy,
+) -> dict[str, Any]:
+    return {
+        "default_model": policy.default_model,
+        "allowed_models": list(policy.allowed_models),
+        "model_policy_ref": policy.model_policy_ref,
+    }
+
+
+def child_agent_model_policy_from_dict(
+    data: Mapping[str, Any],
+) -> ChildAgentModelPolicy:
+    data = _require_mapping(data, "model_policy")
+    _reject_unknown_fields(data, _CHILD_MODEL_POLICY_FIELDS, "model_policy")
+    return ChildAgentModelPolicy(
+        default_model=_require_string(data.get("default_model"), "default_model"),
+        allowed_models=_string_tuple(data.get("allowed_models"), "allowed_models"),
+        model_policy_ref=_require_string(
+            data.get("model_policy_ref"), "model_policy_ref"
+        ),
+    )
+
+
+def child_agent_external_adapter_to_dict(
+    requirement: ChildAgentExternalAdapterRequirement,
+) -> dict[str, Any]:
+    return {
+        "adapter_type": requirement.adapter_type,
+        "health_check_requirement": requirement.health_check_requirement,
+        "credential_requirement_summary": requirement.credential_requirement_summary,
+    }
+
+
+def child_agent_external_adapter_from_dict(
+    data: Mapping[str, Any],
+) -> ChildAgentExternalAdapterRequirement:
+    data = _require_mapping(data, "external_adapter")
+    _reject_unknown_fields(
+        data,
+        _CHILD_EXTERNAL_ADAPTER_FIELDS,
+        "external_adapter",
+    )
+    return ChildAgentExternalAdapterRequirement(
+        adapter_type=_require_string(data.get("adapter_type"), "adapter_type"),
+        health_check_requirement=_require_string(
+            data.get("health_check_requirement"),
+            "health_check_requirement",
+        ),
+        credential_requirement_summary=_require_string(
+            data.get("credential_requirement_summary"),
+            "credential_requirement_summary",
+        ),
+    )
+
+
+def child_agent_create_plan_to_dict(plan: ChildAgentCreatePlan) -> dict[str, Any]:
+    return {
+        "plan_id": plan.plan_id,
+        "schema_version": plan.schema_version,
+        "child_node_id": plan.child_node_id,
+        "child_name": plan.child_name,
+        "node_kind": plan.node_kind.value,
+        "runtime_kind": plan.runtime_kind.value,
+        "parent_node_id": plan.parent_node_id,
+        "responsibility_summary": plan.responsibility_summary,
+        "capability_boundaries": list(plan.capability_boundaries),
+        "permission_boundary": child_agent_permission_boundary_to_dict(
+            plan.permission_boundary
+        ),
+        "budget_policy": child_agent_budget_policy_to_dict(plan.budget_policy),
+        "model_policy": child_agent_model_policy_to_dict(plan.model_policy),
+        "chat_policy": plan.chat_policy.value,
+        "leader_worker_id": plan.leader_worker_id,
+        "child_worker_id": plan.child_worker_id,
+        "initial_profile_ref": plan.initial_profile_ref,
+        "initial_profile_template_summary": plan.initial_profile_template_summary,
+        "external_adapter": (
+            child_agent_external_adapter_to_dict(plan.external_adapter)
+            if plan.external_adapter is not None
+            else None
+        ),
+        "source_refs": list(plan.source_refs),
+    }
+
+
+def child_agent_create_plan_from_dict(
+    data: Mapping[str, Any],
+) -> ChildAgentCreatePlan:
+    data = _require_mapping(data, "child agent create plan")
+    _reject_sensitive_payload(data, "child_agent_create_plan")
+    _reject_unknown_fields(
+        data,
+        _CHILD_CREATE_PLAN_FIELDS,
+        "child agent create plan",
+    )
+    return ChildAgentCreatePlan(
+        plan_id=_require_string(data.get("plan_id"), "plan_id"),
+        schema_version=data.get(
+            "schema_version", CHILD_AGENT_LIFECYCLE_SCHEMA_VERSION
+        ),
+        child_node_id=_require_string(data.get("child_node_id"), "child_node_id"),
+        child_name=_require_string(data.get("child_name"), "child_name"),
+        node_kind=_require_string(data.get("node_kind"), "node_kind"),
+        runtime_kind=_require_string(data.get("runtime_kind"), "runtime_kind"),
+        parent_node_id=_require_string(data.get("parent_node_id"), "parent_node_id"),
+        responsibility_summary=_require_string(
+            data.get("responsibility_summary"),
+            "responsibility_summary",
+        ),
+        capability_boundaries=_string_tuple(
+            data.get("capability_boundaries"), "capability_boundaries"
+        ),
+        permission_boundary=child_agent_permission_boundary_from_dict(
+            _require_mapping(data.get("permission_boundary"), "permission_boundary")
+        ),
+        budget_policy=child_agent_budget_policy_from_dict(
+            _require_mapping(data.get("budget_policy"), "budget_policy")
+        ),
+        model_policy=child_agent_model_policy_from_dict(
+            _require_mapping(data.get("model_policy"), "model_policy")
+        ),
+        chat_policy=_require_string(data.get("chat_policy"), "chat_policy"),
+        leader_worker_id=_optional_string(
+            data.get("leader_worker_id"), "leader_worker_id"
+        ),
+        child_worker_id=_optional_string(
+            data.get("child_worker_id"), "child_worker_id"
+        ),
+        initial_profile_ref=_optional_string(
+            data.get("initial_profile_ref"),
+            "initial_profile_ref",
+        ),
+        initial_profile_template_summary=_optional_string(
+            data.get("initial_profile_template_summary"),
+            "initial_profile_template_summary",
+        ),
+        external_adapter=(
+            child_agent_external_adapter_from_dict(
+                _require_mapping(data.get("external_adapter"), "external_adapter")
+            )
+            if data.get("external_adapter") is not None
+            else None
+        ),
+        source_refs=_string_tuple(data.get("source_refs", ()), "source_refs"),
+    )
+
+
 def organization_evolution_proposal_to_dict(
     proposal: OrganizationEvolutionProposal,
 ) -> dict[str, Any]:
@@ -626,10 +1159,63 @@ def _approval_level(value: EvolutionApprovalLevel | str) -> EvolutionApprovalLev
         ) from exc
 
 
-def _validate_schema_version(value: int) -> None:
-    if value != EVOLUTION_PROPOSAL_SCHEMA_VERSION:
+def _child_node_kind(value: ChildAgentNodeKind | str) -> ChildAgentNodeKind:
+    try:
+        return (
+            value
+            if isinstance(value, ChildAgentNodeKind)
+            else ChildAgentNodeKind(value)
+        )
+    except ValueError as exc:
         raise OrganizationEvolutionError(
-            f"Unsupported evolution proposal schema_version: {value!r}"
+            f"Unknown child agent node kind: {value!r}"
+        ) from exc
+
+
+def _child_runtime_kind(
+    value: ChildAgentRuntimeKind | str,
+) -> ChildAgentRuntimeKind:
+    try:
+        return (
+            value
+            if isinstance(value, ChildAgentRuntimeKind)
+            else ChildAgentRuntimeKind(value)
+        )
+    except ValueError as exc:
+        raise OrganizationEvolutionError(
+            f"Unknown child agent runtime kind: {value!r}"
+        ) from exc
+
+
+def _child_chat_policy(value: ChildAgentChatPolicy | str) -> ChildAgentChatPolicy:
+    try:
+        return (
+            value
+            if isinstance(value, ChildAgentChatPolicy)
+            else ChildAgentChatPolicy(value)
+        )
+    except ValueError as exc:
+        raise OrganizationEvolutionError(
+            f"Unknown child agent chat policy: {value!r}"
+        ) from exc
+
+
+def _validate_schema_version(value: int) -> None:
+    _validate_schema_version_value(
+        value,
+        EVOLUTION_PROPOSAL_SCHEMA_VERSION,
+        "evolution proposal",
+    )
+
+
+def _validate_schema_version_value(
+    value: int,
+    expected: int,
+    contract_name: str,
+) -> None:
+    if value != expected:
+        raise OrganizationEvolutionError(
+            f"Unsupported {contract_name} schema_version: {value!r}"
         )
 
 
@@ -713,6 +1299,18 @@ def _optional_string(value: Any, field_name: str) -> str | None:
     return _require_string(value, field_name)
 
 
+def _positive_int(value: Any, field_name: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        raise OrganizationEvolutionError(f"{field_name} must be a positive integer")
+    return value
+
+
+def _non_negative_number(value: Any, field_name: str) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or value < 0:
+        raise OrganizationEvolutionError(f"{field_name} must be a non-negative number")
+    return float(value)
+
+
 def _string_tuple(value: Any, field_name: str) -> tuple[str, ...]:
     if not isinstance(value, (list, tuple)):
         raise OrganizationEvolutionError(f"{field_name} must be a list of strings")
@@ -743,6 +1341,19 @@ def _reject_sensitive_payload(value: Any, path: str) -> None:
     elif isinstance(value, (list, tuple)):
         for index, item in enumerate(value):
             _reject_sensitive_payload(item, f"{path}[{index}]")
+
+
+def _reject_temporary_child_identifier(value: str, field_name: str) -> None:
+    lowered = value.lower()
+    if (
+        lowered.startswith(("temporary-", "temp-", "delegation-"))
+        or "temporary-subagents" in lowered
+        or "temporary_subagent" in lowered
+        or lowered.startswith("temporary_")
+    ):
+        raise OrganizationEvolutionError(
+            f"{field_name} must not reference a temporary subagent delegation"
+        )
 
 
 _USER_APPROVAL_RISK_FLAGS = frozenset(
