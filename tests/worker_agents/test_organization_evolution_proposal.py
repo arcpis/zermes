@@ -2,16 +2,22 @@ import pytest
 
 from worker_agents.organization_evolution import (
     EVOLUTION_PROPOSAL_SCHEMA_VERSION,
+    EvolutionApprovalLevel,
     EvolutionInitiatorKind,
     EvolutionProposalInitiator,
     EvolutionProposalStatus,
     EvolutionProposalType,
+    EvolutionRiskContext,
+    EvolutionRiskFlag,
     OrganizationEvolutionError,
     OrganizationEvolutionProposal,
+    apply_manual_approval_override,
+    classify_evolution_risks,
     dump_organization_evolution_proposal_json,
     load_organization_evolution_proposal_json,
     organization_evolution_proposal_from_dict,
     organization_evolution_proposal_to_dict,
+    resolve_approval_requirement,
     validate_evolution_proposal,
 )
 
@@ -163,4 +169,145 @@ def test_transfer_assets_requires_asset_disposition_ref():
     with pytest.raises(OrganizationEvolutionError, match="asset_disposition_refs"):
         organization_evolution_proposal_from_dict(
             _proposal_data(proposal_type="transfer_assets")
+        )
+
+
+@pytest.mark.parametrize(
+    ("context_kwargs", "expected_flag"),
+    [
+        ({"permission_expands": True}, EvolutionRiskFlag.PERMISSION_EXPANSION),
+        ({"budget_increases": True}, EvolutionRiskFlag.BUDGET_INCREASE),
+        ({"model_tier_increases": True}, EvolutionRiskFlag.MODEL_TIER_INCREASE),
+        ({"external_agent_involved": True}, EvolutionRiskFlag.EXTERNAL_AGENT),
+        ({"sensitive_memory_moves": True}, EvolutionRiskFlag.SENSITIVE_MEMORY),
+        ({"active_task_refs": ("tasks/active.json",)}, EvolutionRiskFlag.ACTIVE_TASKS),
+        (
+            {"pending_high_risk_approval_refs": ("approvals/pending.json",)},
+            EvolutionRiskFlag.PENDING_HIGH_RISK_APPROVALS,
+        ),
+        ({"group_chat_closes": True}, EvolutionRiskFlag.GROUP_CHAT_CLOSURE),
+        (
+            {"responsibilities_change": True},
+            EvolutionRiskFlag.RESPONSIBILITY_CHANGE,
+        ),
+    ],
+)
+def test_classify_evolution_risks_returns_expected_flags(
+    context_kwargs, expected_flag
+):
+    proposal = organization_evolution_proposal_from_dict(_proposal_data())
+
+    risks = classify_evolution_risks(
+        proposal,
+        EvolutionRiskContext(**context_kwargs, source_refs=("analysis/risk.json",)),
+    )
+
+    assert expected_flag in {risk.flag for risk in risks}
+    assert all(risk.reason for risk in risks)
+
+
+@pytest.mark.parametrize(
+    "context_kwargs",
+    [
+        {"permission_expands": True},
+        {"budget_increases": True},
+        {"model_tier_increases": True},
+        {"external_agent_involved": True},
+        {"sensitive_memory_moves": True},
+    ],
+)
+def test_user_confirmation_risks_require_user_approval(context_kwargs):
+    proposal = organization_evolution_proposal_from_dict(_proposal_data())
+
+    risks = classify_evolution_risks(proposal, EvolutionRiskContext(**context_kwargs))
+    requirement = resolve_approval_requirement(proposal, risks)
+
+    assert requirement.level is EvolutionApprovalLevel.USER_APPROVAL
+    assert requirement.required_approvers == ("user",)
+
+
+def test_multiple_risks_use_highest_approval_level():
+    proposal = organization_evolution_proposal_from_dict(_proposal_data())
+
+    risks = classify_evolution_risks(
+        proposal,
+        EvolutionRiskContext(
+            group_chat_closes=True,
+            responsibilities_change=True,
+            budget_increases=True,
+        ),
+    )
+    requirement = resolve_approval_requirement(proposal, risks)
+
+    assert requirement.level is EvolutionApprovalLevel.USER_APPROVAL
+    assert EvolutionRiskFlag.BUDGET_INCREASE in requirement.risk_flags
+    assert EvolutionRiskFlag.GROUP_CHAT_CLOSURE in requirement.risk_flags
+
+
+def test_active_tasks_and_pending_approvals_are_execution_blockers():
+    proposal = organization_evolution_proposal_from_dict(_proposal_data())
+
+    risks = classify_evolution_risks(
+        proposal,
+        EvolutionRiskContext(
+            active_task_refs=("tasks/active.json",),
+            pending_high_risk_approval_refs=("approvals/high-risk.json",),
+        ),
+    )
+    requirement = resolve_approval_requirement(proposal, risks)
+
+    assert requirement.blocking_flags == (
+        EvolutionRiskFlag.ACTIVE_TASKS,
+        EvolutionRiskFlag.PENDING_HIGH_RISK_APPROVALS,
+    )
+    assert "main_agent" in requirement.required_approvers
+
+
+def test_low_risk_create_can_be_policy_approved():
+    proposal = organization_evolution_proposal_from_dict(_proposal_data())
+
+    requirement = resolve_approval_requirement(
+        proposal,
+        classify_evolution_risks(proposal),
+    )
+
+    assert requirement.level is EvolutionApprovalLevel.POLICY_APPROVED
+    assert requirement.blocking_flags == ()
+
+
+def test_manual_override_preserves_original_risk_reasons():
+    proposal = organization_evolution_proposal_from_dict(_proposal_data())
+    risks = classify_evolution_risks(
+        proposal,
+        EvolutionRiskContext(responsibilities_change=True),
+    )
+    requirement = resolve_approval_requirement(proposal, risks)
+
+    overridden = apply_manual_approval_override(
+        requirement,
+        level=EvolutionApprovalLevel.USER_APPROVAL,
+        actor="zermes_main_agent",
+        reason="Escalate for user review.",
+    )
+
+    assert overridden.level is EvolutionApprovalLevel.USER_APPROVAL
+    assert overridden.reasons == requirement.reasons
+    assert overridden.risk_flags == requirement.risk_flags
+    assert overridden.manual_override_by == "zermes_main_agent"
+
+
+def test_manual_override_cannot_lower_high_risk_requirement():
+    proposal = organization_evolution_proposal_from_dict(_proposal_data())
+    risks = classify_evolution_risks(
+        proposal,
+        EvolutionRiskContext(permission_expands=True),
+    )
+    requirement = resolve_approval_requirement(proposal, risks)
+
+    with pytest.raises(OrganizationEvolutionError, match="cannot lower"):
+        apply_manual_approval_override(
+            requirement,
+            level=EvolutionApprovalLevel.MAIN_AGENT_APPROVAL,
+            actor="zermes_main_agent",
+            reason="Too low.",
         )
