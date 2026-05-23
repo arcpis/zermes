@@ -112,6 +112,42 @@ class ChildAgentChatPolicy(StrEnum):
     NONE = "none"
 
 
+class ChildAgentDeletionMode(StrEnum):
+    """Allowed non-destructive lifecycle outcomes for a child agent deletion plan."""
+
+    ARCHIVE = "archive"
+    REMOVE_FROM_ACTIVE_TREE = "remove_from_active_tree"
+    DEPRECATE = "deprecate"
+
+
+class ChildAgentDeleteBlockingCheck(StrEnum):
+    """Pre-execution blockers that must be cleared before deletion."""
+
+    ACTIVE_TASKS = "active_tasks"
+    PENDING_APPROVALS = "pending_approvals"
+    CHILD_NODES = "child_nodes"
+    RUNNING_SESSIONS = "running_sessions"
+    ASSET_DISPOSITION_MISSING = "asset_disposition_missing"
+    CHAT_DISPOSITION_MISSING = "chat_disposition_missing"
+
+
+class ChildAgentPrivateAssetDisposition(StrEnum):
+    """Permitted private asset disposition for a removed durable child agent."""
+
+    ARCHIVE = "archive"
+    TRANSFER_BY_PROPOSAL = "transfer_by_proposal"
+
+
+class ChildAgentReplacementOwnerKind(StrEnum):
+    """Where responsibility moves after a child agent or org node is removed."""
+
+    ORG_NODE = "org_node"
+    WORKER = "worker"
+    MAIN_AGENT = "main_agent"
+    USER = "user"
+    NO_REPLACEMENT = "no_replacement"
+
+
 @dataclass(frozen=True)
 class ChildAgentPermissionBoundary:
     """Requested tool permissions plus the parent/main policy ceilings."""
@@ -349,6 +385,210 @@ class ChildAgentCreatePlan:
             self,
             "source_refs",
             _relative_ref_tuple(self.source_refs, "source_refs"),
+        )
+
+
+@dataclass(frozen=True)
+class ChildAgentReplacementOwner:
+    """Low-sensitivity replacement owner reference for a delete plan."""
+
+    kind: ChildAgentReplacementOwnerKind | str
+    org_node_id: str | None = None
+    worker_id: str | None = None
+    reason: str = ""
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "kind", _replacement_owner_kind(self.kind))
+        if self.kind is ChildAgentReplacementOwnerKind.ORG_NODE:
+            if self.org_node_id is None:
+                raise OrganizationEvolutionError(
+                    "replacement owner org_node_id is required"
+                )
+            object.__setattr__(
+                self,
+                "org_node_id",
+                _validate_org_node_reference(self.org_node_id),
+            )
+            if self.worker_id is not None:
+                raise OrganizationEvolutionError(
+                    "worker_id is only valid for worker replacement owners"
+                )
+        elif self.kind is ChildAgentReplacementOwnerKind.WORKER:
+            if self.worker_id is None:
+                raise OrganizationEvolutionError(
+                    "replacement owner worker_id is required"
+                )
+            object.__setattr__(
+                self,
+                "worker_id",
+                _validate_worker_reference(self.worker_id),
+            )
+            if self.org_node_id is not None:
+                raise OrganizationEvolutionError(
+                    "org_node_id is only valid for org_node replacement owners"
+                )
+        else:
+            if self.org_node_id is not None or self.worker_id is not None:
+                raise OrganizationEvolutionError(
+                    "replacement owner id is only valid for org_node or worker"
+                )
+        if self.kind is ChildAgentReplacementOwnerKind.NO_REPLACEMENT:
+            _require_string(self.reason, "replacement owner reason")
+        elif not isinstance(self.reason, str):
+            raise OrganizationEvolutionError("replacement owner reason must be a string")
+
+
+@dataclass(frozen=True)
+class ChildAgentDeleteCheckSummary:
+    """Preflight summary for proposal approval and later executor gates."""
+
+    blocking_checks: tuple[ChildAgentDeleteBlockingCheck, ...]
+    can_enter_pending_approval: bool
+    can_execute: bool
+    summary: str
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "blocking_checks",
+            tuple(_delete_blocking_check(item) for item in self.blocking_checks),
+        )
+        if not isinstance(self.can_enter_pending_approval, bool):
+            raise OrganizationEvolutionError(
+                "can_enter_pending_approval must be a boolean"
+            )
+        if not isinstance(self.can_execute, bool):
+            raise OrganizationEvolutionError("can_execute must be a boolean")
+        _require_string(self.summary, "summary")
+
+
+@dataclass(frozen=True)
+class ChildAgentDeletePlan:
+    """Proposal sub-plan for removing a durable child agent or org node.
+
+    The plan records blockers and disposition references only. It never deletes
+    files, mutates registry lifecycle state, closes chats, or migrates assets.
+    """
+
+    plan_id: str
+    target_node_id: str
+    deletion_mode: ChildAgentDeletionMode | str
+    reason: str
+    replacement_owner: ChildAgentReplacementOwner
+    asset_disposition_refs: tuple[str, ...]
+    chat_disposition_refs: tuple[str, ...]
+    target_worker_id: str | None = None
+    private_asset_disposition: ChildAgentPrivateAssetDisposition | str = (
+        ChildAgentPrivateAssetDisposition.ARCHIVE
+    )
+    active_task_refs: tuple[str, ...] = ()
+    pending_approval_refs: tuple[str, ...] = ()
+    child_node_ids: tuple[str, ...] = ()
+    running_session_refs: tuple[str, ...] = ()
+    downstream_disposition_refs: tuple[str, ...] = ()
+    source_refs: tuple[str, ...] = ()
+    schema_version: int = CHILD_AGENT_LIFECYCLE_SCHEMA_VERSION
+
+    def __post_init__(self) -> None:
+        _validate_schema_version_value(
+            self.schema_version,
+            CHILD_AGENT_LIFECYCLE_SCHEMA_VERSION,
+            "child agent lifecycle",
+        )
+        _validate_identifier(self.plan_id, "plan_id")
+        object.__setattr__(
+            self,
+            "target_node_id",
+            _validate_org_node_reference(self.target_node_id),
+        )
+        object.__setattr__(
+            self,
+            "deletion_mode",
+            _child_deletion_mode(self.deletion_mode),
+        )
+        _require_string(self.reason, "reason")
+        if not isinstance(self.replacement_owner, ChildAgentReplacementOwner):
+            raise OrganizationEvolutionError(
+                "replacement_owner must be a ChildAgentReplacementOwner"
+            )
+        if self.target_worker_id is not None:
+            object.__setattr__(
+                self,
+                "target_worker_id",
+                _validate_worker_reference(self.target_worker_id),
+            )
+        object.__setattr__(
+            self,
+            "private_asset_disposition",
+            _private_asset_disposition(self.private_asset_disposition),
+        )
+        object.__setattr__(
+            self,
+            "asset_disposition_refs",
+            _relative_ref_tuple(self.asset_disposition_refs, "asset_disposition_refs"),
+        )
+        object.__setattr__(
+            self,
+            "chat_disposition_refs",
+            _relative_ref_tuple(self.chat_disposition_refs, "chat_disposition_refs"),
+        )
+        if not self.asset_disposition_refs:
+            raise OrganizationEvolutionError("asset_disposition_refs must not be empty")
+        if not self.chat_disposition_refs:
+            raise OrganizationEvolutionError("chat_disposition_refs must not be empty")
+        object.__setattr__(
+            self,
+            "active_task_refs",
+            _relative_ref_tuple(self.active_task_refs, "active_task_refs"),
+        )
+        object.__setattr__(
+            self,
+            "pending_approval_refs",
+            _relative_ref_tuple(self.pending_approval_refs, "pending_approval_refs"),
+        )
+        object.__setattr__(
+            self,
+            "child_node_ids",
+            tuple(_validate_org_node_reference(node_id) for node_id in self.child_node_ids),
+        )
+        object.__setattr__(
+            self,
+            "running_session_refs",
+            _relative_ref_tuple(self.running_session_refs, "running_session_refs"),
+        )
+        object.__setattr__(
+            self,
+            "downstream_disposition_refs",
+            _relative_ref_tuple(
+                self.downstream_disposition_refs,
+                "downstream_disposition_refs",
+            ),
+        )
+        if self.child_node_ids and not self.downstream_disposition_refs:
+            raise OrganizationEvolutionError(
+                "child_node_ids require downstream_disposition_refs"
+            )
+        object.__setattr__(
+            self,
+            "source_refs",
+            _relative_ref_tuple(self.source_refs, "source_refs"),
+        )
+
+    @property
+    def check_summary(self) -> ChildAgentDeleteCheckSummary:
+        """Return a deterministic summary of current pre-execution blockers."""
+        blockers = child_agent_delete_blocking_checks(self)
+        if blockers:
+            summary = "Deletion is blocked by: " + ", ".join(
+                blocker.value for blocker in blockers
+            )
+        else:
+            summary = "Deletion plan has no blocking preflight checks."
+        return ChildAgentDeleteCheckSummary(
+            blocking_checks=blockers,
+            can_enter_pending_approval=not blockers,
+            can_execute=not blockers,
+            summary=summary,
         )
 
 
@@ -602,6 +842,31 @@ _CHILD_CREATE_PLAN_FIELDS = {
     "external_adapter",
     "source_refs",
 }
+_REPLACEMENT_OWNER_FIELDS = {"kind", "org_node_id", "worker_id", "reason"}
+_DELETE_CHECK_SUMMARY_FIELDS = {
+    "blocking_checks",
+    "can_enter_pending_approval",
+    "can_execute",
+    "summary",
+}
+_CHILD_DELETE_PLAN_FIELDS = {
+    "plan_id",
+    "schema_version",
+    "target_node_id",
+    "target_worker_id",
+    "deletion_mode",
+    "reason",
+    "replacement_owner",
+    "private_asset_disposition",
+    "asset_disposition_refs",
+    "chat_disposition_refs",
+    "active_task_refs",
+    "pending_approval_refs",
+    "child_node_ids",
+    "running_session_refs",
+    "downstream_disposition_refs",
+    "source_refs",
+}
 _PROPOSAL_FIELDS = {
     "proposal_id",
     "proposal_type",
@@ -634,6 +899,41 @@ def validate_child_agent_create_plan(
         data = plan
     _reject_sensitive_payload(data, "child_agent_create_plan")
     return child_agent_create_plan_from_dict(data)
+
+
+def validate_child_agent_delete_plan(
+    plan: ChildAgentDeletePlan | Mapping[str, Any],
+) -> ChildAgentDeletePlan:
+    """Return a validated durable child-agent delete plan."""
+    if isinstance(plan, ChildAgentDeletePlan):
+        data = child_agent_delete_plan_to_dict(plan)
+    else:
+        data = plan
+    _reject_sensitive_payload(data, "child_agent_delete_plan")
+    return child_agent_delete_plan_from_dict(data)
+
+
+def child_agent_delete_blocking_checks(
+    plan: ChildAgentDeletePlan | Mapping[str, Any],
+) -> tuple[ChildAgentDeleteBlockingCheck, ...]:
+    """Return execution blockers without mutating organization or registry state."""
+    validated = (
+        plan if isinstance(plan, ChildAgentDeletePlan) else validate_child_agent_delete_plan(plan)
+    )
+    blockers: list[ChildAgentDeleteBlockingCheck] = []
+    if validated.active_task_refs:
+        blockers.append(ChildAgentDeleteBlockingCheck.ACTIVE_TASKS)
+    if validated.pending_approval_refs:
+        blockers.append(ChildAgentDeleteBlockingCheck.PENDING_APPROVALS)
+    if validated.child_node_ids:
+        blockers.append(ChildAgentDeleteBlockingCheck.CHILD_NODES)
+    if validated.running_session_refs:
+        blockers.append(ChildAgentDeleteBlockingCheck.RUNNING_SESSIONS)
+    if not validated.asset_disposition_refs:
+        blockers.append(ChildAgentDeleteBlockingCheck.ASSET_DISPOSITION_MISSING)
+    if not validated.chat_disposition_refs:
+        blockers.append(ChildAgentDeleteBlockingCheck.CHAT_DISPOSITION_MISSING)
+    return tuple(blockers)
 
 
 def validate_evolution_proposal(
@@ -1011,6 +1311,154 @@ def child_agent_create_plan_from_dict(
     )
 
 
+def child_agent_replacement_owner_to_dict(
+    owner: ChildAgentReplacementOwner,
+) -> dict[str, Any]:
+    return {
+        "kind": owner.kind.value,
+        "org_node_id": owner.org_node_id,
+        "worker_id": owner.worker_id,
+        "reason": owner.reason,
+    }
+
+
+def child_agent_replacement_owner_from_dict(
+    data: Mapping[str, Any],
+) -> ChildAgentReplacementOwner:
+    data = _require_mapping(data, "replacement_owner")
+    _reject_unknown_fields(data, _REPLACEMENT_OWNER_FIELDS, "replacement_owner")
+    return ChildAgentReplacementOwner(
+        kind=_require_string(data.get("kind"), "replacement_owner.kind"),
+        org_node_id=_optional_string(
+            data.get("org_node_id"),
+            "replacement_owner.org_node_id",
+        ),
+        worker_id=_optional_string(
+            data.get("worker_id"),
+            "replacement_owner.worker_id",
+        ),
+        reason=_string_value(data.get("reason", ""), "replacement_owner.reason"),
+    )
+
+
+def child_agent_delete_check_summary_to_dict(
+    summary: ChildAgentDeleteCheckSummary,
+) -> dict[str, Any]:
+    return {
+        "blocking_checks": [check.value for check in summary.blocking_checks],
+        "can_enter_pending_approval": summary.can_enter_pending_approval,
+        "can_execute": summary.can_execute,
+        "summary": summary.summary,
+    }
+
+
+def child_agent_delete_check_summary_from_dict(
+    data: Mapping[str, Any],
+) -> ChildAgentDeleteCheckSummary:
+    data = _require_mapping(data, "delete check summary")
+    _reject_unknown_fields(
+        data,
+        _DELETE_CHECK_SUMMARY_FIELDS,
+        "delete check summary",
+    )
+    return ChildAgentDeleteCheckSummary(
+        blocking_checks=tuple(
+            _delete_blocking_check(item)
+            for item in _string_tuple(
+                data.get("blocking_checks"),
+                "blocking_checks",
+            )
+        ),
+        can_enter_pending_approval=_bool_value(
+            data.get("can_enter_pending_approval"),
+            "can_enter_pending_approval",
+        ),
+        can_execute=_bool_value(data.get("can_execute"), "can_execute"),
+        summary=_require_string(data.get("summary"), "summary"),
+    )
+
+
+def child_agent_delete_plan_to_dict(plan: ChildAgentDeletePlan) -> dict[str, Any]:
+    return {
+        "plan_id": plan.plan_id,
+        "schema_version": plan.schema_version,
+        "target_node_id": plan.target_node_id,
+        "target_worker_id": plan.target_worker_id,
+        "deletion_mode": plan.deletion_mode.value,
+        "reason": plan.reason,
+        "replacement_owner": child_agent_replacement_owner_to_dict(
+            plan.replacement_owner
+        ),
+        "private_asset_disposition": plan.private_asset_disposition.value,
+        "asset_disposition_refs": list(plan.asset_disposition_refs),
+        "chat_disposition_refs": list(plan.chat_disposition_refs),
+        "active_task_refs": list(plan.active_task_refs),
+        "pending_approval_refs": list(plan.pending_approval_refs),
+        "child_node_ids": list(plan.child_node_ids),
+        "running_session_refs": list(plan.running_session_refs),
+        "downstream_disposition_refs": list(plan.downstream_disposition_refs),
+        "source_refs": list(plan.source_refs),
+    }
+
+
+def child_agent_delete_plan_from_dict(
+    data: Mapping[str, Any],
+) -> ChildAgentDeletePlan:
+    data = _require_mapping(data, "child agent delete plan")
+    _reject_sensitive_payload(data, "child_agent_delete_plan")
+    _reject_unknown_fields(
+        data,
+        _CHILD_DELETE_PLAN_FIELDS,
+        "child agent delete plan",
+    )
+    return ChildAgentDeletePlan(
+        plan_id=_require_string(data.get("plan_id"), "plan_id"),
+        schema_version=data.get(
+            "schema_version", CHILD_AGENT_LIFECYCLE_SCHEMA_VERSION
+        ),
+        target_node_id=_require_string(data.get("target_node_id"), "target_node_id"),
+        target_worker_id=_optional_string(
+            data.get("target_worker_id"),
+            "target_worker_id",
+        ),
+        deletion_mode=_require_string(data.get("deletion_mode"), "deletion_mode"),
+        reason=_require_string(data.get("reason"), "reason"),
+        replacement_owner=child_agent_replacement_owner_from_dict(
+            _require_mapping(data.get("replacement_owner"), "replacement_owner")
+        ),
+        private_asset_disposition=data.get(
+            "private_asset_disposition",
+            ChildAgentPrivateAssetDisposition.ARCHIVE.value,
+        ),
+        asset_disposition_refs=_string_tuple(
+            data.get("asset_disposition_refs"),
+            "asset_disposition_refs",
+        ),
+        chat_disposition_refs=_string_tuple(
+            data.get("chat_disposition_refs"),
+            "chat_disposition_refs",
+        ),
+        active_task_refs=_string_tuple(
+            data.get("active_task_refs", ()),
+            "active_task_refs",
+        ),
+        pending_approval_refs=_string_tuple(
+            data.get("pending_approval_refs", ()),
+            "pending_approval_refs",
+        ),
+        child_node_ids=_string_tuple(data.get("child_node_ids", ()), "child_node_ids"),
+        running_session_refs=_string_tuple(
+            data.get("running_session_refs", ()),
+            "running_session_refs",
+        ),
+        downstream_disposition_refs=_string_tuple(
+            data.get("downstream_disposition_refs", ()),
+            "downstream_disposition_refs",
+        ),
+        source_refs=_string_tuple(data.get("source_refs", ()), "source_refs"),
+    )
+
+
 def organization_evolution_proposal_to_dict(
     proposal: OrganizationEvolutionProposal,
 ) -> dict[str, Any]:
@@ -1200,6 +1648,66 @@ def _child_chat_policy(value: ChildAgentChatPolicy | str) -> ChildAgentChatPolic
         ) from exc
 
 
+def _child_deletion_mode(
+    value: ChildAgentDeletionMode | str,
+) -> ChildAgentDeletionMode:
+    try:
+        return (
+            value
+            if isinstance(value, ChildAgentDeletionMode)
+            else ChildAgentDeletionMode(value)
+        )
+    except ValueError as exc:
+        raise OrganizationEvolutionError(
+            f"Unknown child agent deletion mode: {value!r}"
+        ) from exc
+
+
+def _delete_blocking_check(
+    value: ChildAgentDeleteBlockingCheck | str,
+) -> ChildAgentDeleteBlockingCheck:
+    try:
+        return (
+            value
+            if isinstance(value, ChildAgentDeleteBlockingCheck)
+            else ChildAgentDeleteBlockingCheck(value)
+        )
+    except ValueError as exc:
+        raise OrganizationEvolutionError(
+            f"Unknown child agent delete blocking check: {value!r}"
+        ) from exc
+
+
+def _private_asset_disposition(
+    value: ChildAgentPrivateAssetDisposition | str,
+) -> ChildAgentPrivateAssetDisposition:
+    try:
+        return (
+            value
+            if isinstance(value, ChildAgentPrivateAssetDisposition)
+            else ChildAgentPrivateAssetDisposition(value)
+        )
+    except ValueError as exc:
+        raise OrganizationEvolutionError(
+            f"Unknown private asset disposition: {value!r}"
+        ) from exc
+
+
+def _replacement_owner_kind(
+    value: ChildAgentReplacementOwnerKind | str,
+) -> ChildAgentReplacementOwnerKind:
+    try:
+        return (
+            value
+            if isinstance(value, ChildAgentReplacementOwnerKind)
+            else ChildAgentReplacementOwnerKind(value)
+        )
+    except ValueError as exc:
+        raise OrganizationEvolutionError(
+            f"Unknown replacement owner kind: {value!r}"
+        ) from exc
+
+
 def _validate_schema_version(value: int) -> None:
     _validate_schema_version_value(
         value,
@@ -1297,6 +1805,12 @@ def _optional_string(value: Any, field_name: str) -> str | None:
     if value is None:
         return None
     return _require_string(value, field_name)
+
+
+def _bool_value(value: Any, field_name: str) -> bool:
+    if not isinstance(value, bool):
+        raise OrganizationEvolutionError(f"{field_name} must be a boolean")
+    return value
 
 
 def _positive_int(value: Any, field_name: str) -> int:
