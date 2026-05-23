@@ -143,3 +143,46 @@ private memory, skill bindings, tool credentials, raw chat transcripts,
 department assets, runtime task state, and proposal execution state. Runtime
 organization caches and detailed transcripts belong under
 `<install_dir>/data/worker_agents/organization/`.
+
+## Evolution Proposals
+
+Long-term organization changes use the proposal-first contract in
+`worker_agents.organization_evolution`. The supported proposal types are:
+
+- `create_child_agent`
+- `delete_child_agent`
+- `merge_department`
+- `transfer_assets`
+- `archive_org_node`
+
+Each `OrganizationEvolutionProposal` records the initiator, target nodes,
+affected workers, reason, before/after summaries, rollback summary reference,
+asset and chat disposition references, risk flags, approval policy, and audit
+source references. The schema rejects path-like ids and sensitive raw fields
+such as transcripts, stdout/stderr, credentials, secrets, and private memory
+text. Runtime results, management commands, and agents may submit proposals,
+but proposal generation must not write `active.json`, mutate the WorkerAgent
+registry, or update department assets.
+
+Risk policy helpers classify permission expansion, budget or model-tier
+increase, external Agent involvement, sensitive memory movement, active tasks,
+pending high-risk approvals, group-chat closure, and responsibility changes.
+Permission expansion, budget/model increases, external Agent changes, and
+sensitive memory movement require user approval. Active tasks and unfinished
+high-risk approvals are blockers and must be resolved before execution.
+
+`EvolutionProposalStore` in
+`worker_agents.storage.organization_evolution_store` persists full proposal
+records under:
+
+```text
+<zermes_home>/worker_agents/organization/proposals/
+  <proposal_id>.json
+```
+
+The store supports create, read, list filtering, and explicit status
+transitions with actor, timestamp, previous status, next status, and reason.
+Rejected, expired, executed, and failed proposals are terminal. The store only
+manages proposal files; accepted or approved proposals still require a later
+controlled executor before any active organization tree, registry lifecycle, or
+department asset write occurs.
