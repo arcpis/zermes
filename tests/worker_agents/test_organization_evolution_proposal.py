@@ -20,6 +20,13 @@ from worker_agents.organization_evolution import (
     resolve_approval_requirement,
     validate_evolution_proposal,
 )
+from worker_agents.storage.organization_evolution_store import (
+    EvolutionProposalStatusChange,
+    EvolutionProposalStore,
+    StoredEvolutionProposal,
+    evolution_proposal_status_change_from_dict,
+    stored_evolution_proposal_from_dict,
+)
 
 
 def _proposal_data(**overrides):
@@ -310,4 +317,172 @@ def test_manual_override_cannot_lower_high_risk_requirement():
             level=EvolutionApprovalLevel.MAIN_AGENT_APPROVAL,
             actor="zermes_main_agent",
             reason="Too low.",
+        )
+
+
+def test_evolution_proposal_store_creates_reads_and_filters(tmp_path):
+    store = EvolutionProposalStore(tmp_path / "worker_agents" / "organization" / "proposals")
+    proposal = organization_evolution_proposal_from_dict(_proposal_data())
+
+    store.create_proposal(
+        proposal,
+        actor="zermes_main_agent",
+        changed_at="2026-05-23T00:00:00Z",
+        reason="Initial proposal.",
+    )
+
+    assert store.load_proposal("proposal_001") == proposal
+    assert store.list_proposals(status=EvolutionProposalStatus.DRAFT) == [proposal]
+    assert store.list_proposals(proposal_type=EvolutionProposalType.CREATE_CHILD_AGENT)
+    assert store.list_proposals(target_node_id="platform") == [proposal]
+    assert not (tmp_path / "worker_agents" / "organization" / "active.json").exists()
+
+
+def test_evolution_proposal_store_records_status_history(tmp_path):
+    store = EvolutionProposalStore(tmp_path / "worker_agents" / "organization" / "proposals")
+    proposal = organization_evolution_proposal_from_dict(_proposal_data())
+    store.create_proposal(
+        proposal,
+        actor="zermes_main_agent",
+        changed_at="2026-05-23T00:00:00Z",
+        reason="Initial proposal.",
+    )
+
+    store.update_status(
+        "proposal_001",
+        EvolutionProposalStatus.PENDING_APPROVAL,
+        actor="zermes_main_agent",
+        changed_at="2026-05-23T00:10:00Z",
+        reason="Ready for review.",
+    )
+    store.update_status(
+        "proposal_001",
+        EvolutionProposalStatus.APPROVED,
+        actor="user",
+        changed_at="2026-05-23T00:20:00Z",
+        reason="Approved by user.",
+    )
+
+    record = store.load_record("proposal_001")
+
+    assert record.proposal.status is EvolutionProposalStatus.APPROVED
+    assert [change.to_status for change in record.status_history] == [
+        EvolutionProposalStatus.DRAFT,
+        EvolutionProposalStatus.PENDING_APPROVAL,
+        EvolutionProposalStatus.APPROVED,
+    ]
+    assert record.status_history[-1].from_status is EvolutionProposalStatus.PENDING_APPROVAL
+
+
+def test_evolution_proposal_store_rejects_invalid_status_transition(tmp_path):
+    store = EvolutionProposalStore(tmp_path / "worker_agents" / "organization" / "proposals")
+    store.create_proposal(
+        organization_evolution_proposal_from_dict(_proposal_data()),
+        actor="zermes_main_agent",
+        changed_at="2026-05-23T00:00:00Z",
+        reason="Initial proposal.",
+    )
+
+    with pytest.raises(OrganizationEvolutionError, match="status transition"):
+        store.update_status(
+            "proposal_001",
+            EvolutionProposalStatus.EXECUTED,
+            actor="executor",
+            changed_at="2026-05-23T00:10:00Z",
+            reason="Cannot execute directly.",
+        )
+
+
+@pytest.mark.parametrize(
+    "terminal_status",
+    [EvolutionProposalStatus.REJECTED, EvolutionProposalStatus.EXPIRED],
+)
+def test_rejected_or_expired_proposal_cannot_become_executable(
+    tmp_path, terminal_status
+):
+    store = EvolutionProposalStore(tmp_path / "worker_agents" / "organization" / "proposals")
+    store.create_proposal(
+        organization_evolution_proposal_from_dict(_proposal_data()),
+        actor="zermes_main_agent",
+        changed_at="2026-05-23T00:00:00Z",
+        reason="Initial proposal.",
+    )
+    store.update_status(
+        "proposal_001",
+        terminal_status,
+        actor="zermes_main_agent",
+        changed_at="2026-05-23T00:10:00Z",
+        reason="Stop proposal.",
+    )
+
+    with pytest.raises(OrganizationEvolutionError, match="status transition"):
+        store.update_status(
+            "proposal_001",
+            EvolutionProposalStatus.EXECUTED,
+            actor="executor",
+            changed_at="2026-05-23T00:20:00Z",
+            reason="Cannot execute terminal status.",
+        )
+
+
+def test_evolution_proposal_store_rejects_invalid_id_and_sensitive_payload(tmp_path):
+    store = EvolutionProposalStore(tmp_path / "worker_agents" / "organization" / "proposals")
+
+    with pytest.raises(OrganizationEvolutionError):
+        store.proposal_path("../proposal")
+
+    with pytest.raises(OrganizationEvolutionError, match="sensitive data"):
+        store.create_proposal(
+            _proposal_data(raw_stdout="full output"),
+            actor="zermes_main_agent",
+            changed_at="2026-05-23T00:00:00Z",
+            reason="Initial proposal.",
+        )
+
+
+def test_stored_evolution_proposal_round_trips_status_history():
+    proposal = organization_evolution_proposal_from_dict(_proposal_data())
+    record = StoredEvolutionProposal(
+        proposal=proposal,
+        status_history=(
+            EvolutionProposalStatusChange(
+                actor="zermes_main_agent",
+                changed_at="2026-05-23T00:00:00Z",
+                from_status=None,
+                to_status=EvolutionProposalStatus.DRAFT,
+                reason="Initial proposal.",
+            ),
+        ),
+    )
+
+    loaded = stored_evolution_proposal_from_dict(
+        {
+            "schema_version": 1,
+            "proposal": organization_evolution_proposal_to_dict(proposal),
+            "status_history": [
+                {
+                    "actor": "zermes_main_agent",
+                    "changed_at": "2026-05-23T00:00:00Z",
+                    "from_status": None,
+                    "to_status": "draft",
+                    "reason": "Initial proposal.",
+                }
+            ],
+        }
+    )
+
+    assert loaded == record
+
+
+def test_status_change_rejects_unknown_fields():
+    with pytest.raises(OrganizationEvolutionError, match="unknown fields"):
+        evolution_proposal_status_change_from_dict(
+            {
+                "actor": "zermes_main_agent",
+                "changed_at": "2026-05-23T00:00:00Z",
+                "from_status": None,
+                "to_status": "draft",
+                "reason": "Initial proposal.",
+                "raw_transcript": "not allowed",
+            }
         )
