@@ -148,6 +148,35 @@ class ChildAgentReplacementOwnerKind(StrEnum):
     NO_REPLACEMENT = "no_replacement"
 
 
+class DepartmentMergePlanStatus(StrEnum):
+    """Review and execution state for a department merge plan."""
+
+    DRAFT = "draft"
+    BLOCKED = "blocked"
+    READY_FOR_APPROVAL = "ready_for_approval"
+    APPROVED = "approved"
+    EXECUTED = "executed"
+
+
+class DepartmentContractionMode(StrEnum):
+    """Post-deletion organization contraction outcome."""
+
+    KEEP_DEPARTMENT = "keep_department"
+    KEEP_SINGLE_WORKER_DEPARTMENT = "keep_single_worker_department"
+    REMOVE_EMPTY_CHILD_DEPARTMENT = "remove_empty_child_department"
+    ARCHIVE_NODE = "archive_node"
+    REBIND_CHAT_TO_PARENT = "rebind_chat_to_parent"
+
+
+class DepartmentCollaborationSurface(StrEnum):
+    """Where remaining department collaboration should happen after contraction."""
+
+    DEPARTMENT_GROUP_CHAT = "department_group_chat"
+    DIRECT_WORKER_CHAT = "direct_worker_chat"
+    PARENT_GROUP_CHAT = "parent_group_chat"
+    NONE = "none"
+
+
 @dataclass(frozen=True)
 class ChildAgentPermissionBoundary:
     """Requested tool permissions plus the parent/main policy ceilings."""
@@ -593,6 +622,300 @@ class ChildAgentDeletePlan:
 
 
 @dataclass(frozen=True)
+class DepartmentMergeDepartmentSummary:
+    """Low-sensitivity department summary captured before merge planning."""
+
+    department_id: str
+    name: str
+    responsibility_summary: str
+    leader_worker_id: str | None = None
+    member_worker_ids: tuple[str, ...] = ()
+    child_node_ids: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "department_id",
+            _validate_org_node_reference(self.department_id),
+        )
+        _require_string(self.name, "name")
+        _require_string(self.responsibility_summary, "responsibility_summary")
+        if self.leader_worker_id is not None:
+            object.__setattr__(
+                self,
+                "leader_worker_id",
+                _validate_worker_reference(self.leader_worker_id),
+            )
+        object.__setattr__(
+            self,
+            "member_worker_ids",
+            tuple(
+                _validate_worker_reference(worker_id)
+                for worker_id in self.member_worker_ids
+            ),
+        )
+        object.__setattr__(
+            self,
+            "child_node_ids",
+            tuple(
+                _validate_org_node_reference(node_id)
+                for node_id in self.child_node_ids
+            ),
+        )
+
+
+@dataclass(frozen=True)
+class DepartmentMergeRequest:
+    """Request contract for merging one or more departments into one target."""
+
+    request_id: str
+    initiator: EvolutionProposalInitiator
+    source_department_ids: tuple[str, ...]
+    target_department_id: str
+    reason: str
+    source_summaries: tuple[DepartmentMergeDepartmentSummary, ...]
+    target_summary: DepartmentMergeDepartmentSummary
+    responsibility_change_summary: str
+    member_migration_intent: str
+    source_refs: tuple[str, ...] = ()
+    schema_version: int = CHILD_AGENT_LIFECYCLE_SCHEMA_VERSION
+
+    def __post_init__(self) -> None:
+        _validate_schema_version_value(
+            self.schema_version,
+            CHILD_AGENT_LIFECYCLE_SCHEMA_VERSION,
+            "department merge",
+        )
+        _validate_identifier(self.request_id, "request_id")
+        if not isinstance(self.initiator, EvolutionProposalInitiator):
+            raise OrganizationEvolutionError(
+                "initiator must be an EvolutionProposalInitiator"
+            )
+        object.__setattr__(
+            self,
+            "source_department_ids",
+            tuple(
+                _validate_org_node_reference(department_id)
+                for department_id in self.source_department_ids
+            ),
+        )
+        if not self.source_department_ids:
+            raise OrganizationEvolutionError(
+                "source_department_ids must not be empty"
+            )
+        object.__setattr__(
+            self,
+            "target_department_id",
+            _validate_org_node_reference(self.target_department_id),
+        )
+        if self.target_department_id in self.source_department_ids:
+            raise OrganizationEvolutionError(
+                "source_department_ids must not include target_department_id"
+            )
+        _require_string(self.reason, "reason")
+        object.__setattr__(
+            self,
+            "source_summaries",
+            _department_summary_tuple(self.source_summaries, "source_summaries"),
+        )
+        if {summary.department_id for summary in self.source_summaries} != set(
+            self.source_department_ids
+        ):
+            raise OrganizationEvolutionError(
+                "source_summaries must match source_department_ids"
+            )
+        if not isinstance(self.target_summary, DepartmentMergeDepartmentSummary):
+            raise OrganizationEvolutionError(
+                "target_summary must be a DepartmentMergeDepartmentSummary"
+            )
+        if self.target_summary.department_id != self.target_department_id:
+            raise OrganizationEvolutionError(
+                "target_summary must match target_department_id"
+            )
+        _require_string(
+            self.responsibility_change_summary,
+            "responsibility_change_summary",
+        )
+        _require_string(self.member_migration_intent, "member_migration_intent")
+        object.__setattr__(
+            self,
+            "source_refs",
+            _relative_ref_tuple(self.source_refs, "source_refs"),
+        )
+
+
+@dataclass(frozen=True)
+class DepartmentMergePlan:
+    """Reviewable department merge plan with references to sub-plans only."""
+
+    plan_id: str
+    request: DepartmentMergeRequest
+    status: DepartmentMergePlanStatus | str
+    task_transfer_plan_ref: str
+    chat_freeze_plan_ref: str
+    memory_merge_report_ref: str
+    skill_disposition_plan_ref: str
+    tool_disposition_plan_ref: str
+    rollback_plan_ref: str
+    proposal_ref: str | None = None
+    source_refs: tuple[str, ...] = ()
+    schema_version: int = CHILD_AGENT_LIFECYCLE_SCHEMA_VERSION
+
+    def __post_init__(self) -> None:
+        _validate_schema_version_value(
+            self.schema_version,
+            CHILD_AGENT_LIFECYCLE_SCHEMA_VERSION,
+            "department merge",
+        )
+        _validate_identifier(self.plan_id, "plan_id")
+        if not isinstance(self.request, DepartmentMergeRequest):
+            raise OrganizationEvolutionError(
+                "request must be a DepartmentMergeRequest"
+            )
+        object.__setattr__(self, "status", _department_merge_plan_status(self.status))
+        for field_name in (
+            "task_transfer_plan_ref",
+            "chat_freeze_plan_ref",
+            "memory_merge_report_ref",
+            "skill_disposition_plan_ref",
+            "tool_disposition_plan_ref",
+            "rollback_plan_ref",
+        ):
+            object.__setattr__(
+                self,
+                field_name,
+                _validate_relative_ref(getattr(self, field_name), field_name),
+            )
+        if self.proposal_ref is not None:
+            object.__setattr__(
+                self,
+                "proposal_ref",
+                _validate_relative_ref(self.proposal_ref, "proposal_ref"),
+            )
+        object.__setattr__(
+            self,
+            "source_refs",
+            _relative_ref_tuple(self.source_refs, "source_refs"),
+        )
+
+
+@dataclass(frozen=True)
+class DepartmentContractionPlan:
+    """Plan for parent/child department shape after deleting a child agent.
+
+    The plan records the desired organization and chat-binding outcome only.
+    It does not mutate the active tree, close chats, or archive assets.
+    """
+
+    plan_id: str
+    department_node_id: str
+    parent_node_id: str | None
+    remaining_worker_ids: tuple[str, ...]
+    remaining_child_node_ids: tuple[str, ...]
+    responsibilities_remain: bool
+    contraction_mode: DepartmentContractionMode | str
+    collaboration_surface: DepartmentCollaborationSurface | str
+    reason: str
+    chat_disposition_ref: str | None = None
+    asset_disposition_ref: str | None = None
+    source_refs: tuple[str, ...] = ()
+    schema_version: int = CHILD_AGENT_LIFECYCLE_SCHEMA_VERSION
+
+    def __post_init__(self) -> None:
+        _validate_schema_version_value(
+            self.schema_version,
+            CHILD_AGENT_LIFECYCLE_SCHEMA_VERSION,
+            "department contraction",
+        )
+        _validate_identifier(self.plan_id, "plan_id")
+        object.__setattr__(
+            self,
+            "department_node_id",
+            _validate_org_node_reference(self.department_node_id),
+        )
+        if self.parent_node_id is not None:
+            object.__setattr__(
+                self,
+                "parent_node_id",
+                _validate_org_node_reference(self.parent_node_id),
+            )
+        object.__setattr__(
+            self,
+            "remaining_worker_ids",
+            tuple(
+                _validate_worker_reference(worker_id)
+                for worker_id in self.remaining_worker_ids
+            ),
+        )
+        object.__setattr__(
+            self,
+            "remaining_child_node_ids",
+            tuple(
+                _validate_org_node_reference(node_id)
+                for node_id in self.remaining_child_node_ids
+            ),
+        )
+        if not isinstance(self.responsibilities_remain, bool):
+            raise OrganizationEvolutionError("responsibilities_remain must be a boolean")
+        object.__setattr__(
+            self,
+            "contraction_mode",
+            _department_contraction_mode(self.contraction_mode),
+        )
+        object.__setattr__(
+            self,
+            "collaboration_surface",
+            _department_collaboration_surface(self.collaboration_surface),
+        )
+        _require_string(self.reason, "reason")
+        if self.chat_disposition_ref is not None:
+            object.__setattr__(
+                self,
+                "chat_disposition_ref",
+                _validate_relative_ref(self.chat_disposition_ref, "chat_disposition_ref"),
+            )
+        if self.asset_disposition_ref is not None:
+            object.__setattr__(
+                self,
+                "asset_disposition_ref",
+                _validate_relative_ref(
+                    self.asset_disposition_ref,
+                    "asset_disposition_ref",
+                ),
+            )
+        if (
+            self.collaboration_surface
+            is DepartmentCollaborationSurface.DEPARTMENT_GROUP_CHAT
+            and len(self.remaining_worker_ids) < 2
+        ):
+            raise OrganizationEvolutionError(
+                "department group chat requires at least two remaining workers"
+            )
+        if self.contraction_mode is DepartmentContractionMode.ARCHIVE_NODE:
+            if self.responsibilities_remain or self.remaining_worker_ids:
+                raise OrganizationEvolutionError(
+                    "archive_node requires no responsibilities and no remaining workers"
+                )
+            if self.asset_disposition_ref is None:
+                raise OrganizationEvolutionError(
+                    "archive_node requires asset_disposition_ref"
+                )
+        if self.contraction_mode in {
+            DepartmentContractionMode.REBIND_CHAT_TO_PARENT,
+            DepartmentContractionMode.REMOVE_EMPTY_CHILD_DEPARTMENT,
+            DepartmentContractionMode.ARCHIVE_NODE,
+        } and self.chat_disposition_ref is None:
+            raise OrganizationEvolutionError(
+                f"{self.contraction_mode.value} requires chat_disposition_ref"
+            )
+        object.__setattr__(
+            self,
+            "source_refs",
+            _relative_ref_tuple(self.source_refs, "source_refs"),
+        )
+
+
+@dataclass(frozen=True)
 class EvolutionProposalInitiator:
     """Low-sensitivity reference to the proposal source."""
 
@@ -867,6 +1190,56 @@ _CHILD_DELETE_PLAN_FIELDS = {
     "downstream_disposition_refs",
     "source_refs",
 }
+_DEPARTMENT_MERGE_SUMMARY_FIELDS = {
+    "department_id",
+    "name",
+    "responsibility_summary",
+    "leader_worker_id",
+    "member_worker_ids",
+    "child_node_ids",
+}
+_DEPARTMENT_MERGE_REQUEST_FIELDS = {
+    "request_id",
+    "schema_version",
+    "initiator",
+    "source_department_ids",
+    "target_department_id",
+    "reason",
+    "source_summaries",
+    "target_summary",
+    "responsibility_change_summary",
+    "member_migration_intent",
+    "source_refs",
+}
+_DEPARTMENT_MERGE_PLAN_FIELDS = {
+    "plan_id",
+    "schema_version",
+    "request",
+    "status",
+    "task_transfer_plan_ref",
+    "chat_freeze_plan_ref",
+    "memory_merge_report_ref",
+    "skill_disposition_plan_ref",
+    "tool_disposition_plan_ref",
+    "rollback_plan_ref",
+    "proposal_ref",
+    "source_refs",
+}
+_DEPARTMENT_CONTRACTION_PLAN_FIELDS = {
+    "plan_id",
+    "schema_version",
+    "department_node_id",
+    "parent_node_id",
+    "remaining_worker_ids",
+    "remaining_child_node_ids",
+    "responsibilities_remain",
+    "contraction_mode",
+    "collaboration_surface",
+    "reason",
+    "chat_disposition_ref",
+    "asset_disposition_ref",
+    "source_refs",
+}
 _PROPOSAL_FIELDS = {
     "proposal_id",
     "proposal_type",
@@ -911,6 +1284,105 @@ def validate_child_agent_delete_plan(
         data = plan
     _reject_sensitive_payload(data, "child_agent_delete_plan")
     return child_agent_delete_plan_from_dict(data)
+
+
+def validate_department_merge_request(
+    request: DepartmentMergeRequest | Mapping[str, Any],
+) -> DepartmentMergeRequest:
+    """Return a validated department merge request."""
+    if isinstance(request, DepartmentMergeRequest):
+        data = department_merge_request_to_dict(request)
+    else:
+        data = request
+    _reject_sensitive_payload(data, "department_merge_request")
+    return department_merge_request_from_dict(data)
+
+
+def validate_department_merge_plan(
+    plan: DepartmentMergePlan | Mapping[str, Any],
+) -> DepartmentMergePlan:
+    """Return a validated department merge plan."""
+    if isinstance(plan, DepartmentMergePlan):
+        data = department_merge_plan_to_dict(plan)
+    else:
+        data = plan
+    _reject_sensitive_payload(data, "department_merge_plan")
+    return department_merge_plan_from_dict(data)
+
+
+def validate_department_contraction_plan(
+    plan: DepartmentContractionPlan | Mapping[str, Any],
+) -> DepartmentContractionPlan:
+    """Return a validated department contraction plan."""
+    if isinstance(plan, DepartmentContractionPlan):
+        data = department_contraction_plan_to_dict(plan)
+    else:
+        data = plan
+    _reject_sensitive_payload(data, "department_contraction_plan")
+    return department_contraction_plan_from_dict(data)
+
+
+def plan_department_contraction(
+    *,
+    plan_id: str,
+    department_node_id: str,
+    parent_node_id: str | None,
+    remaining_worker_ids: tuple[str, ...],
+    remaining_child_node_ids: tuple[str, ...],
+    responsibilities_remain: bool,
+    chat_disposition_ref: str | None = None,
+    asset_disposition_ref: str | None = None,
+    source_refs: tuple[str, ...] = (),
+) -> DepartmentContractionPlan:
+    """Plan organization contraction after child-agent deletion.
+
+    Collaboration participants are durable workers only. User and main-agent
+    presence are required for chat execution later, but they do not make a
+    one-worker department eligible for its own group chat.
+    """
+    worker_count = len(tuple(remaining_worker_ids))
+    child_count = len(tuple(remaining_child_node_ids))
+
+    if worker_count >= 2:
+        mode = DepartmentContractionMode.KEEP_DEPARTMENT
+        surface = DepartmentCollaborationSurface.DEPARTMENT_GROUP_CHAT
+        reason = "department still has multiple workers"
+    elif worker_count == 1 and responsibilities_remain:
+        if parent_node_id is not None and chat_disposition_ref is not None:
+            mode = DepartmentContractionMode.REBIND_CHAT_TO_PARENT
+            surface = DepartmentCollaborationSurface.PARENT_GROUP_CHAT
+            reason = "single-worker department uses parent group chat"
+        else:
+            mode = DepartmentContractionMode.KEEP_SINGLE_WORKER_DEPARTMENT
+            surface = DepartmentCollaborationSurface.DIRECT_WORKER_CHAT
+            reason = "single-worker department keeps node but not a group chat"
+    elif child_count == 0 and not responsibilities_remain and worker_count == 0:
+        mode = DepartmentContractionMode.ARCHIVE_NODE
+        surface = DepartmentCollaborationSurface.NONE
+        reason = "empty department with no responsibilities should archive"
+    elif child_count == 0 and worker_count == 0:
+        mode = DepartmentContractionMode.REMOVE_EMPTY_CHILD_DEPARTMENT
+        surface = DepartmentCollaborationSurface.NONE
+        reason = "empty child department should be removed from active tree"
+    else:
+        mode = DepartmentContractionMode.KEEP_DEPARTMENT
+        surface = DepartmentCollaborationSurface.NONE
+        reason = "department keeps downstream nodes without a direct group chat"
+
+    return DepartmentContractionPlan(
+        plan_id=plan_id,
+        department_node_id=department_node_id,
+        parent_node_id=parent_node_id,
+        remaining_worker_ids=remaining_worker_ids,
+        remaining_child_node_ids=remaining_child_node_ids,
+        responsibilities_remain=responsibilities_remain,
+        contraction_mode=mode,
+        collaboration_surface=surface,
+        reason=reason,
+        chat_disposition_ref=chat_disposition_ref,
+        asset_disposition_ref=asset_disposition_ref,
+        source_refs=source_refs,
+    )
 
 
 def child_agent_delete_blocking_checks(
@@ -1459,6 +1931,254 @@ def child_agent_delete_plan_from_dict(
     )
 
 
+def department_merge_department_summary_to_dict(
+    summary: DepartmentMergeDepartmentSummary,
+) -> dict[str, Any]:
+    return {
+        "department_id": summary.department_id,
+        "name": summary.name,
+        "responsibility_summary": summary.responsibility_summary,
+        "leader_worker_id": summary.leader_worker_id,
+        "member_worker_ids": list(summary.member_worker_ids),
+        "child_node_ids": list(summary.child_node_ids),
+    }
+
+
+def department_merge_department_summary_from_dict(
+    data: Mapping[str, Any],
+) -> DepartmentMergeDepartmentSummary:
+    data = _require_mapping(data, "department merge department summary")
+    _reject_unknown_fields(
+        data,
+        _DEPARTMENT_MERGE_SUMMARY_FIELDS,
+        "department merge department summary",
+    )
+    return DepartmentMergeDepartmentSummary(
+        department_id=_require_string(data.get("department_id"), "department_id"),
+        name=_require_string(data.get("name"), "name"),
+        responsibility_summary=_require_string(
+            data.get("responsibility_summary"),
+            "responsibility_summary",
+        ),
+        leader_worker_id=_optional_string(
+            data.get("leader_worker_id"),
+            "leader_worker_id",
+        ),
+        member_worker_ids=_string_tuple(
+            data.get("member_worker_ids", ()),
+            "member_worker_ids",
+        ),
+        child_node_ids=_string_tuple(data.get("child_node_ids", ()), "child_node_ids"),
+    )
+
+
+def department_merge_request_to_dict(
+    request: DepartmentMergeRequest,
+) -> dict[str, Any]:
+    return {
+        "request_id": request.request_id,
+        "schema_version": request.schema_version,
+        "initiator": evolution_proposal_initiator_to_dict(request.initiator),
+        "source_department_ids": list(request.source_department_ids),
+        "target_department_id": request.target_department_id,
+        "reason": request.reason,
+        "source_summaries": [
+            department_merge_department_summary_to_dict(summary)
+            for summary in request.source_summaries
+        ],
+        "target_summary": department_merge_department_summary_to_dict(
+            request.target_summary
+        ),
+        "responsibility_change_summary": request.responsibility_change_summary,
+        "member_migration_intent": request.member_migration_intent,
+        "source_refs": list(request.source_refs),
+    }
+
+
+def department_merge_request_from_dict(
+    data: Mapping[str, Any],
+) -> DepartmentMergeRequest:
+    data = _require_mapping(data, "department merge request")
+    _reject_sensitive_payload(data, "department_merge_request")
+    _reject_unknown_fields(
+        data,
+        _DEPARTMENT_MERGE_REQUEST_FIELDS,
+        "department merge request",
+    )
+    return DepartmentMergeRequest(
+        request_id=_require_string(data.get("request_id"), "request_id"),
+        schema_version=data.get(
+            "schema_version", CHILD_AGENT_LIFECYCLE_SCHEMA_VERSION
+        ),
+        initiator=evolution_proposal_initiator_from_dict(
+            _require_mapping(data.get("initiator"), "initiator")
+        ),
+        source_department_ids=_string_tuple(
+            data.get("source_department_ids"),
+            "source_department_ids",
+        ),
+        target_department_id=_require_string(
+            data.get("target_department_id"),
+            "target_department_id",
+        ),
+        reason=_require_string(data.get("reason"), "reason"),
+        source_summaries=tuple(
+            department_merge_department_summary_from_dict(
+                _require_mapping(item, "source_summaries item")
+            )
+            for item in data.get("source_summaries", ())
+        ),
+        target_summary=department_merge_department_summary_from_dict(
+            _require_mapping(data.get("target_summary"), "target_summary")
+        ),
+        responsibility_change_summary=_require_string(
+            data.get("responsibility_change_summary"),
+            "responsibility_change_summary",
+        ),
+        member_migration_intent=_require_string(
+            data.get("member_migration_intent"),
+            "member_migration_intent",
+        ),
+        source_refs=_string_tuple(data.get("source_refs", ()), "source_refs"),
+    )
+
+
+def department_merge_plan_to_dict(plan: DepartmentMergePlan) -> dict[str, Any]:
+    return {
+        "plan_id": plan.plan_id,
+        "schema_version": plan.schema_version,
+        "request": department_merge_request_to_dict(plan.request),
+        "status": plan.status.value,
+        "task_transfer_plan_ref": plan.task_transfer_plan_ref,
+        "chat_freeze_plan_ref": plan.chat_freeze_plan_ref,
+        "memory_merge_report_ref": plan.memory_merge_report_ref,
+        "skill_disposition_plan_ref": plan.skill_disposition_plan_ref,
+        "tool_disposition_plan_ref": plan.tool_disposition_plan_ref,
+        "rollback_plan_ref": plan.rollback_plan_ref,
+        "proposal_ref": plan.proposal_ref,
+        "source_refs": list(plan.source_refs),
+    }
+
+
+def department_merge_plan_from_dict(data: Mapping[str, Any]) -> DepartmentMergePlan:
+    data = _require_mapping(data, "department merge plan")
+    _reject_sensitive_payload(data, "department_merge_plan")
+    _reject_unknown_fields(
+        data,
+        _DEPARTMENT_MERGE_PLAN_FIELDS,
+        "department merge plan",
+    )
+    return DepartmentMergePlan(
+        plan_id=_require_string(data.get("plan_id"), "plan_id"),
+        schema_version=data.get(
+            "schema_version", CHILD_AGENT_LIFECYCLE_SCHEMA_VERSION
+        ),
+        request=department_merge_request_from_dict(
+            _require_mapping(data.get("request"), "request")
+        ),
+        status=_require_string(data.get("status"), "status"),
+        task_transfer_plan_ref=_require_string(
+            data.get("task_transfer_plan_ref"),
+            "task_transfer_plan_ref",
+        ),
+        chat_freeze_plan_ref=_require_string(
+            data.get("chat_freeze_plan_ref"),
+            "chat_freeze_plan_ref",
+        ),
+        memory_merge_report_ref=_require_string(
+            data.get("memory_merge_report_ref"),
+            "memory_merge_report_ref",
+        ),
+        skill_disposition_plan_ref=_require_string(
+            data.get("skill_disposition_plan_ref"),
+            "skill_disposition_plan_ref",
+        ),
+        tool_disposition_plan_ref=_require_string(
+            data.get("tool_disposition_plan_ref"),
+            "tool_disposition_plan_ref",
+        ),
+        rollback_plan_ref=_require_string(
+            data.get("rollback_plan_ref"),
+            "rollback_plan_ref",
+        ),
+        proposal_ref=_optional_string(data.get("proposal_ref"), "proposal_ref"),
+        source_refs=_string_tuple(data.get("source_refs", ()), "source_refs"),
+    )
+
+
+def department_contraction_plan_to_dict(
+    plan: DepartmentContractionPlan,
+) -> dict[str, Any]:
+    return {
+        "plan_id": plan.plan_id,
+        "schema_version": plan.schema_version,
+        "department_node_id": plan.department_node_id,
+        "parent_node_id": plan.parent_node_id,
+        "remaining_worker_ids": list(plan.remaining_worker_ids),
+        "remaining_child_node_ids": list(plan.remaining_child_node_ids),
+        "responsibilities_remain": plan.responsibilities_remain,
+        "contraction_mode": plan.contraction_mode.value,
+        "collaboration_surface": plan.collaboration_surface.value,
+        "reason": plan.reason,
+        "chat_disposition_ref": plan.chat_disposition_ref,
+        "asset_disposition_ref": plan.asset_disposition_ref,
+        "source_refs": list(plan.source_refs),
+    }
+
+
+def department_contraction_plan_from_dict(
+    data: Mapping[str, Any],
+) -> DepartmentContractionPlan:
+    data = _require_mapping(data, "department contraction plan")
+    _reject_sensitive_payload(data, "department_contraction_plan")
+    _reject_unknown_fields(
+        data,
+        _DEPARTMENT_CONTRACTION_PLAN_FIELDS,
+        "department contraction plan",
+    )
+    return DepartmentContractionPlan(
+        plan_id=_require_string(data.get("plan_id"), "plan_id"),
+        schema_version=data.get(
+            "schema_version", CHILD_AGENT_LIFECYCLE_SCHEMA_VERSION
+        ),
+        department_node_id=_require_string(
+            data.get("department_node_id"),
+            "department_node_id",
+        ),
+        parent_node_id=_optional_string(data.get("parent_node_id"), "parent_node_id"),
+        remaining_worker_ids=_string_tuple(
+            data.get("remaining_worker_ids", ()),
+            "remaining_worker_ids",
+        ),
+        remaining_child_node_ids=_string_tuple(
+            data.get("remaining_child_node_ids", ()),
+            "remaining_child_node_ids",
+        ),
+        responsibilities_remain=_bool_value(
+            data.get("responsibilities_remain"),
+            "responsibilities_remain",
+        ),
+        contraction_mode=_require_string(
+            data.get("contraction_mode"),
+            "contraction_mode",
+        ),
+        collaboration_surface=_require_string(
+            data.get("collaboration_surface"),
+            "collaboration_surface",
+        ),
+        reason=_require_string(data.get("reason"), "reason"),
+        chat_disposition_ref=_optional_string(
+            data.get("chat_disposition_ref"),
+            "chat_disposition_ref",
+        ),
+        asset_disposition_ref=_optional_string(
+            data.get("asset_disposition_ref"),
+            "asset_disposition_ref",
+        ),
+        source_refs=_string_tuple(data.get("source_refs", ()), "source_refs"),
+    )
+
+
 def organization_evolution_proposal_to_dict(
     proposal: OrganizationEvolutionProposal,
 ) -> dict[str, Any]:
@@ -1708,6 +2428,51 @@ def _replacement_owner_kind(
         ) from exc
 
 
+def _department_merge_plan_status(
+    value: DepartmentMergePlanStatus | str,
+) -> DepartmentMergePlanStatus:
+    try:
+        return (
+            value
+            if isinstance(value, DepartmentMergePlanStatus)
+            else DepartmentMergePlanStatus(value)
+        )
+    except ValueError as exc:
+        raise OrganizationEvolutionError(
+            f"Unknown department merge plan status: {value!r}"
+        ) from exc
+
+
+def _department_contraction_mode(
+    value: DepartmentContractionMode | str,
+) -> DepartmentContractionMode:
+    try:
+        return (
+            value
+            if isinstance(value, DepartmentContractionMode)
+            else DepartmentContractionMode(value)
+        )
+    except ValueError as exc:
+        raise OrganizationEvolutionError(
+            f"Unknown department contraction mode: {value!r}"
+        ) from exc
+
+
+def _department_collaboration_surface(
+    value: DepartmentCollaborationSurface | str,
+) -> DepartmentCollaborationSurface:
+    try:
+        return (
+            value
+            if isinstance(value, DepartmentCollaborationSurface)
+            else DepartmentCollaborationSurface(value)
+        )
+    except ValueError as exc:
+        raise OrganizationEvolutionError(
+            f"Unknown department collaboration surface: {value!r}"
+        ) from exc
+
+
 def _validate_schema_version(value: int) -> None:
     _validate_schema_version_value(
         value,
@@ -1833,6 +2598,24 @@ def _string_tuple(value: Any, field_name: str) -> tuple[str, ...]:
         raise OrganizationEvolutionError(
             f"{field_name} must be a list of non-empty strings"
         )
+    return result
+
+
+def _department_summary_tuple(
+    value: Any,
+    field_name: str,
+) -> tuple[DepartmentMergeDepartmentSummary, ...]:
+    if not isinstance(value, (list, tuple)):
+        raise OrganizationEvolutionError(
+            f"{field_name} must be a list of department summaries"
+        )
+    result = tuple(value)
+    if any(not isinstance(item, DepartmentMergeDepartmentSummary) for item in result):
+        raise OrganizationEvolutionError(
+            f"{field_name} must contain DepartmentMergeDepartmentSummary values"
+        )
+    if not result:
+        raise OrganizationEvolutionError(f"{field_name} must not be empty")
     return result
 
 
