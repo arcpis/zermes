@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import PurePosixPath, PureWindowsPath
@@ -106,6 +107,12 @@ class MemoryMergeCandidate:
     classification_reasons: tuple[str, ...] = ()
     source_refs: tuple[str, ...] = ()
     explicit_markers: tuple[str, ...] = ()
+    source_hash: str | None = None
+    policy_type: str = ""
+    task_type: str = ""
+    tool_rule: str = ""
+    delivery_standard: str = ""
+    owner_decision: str = ""
 
     def __post_init__(self) -> None:
         _validate_identifier(self.candidate_id, "candidate_id")
@@ -134,6 +141,16 @@ class MemoryMergeCandidate:
             "explicit_markers",
             _string_tuple(self.explicit_markers, "explicit_markers"),
         )
+        if self.source_hash is not None:
+            _require_string(self.source_hash, "source_hash")
+        for field_name in (
+            "policy_type",
+            "task_type",
+            "tool_rule",
+            "delivery_standard",
+            "owner_decision",
+        ):
+            _string_value(getattr(self, field_name), field_name)
 
 
 @dataclass(frozen=True)
@@ -165,6 +182,88 @@ class MemoryMergeClassificationResult:
             self, "source_refs", _relative_ref_tuple(self.source_refs, "source_refs")
         )
         _validate_target_scope(self.target_scope)
+
+
+@dataclass(frozen=True)
+class MemoryDuplicateGroup:
+    """Candidates that should not be adopted independently."""
+
+    duplicate_key: str
+    candidate_ids: tuple[str, ...]
+    source_refs: tuple[str, ...]
+    reason: str
+    disposition: MemoryMergeDisposition | str = MemoryMergeDisposition.REJECT
+
+    def __post_init__(self) -> None:
+        _require_string(self.duplicate_key, "duplicate_key")
+        object.__setattr__(
+            self, "candidate_ids", _identifier_tuple(self.candidate_ids, "candidate_ids")
+        )
+        object.__setattr__(
+            self, "source_refs", _relative_ref_tuple(self.source_refs, "source_refs")
+        )
+        _require_string(self.reason, "reason")
+        object.__setattr__(self, "disposition", _disposition(self.disposition))
+
+
+@dataclass(frozen=True)
+class MemoryConflictItem:
+    """Explicit conflict that needs a human reviewer before adoption."""
+
+    conflict_field: str
+    source_candidate_id: str
+    target_candidate_id: str
+    source_summary: str
+    target_summary: str
+    source_refs: tuple[str, ...]
+    suggested_reviewer: str
+    reason: str
+
+    def __post_init__(self) -> None:
+        _require_string(self.conflict_field, "conflict_field")
+        _validate_identifier(self.source_candidate_id, "source_candidate_id")
+        _validate_identifier(self.target_candidate_id, "target_candidate_id")
+        _require_string(self.source_summary, "source_summary")
+        _require_string(self.target_summary, "target_summary")
+        object.__setattr__(
+            self, "source_refs", _relative_ref_tuple(self.source_refs, "source_refs")
+        )
+        _require_string(self.suggested_reviewer, "suggested_reviewer")
+        _require_string(self.reason, "reason")
+
+
+@dataclass(frozen=True)
+class MemoryDedupConflictReport:
+    """Review report for merge candidates before any active memory write."""
+
+    duplicate_groups: tuple[MemoryDuplicateGroup, ...]
+    conflict_items: tuple[MemoryConflictItem, ...]
+    rejected_candidate_ids: tuple[str, ...]
+    archive_candidate_ids: tuple[str, ...]
+    adoptable_candidate_ids: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        if any(
+            not isinstance(group, MemoryDuplicateGroup)
+            for group in self.duplicate_groups
+        ):
+            raise OrganizationMemoryMergeError(
+                "duplicate_groups must contain MemoryDuplicateGroup items"
+            )
+        if any(not isinstance(item, MemoryConflictItem) for item in self.conflict_items):
+            raise OrganizationMemoryMergeError(
+                "conflict_items must contain MemoryConflictItem items"
+            )
+        for field_name in (
+            "rejected_candidate_ids",
+            "archive_candidate_ids",
+            "adoptable_candidate_ids",
+        ):
+            object.__setattr__(
+                self,
+                field_name,
+                _identifier_tuple(getattr(self, field_name), field_name),
+            )
 
 
 def validate_memory_merge_candidate_payload(payload: Mapping[str, Any]) -> None:
@@ -215,6 +314,7 @@ def memory_merge_candidate_from_department_proposal(
         classification_reasons=("pending_department_proposal",),
         source_refs=proposal.source_refs,
         explicit_markers=explicit_markers,
+        source_hash=proposal.source_hash,
     )
 
 
@@ -250,6 +350,7 @@ def memory_merge_candidate_from_private_asset_proposal_input(
         classification_reasons=("private_asset_summary_only",),
         source_refs=proposal_input.source_refs,
         explicit_markers=explicit_markers,
+        source_hash=proposal_input.content_hash,
     )
 
 
@@ -338,6 +439,63 @@ def classify_memory_merge_candidate(
     )
 
 
+def build_memory_dedup_conflict_report(
+    candidates: tuple[MemoryMergeCandidate, ...],
+    *,
+    target_candidates: tuple[MemoryMergeCandidate, ...] = (),
+    suggested_reviewer: str = "department_lead_or_main_agent",
+) -> MemoryDedupConflictReport:
+    """Build a deterministic pre-adoption report without mutating memory state."""
+
+    _require_string(suggested_reviewer, "suggested_reviewer")
+    _validate_candidate_tuple(candidates, "candidates")
+    _validate_candidate_tuple(target_candidates, "target_candidates")
+
+    duplicate_groups = _find_duplicate_groups(
+        candidates, target_candidates=target_candidates
+    )
+    incoming_candidate_ids = {candidate.candidate_id for candidate in candidates}
+    rejected_candidate_ids = {
+        candidate_id
+        for group in duplicate_groups
+        for candidate_id in group.candidate_ids
+        if candidate_id in incoming_candidate_ids
+    }
+    archive_candidate_ids = {
+        candidate.candidate_id
+        for candidate in candidates
+        if classify_memory_merge_candidate(candidate).disposition
+        is MemoryMergeDisposition.ARCHIVE
+    }
+    conflict_items = _find_conflict_items(
+        candidates,
+        target_candidates=target_candidates,
+        suggested_reviewer=suggested_reviewer,
+        ignored_candidate_ids=rejected_candidate_ids.union(archive_candidate_ids),
+    )
+    conflicted_candidate_ids = {
+        item.source_candidate_id for item in conflict_items
+    }.union({item.target_candidate_id for item in conflict_items})
+    blocked_candidate_ids = rejected_candidate_ids.union(
+        archive_candidate_ids, conflicted_candidate_ids
+    )
+    adoptable_candidate_ids = tuple(
+        candidate.candidate_id
+        for candidate in candidates
+        if candidate.candidate_id not in blocked_candidate_ids
+        and classify_memory_merge_candidate(candidate).disposition
+        is MemoryMergeDisposition.ADOPT_CANDIDATE
+    )
+
+    return MemoryDedupConflictReport(
+        duplicate_groups=duplicate_groups,
+        conflict_items=conflict_items,
+        rejected_candidate_ids=tuple(sorted(rejected_candidate_ids)),
+        archive_candidate_ids=tuple(sorted(archive_candidate_ids)),
+        adoptable_candidate_ids=adoptable_candidate_ids,
+    )
+
+
 def memory_merge_classification_result_to_dict(
     result: MemoryMergeClassificationResult,
 ) -> dict[str, Any]:
@@ -352,6 +510,52 @@ def memory_merge_classification_result_to_dict(
         "reasons": list(result.reasons),
         "source_refs": list(result.source_refs),
         "target_scope": result.target_scope,
+    }
+
+
+def memory_duplicate_group_to_dict(group: MemoryDuplicateGroup) -> dict[str, Any]:
+    """Return a deterministic JSON-ready duplicate group."""
+
+    return {
+        "duplicate_key": group.duplicate_key,
+        "candidate_ids": list(group.candidate_ids),
+        "source_refs": list(group.source_refs),
+        "reason": group.reason,
+        "disposition": group.disposition.value,
+    }
+
+
+def memory_conflict_item_to_dict(item: MemoryConflictItem) -> dict[str, Any]:
+    """Return a deterministic JSON-ready conflict item."""
+
+    return {
+        "conflict_field": item.conflict_field,
+        "source_candidate_id": item.source_candidate_id,
+        "target_candidate_id": item.target_candidate_id,
+        "source_summary": item.source_summary,
+        "target_summary": item.target_summary,
+        "source_refs": list(item.source_refs),
+        "suggested_reviewer": item.suggested_reviewer,
+        "reason": item.reason,
+    }
+
+
+def memory_dedup_conflict_report_to_dict(
+    report: MemoryDedupConflictReport,
+) -> dict[str, Any]:
+    """Return a deterministic JSON-ready deduplication and conflict report."""
+
+    return {
+        "duplicate_groups": [
+            memory_duplicate_group_to_dict(group)
+            for group in report.duplicate_groups
+        ],
+        "conflict_items": [
+            memory_conflict_item_to_dict(item) for item in report.conflict_items
+        ],
+        "rejected_candidate_ids": list(report.rejected_candidate_ids),
+        "archive_candidate_ids": list(report.archive_candidate_ids),
+        "adoptable_candidate_ids": list(report.adoptable_candidate_ids),
     }
 
 
@@ -479,6 +683,13 @@ def _relative_ref_tuple(value: Any, field_name: str) -> tuple[str, ...]:
     )
 
 
+def _identifier_tuple(value: Any, field_name: str) -> tuple[str, ...]:
+    return tuple(
+        _validate_identifier(item, field_name)
+        for item in _string_tuple(value, field_name)
+    )
+
+
 def _validate_target_scope(value: str) -> str:
     _require_string(value, "target_scope")
     prefix = "department:"
@@ -488,6 +699,175 @@ def _validate_target_scope(value: str) -> str:
         )
     validate_org_node_id(value[len(prefix) :])
     return value
+
+
+def _validate_candidate_tuple(value: Any, field_name: str) -> None:
+    if not isinstance(value, tuple) or any(
+        not isinstance(candidate, MemoryMergeCandidate) for candidate in value
+    ):
+        raise OrganizationMemoryMergeError(
+            f"{field_name} must be a tuple of MemoryMergeCandidate items"
+        )
+
+
+def _find_duplicate_groups(
+    candidates: tuple[MemoryMergeCandidate, ...],
+    *,
+    target_candidates: tuple[MemoryMergeCandidate, ...] = (),
+) -> tuple[MemoryDuplicateGroup, ...]:
+    all_candidates = (*target_candidates, *candidates)
+    incoming_candidate_ids = {candidate.candidate_id for candidate in candidates}
+    groups: list[MemoryDuplicateGroup] = []
+    grouped_candidate_ids: set[str] = set()
+    for reason, duplicate_key_for_candidate in (
+        ("matching_source_hash", _source_hash_duplicate_key),
+        ("matching_normalized_summary", _normalized_summary_duplicate_key),
+        ("matching_stable_memory_id", _stable_memory_id_duplicate_key),
+    ):
+        grouped: dict[str, list[MemoryMergeCandidate]] = {}
+        for candidate in all_candidates:
+            if candidate.candidate_id in grouped_candidate_ids:
+                continue
+            duplicate_key = duplicate_key_for_candidate(candidate)
+            if duplicate_key:
+                grouped.setdefault(duplicate_key, []).append(candidate)
+
+        for duplicate_key, members in sorted(grouped.items()):
+            if len(members) < 2 or not any(
+                member.candidate_id in incoming_candidate_ids for member in members
+            ):
+                continue
+            groups.append(
+                MemoryDuplicateGroup(
+                    duplicate_key=duplicate_key,
+                    candidate_ids=tuple(member.candidate_id for member in members),
+                    source_refs=_candidate_source_refs(members),
+                    reason=reason,
+                )
+            )
+            grouped_candidate_ids.update(member.candidate_id for member in members)
+    return tuple(groups)
+
+
+def _source_hash_duplicate_key(candidate: MemoryMergeCandidate) -> str:
+    if candidate.source_hash:
+        return f"source_hash:{candidate.source_hash}"
+    return ""
+
+
+def _normalized_summary_duplicate_key(candidate: MemoryMergeCandidate) -> str:
+    normalized_summary = " ".join(candidate.summary.casefold().split())
+    if normalized_summary:
+        digest = hashlib.sha256(normalized_summary.encode("utf-8")).hexdigest()
+        return f"normalized_summary_sha256:{digest}"
+    return ""
+
+
+def _stable_memory_id_duplicate_key(candidate: MemoryMergeCandidate) -> str:
+    return f"stable_memory_id:{candidate.candidate_id}"
+
+
+def _candidate_source_refs(
+    candidates: list[MemoryMergeCandidate] | tuple[MemoryMergeCandidate, ...],
+) -> tuple[str, ...]:
+    refs: list[str] = []
+    for candidate in candidates:
+        refs.extend((candidate.source_ref, *candidate.source_refs))
+    return tuple(dict.fromkeys(refs))
+
+
+def _find_conflict_items(
+    candidates: tuple[MemoryMergeCandidate, ...],
+    *,
+    target_candidates: tuple[MemoryMergeCandidate, ...],
+    suggested_reviewer: str,
+    ignored_candidate_ids: set[str],
+) -> tuple[MemoryConflictItem, ...]:
+    items: list[MemoryConflictItem] = []
+    for source in candidates:
+        if source.candidate_id in ignored_candidate_ids:
+            continue
+        for target in (*target_candidates, *candidates):
+            if (
+                source.candidate_id == target.candidate_id
+                or target.candidate_id in ignored_candidate_ids
+            ):
+                continue
+            conflict_field, reason = _explicit_conflict(source, target)
+            if conflict_field is None:
+                continue
+            items.append(
+                MemoryConflictItem(
+                    conflict_field=conflict_field,
+                    source_candidate_id=source.candidate_id,
+                    target_candidate_id=target.candidate_id,
+                    source_summary=source.summary,
+                    target_summary=target.summary,
+                    source_refs=_candidate_source_refs((source, target)),
+                    suggested_reviewer=suggested_reviewer,
+                    reason=reason,
+                )
+            )
+    return _dedupe_conflict_items(items)
+
+
+def _explicit_conflict(
+    source: MemoryMergeCandidate, target: MemoryMergeCandidate
+) -> tuple[str | None, str]:
+    if (
+        source.policy_type
+        and target.policy_type
+        and source.policy_type != target.policy_type
+    ):
+        return None, ""
+    if not source.task_type or not target.task_type:
+        return None, ""
+    if source.task_type != target.task_type:
+        return None, ""
+
+    tool_conflict = _opposite_tool_rule(source.tool_rule, target.tool_rule)
+    if tool_conflict:
+        return "tool_rule", "opposite_tool_rule_for_same_task_type"
+
+    for field_name in ("delivery_standard", "owner_decision"):
+        source_value = getattr(source, field_name)
+        target_value = getattr(target, field_name)
+        if source_value and target_value and source_value != target_value:
+            return field_name, f"different_{field_name}_for_same_task_type"
+    return None, ""
+
+
+def _opposite_tool_rule(source_rule: str, target_rule: str) -> bool:
+    source_action, source_subject = _tool_rule_parts(source_rule)
+    target_action, target_subject = _tool_rule_parts(target_rule)
+    return (
+        source_action in {"allow", "deny"}
+        and target_action in {"allow", "deny"}
+        and source_action != target_action
+        and source_subject == target_subject
+    )
+
+
+def _tool_rule_parts(rule: str) -> tuple[str, str]:
+    normalized = " ".join(rule.casefold().replace(":", " ").split())
+    if not normalized:
+        return "", ""
+    action, _, subject = normalized.partition(" ")
+    action = {"allowed": "allow", "blocked": "deny", "forbid": "deny"}.get(
+        action, action
+    )
+    return action, subject
+
+
+def _dedupe_conflict_items(
+    items: list[MemoryConflictItem],
+) -> tuple[MemoryConflictItem, ...]:
+    deduped: dict[tuple[str, str, str], MemoryConflictItem] = {}
+    for item in items:
+        pair = tuple(sorted((item.source_candidate_id, item.target_candidate_id)))
+        key = (item.conflict_field, pair[0], pair[1])
+        deduped.setdefault(key, item)
+    return tuple(deduped[key] for key in sorted(deduped))
 
 
 def _reject_sensitive_payload(value: Any, field_name: str) -> None:
