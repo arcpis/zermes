@@ -158,6 +158,26 @@ class DepartmentMergePlanStatus(StrEnum):
     EXECUTED = "executed"
 
 
+class DepartmentMergePreflightBlockingCode(StrEnum):
+    """Blocking checks that must be resolved before a merge enters approval."""
+
+    ACTIVE_HIGH_RISK_TASK = "active_high_risk_task"
+    PENDING_APPROVAL = "pending_approval"
+    RUNNING_RUNTIME_SESSION = "running_runtime_session"
+    MISSING_ASSET_DISPOSITION_PLAN = "missing_asset_disposition_plan"
+    INVALID_LIFECYCLE_STATE = "invalid_lifecycle_state"
+
+
+class DepartmentMergePreflightConflictCode(StrEnum):
+    """Non-mutating conflict types found while comparing department summaries."""
+
+    RESPONSIBILITY_OVERLAP = "responsibility_overlap"
+    OWNER_MISMATCH = "owner_mismatch"
+    BUDGET_MODEL_POLICY_DIFFERENCE = "budget_model_policy_difference"
+    TOOL_POLICY_DIFFERENCE = "tool_policy_difference"
+    DEPARTMENT_PLAYBOOK_CONFLICT = "department_playbook_conflict"
+
+
 class DepartmentContractionMode(StrEnum):
     """Post-deletion organization contraction outcome."""
 
@@ -808,6 +828,122 @@ class DepartmentMergePlan:
 
 
 @dataclass(frozen=True)
+class DepartmentMergePreflightBlockingItem:
+    """One merge preflight condition that blocks approval."""
+
+    code: DepartmentMergePreflightBlockingCode | str
+    department_id: str
+    summary: str
+    source_refs: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "code", _department_merge_blocking_code(self.code))
+        object.__setattr__(
+            self,
+            "department_id",
+            _validate_org_node_reference(self.department_id),
+        )
+        _require_string(self.summary, "summary")
+        object.__setattr__(
+            self,
+            "source_refs",
+            _relative_ref_tuple(self.source_refs, "source_refs"),
+        )
+
+
+@dataclass(frozen=True)
+class DepartmentMergePreflightConflict:
+    """One difference that needs human review before execution."""
+
+    code: DepartmentMergePreflightConflictCode | str
+    source_department_id: str
+    target_department_id: str
+    summary: str
+    source_value: str = ""
+    target_value: str = ""
+    source_refs: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "code", _department_merge_conflict_code(self.code))
+        object.__setattr__(
+            self,
+            "source_department_id",
+            _validate_org_node_reference(self.source_department_id),
+        )
+        object.__setattr__(
+            self,
+            "target_department_id",
+            _validate_org_node_reference(self.target_department_id),
+        )
+        _require_string(self.summary, "summary")
+        _string_value(self.source_value, "source_value")
+        _string_value(self.target_value, "target_value")
+        object.__setattr__(
+            self,
+            "source_refs",
+            _relative_ref_tuple(self.source_refs, "source_refs"),
+        )
+
+
+@dataclass(frozen=True)
+class DepartmentMergePreflightReport:
+    """Auditable preflight result for a department merge plan."""
+
+    plan_id: str
+    status: DepartmentMergePlanStatus | str
+    blocking_items: tuple[DepartmentMergePreflightBlockingItem, ...] = ()
+    warnings: tuple[str, ...] = ()
+    conflicts: tuple[DepartmentMergePreflightConflict, ...] = ()
+    manual_decisions: tuple[str, ...] = ()
+    source_refs: tuple[str, ...] = ()
+    schema_version: int = CHILD_AGENT_LIFECYCLE_SCHEMA_VERSION
+
+    def __post_init__(self) -> None:
+        _validate_schema_version_value(
+            self.schema_version,
+            CHILD_AGENT_LIFECYCLE_SCHEMA_VERSION,
+            "department merge preflight",
+        )
+        _validate_identifier(self.plan_id, "plan_id")
+        object.__setattr__(self, "status", _department_merge_plan_status(self.status))
+        object.__setattr__(
+            self,
+            "blocking_items",
+            _department_merge_blocking_item_tuple(
+                self.blocking_items,
+                "blocking_items",
+            ),
+        )
+        object.__setattr__(self, "warnings", _string_tuple(self.warnings, "warnings"))
+        object.__setattr__(
+            self,
+            "conflicts",
+            _department_merge_conflict_tuple(self.conflicts, "conflicts"),
+        )
+        object.__setattr__(
+            self,
+            "manual_decisions",
+            _string_tuple(self.manual_decisions, "manual_decisions"),
+        )
+        object.__setattr__(
+            self,
+            "source_refs",
+            _relative_ref_tuple(self.source_refs, "source_refs"),
+        )
+        if self.blocking_items and self.status is not DepartmentMergePlanStatus.BLOCKED:
+            raise OrganizationEvolutionError(
+                "preflight status must be blocked when blocking_items are present"
+            )
+        if (
+            not self.blocking_items
+            and self.status is not DepartmentMergePlanStatus.READY_FOR_APPROVAL
+        ):
+            raise OrganizationEvolutionError(
+                "preflight status must be ready_for_approval without blocking_items"
+            )
+
+
+@dataclass(frozen=True)
 class DepartmentContractionPlan:
     """Plan for parent/child department shape after deleting a child agent.
 
@@ -1233,6 +1369,31 @@ _DEPARTMENT_MERGE_PLAN_FIELDS = {
     "proposal_ref",
     "source_refs",
 }
+_DEPARTMENT_MERGE_PREFLIGHT_BLOCKING_FIELDS = {
+    "code",
+    "department_id",
+    "summary",
+    "source_refs",
+}
+_DEPARTMENT_MERGE_PREFLIGHT_CONFLICT_FIELDS = {
+    "code",
+    "source_department_id",
+    "target_department_id",
+    "summary",
+    "source_value",
+    "target_value",
+    "source_refs",
+}
+_DEPARTMENT_MERGE_PREFLIGHT_REPORT_FIELDS = {
+    "plan_id",
+    "schema_version",
+    "status",
+    "blocking_items",
+    "warnings",
+    "conflicts",
+    "manual_decisions",
+    "source_refs",
+}
 _DEPARTMENT_CONTRACTION_PLAN_FIELDS = {
     "plan_id",
     "schema_version",
@@ -1316,6 +1477,18 @@ def validate_department_merge_plan(
         data = plan
     _reject_sensitive_payload(data, "department_merge_plan")
     return department_merge_plan_from_dict(data)
+
+
+def validate_department_merge_preflight_report(
+    report: DepartmentMergePreflightReport | Mapping[str, Any],
+) -> DepartmentMergePreflightReport:
+    """Return a validated department merge preflight report."""
+    if isinstance(report, DepartmentMergePreflightReport):
+        data = department_merge_preflight_report_to_dict(report)
+    else:
+        data = report
+    _reject_sensitive_payload(data, "department_merge_preflight_report")
+    return department_merge_preflight_report_from_dict(data)
 
 
 def validate_department_contraction_plan(
@@ -1414,6 +1587,106 @@ def child_agent_delete_blocking_checks(
     if not validated.chat_disposition_refs:
         blockers.append(ChildAgentDeleteBlockingCheck.CHAT_DISPOSITION_MISSING)
     return tuple(blockers)
+
+
+def build_department_merge_preflight(
+    plan: DepartmentMergePlan | Mapping[str, Any],
+    *,
+    department_lifecycle_states: Mapping[str, str] | None = None,
+    task_state_summary: Mapping[str, Any] | None = None,
+    approval_summary: Mapping[str, Any] | None = None,
+    runtime_session_summary: Mapping[str, Any] | None = None,
+    policy_summary: Mapping[str, Any] | None = None,
+    asset_disposition_plan_refs: Mapping[str, str] | None = None,
+) -> DepartmentMergePreflightReport:
+    """Build a non-mutating preflight report for a department merge.
+
+    Callers pass compact summaries only. The function deliberately does not
+    open task transcripts, private memories, or policy files.
+    """
+    validated = (
+        plan if isinstance(plan, DepartmentMergePlan) else validate_department_merge_plan(plan)
+    )
+    source_ids = validated.request.source_department_ids
+    target_id = validated.request.target_department_id
+    lifecycle_states = department_lifecycle_states or {}
+    disposition_refs = _coerce_asset_disposition_refs(
+        asset_disposition_plan_refs,
+        policy_summary,
+    )
+
+    blocking_items: list[DepartmentMergePreflightBlockingItem] = []
+    conflicts: list[DepartmentMergePreflightConflict] = []
+
+    for department_id in (*source_ids, target_id):
+        lifecycle = lifecycle_states.get(department_id)
+        if lifecycle is not None and lifecycle != "active":
+            blocking_items.append(
+                DepartmentMergePreflightBlockingItem(
+                    code=DepartmentMergePreflightBlockingCode.INVALID_LIFECYCLE_STATE,
+                    department_id=department_id,
+                    summary=(
+                        f"Department {department_id!r} lifecycle is {lifecycle!r}; "
+                        "merge preflight requires active departments."
+                    ),
+                )
+            )
+
+    for source_id in source_ids:
+        blocking_items.extend(
+            _active_high_risk_task_blockers(source_id, task_state_summary)
+        )
+        blocking_items.extend(_pending_approval_blockers(source_id, approval_summary))
+        blocking_items.extend(
+            _running_runtime_session_blockers(source_id, runtime_session_summary)
+        )
+        if disposition_refs is not None and source_id not in disposition_refs:
+            blocking_items.append(
+                DepartmentMergePreflightBlockingItem(
+                    code=DepartmentMergePreflightBlockingCode.MISSING_ASSET_DISPOSITION_PLAN,
+                    department_id=source_id,
+                    summary=(
+                        f"Source department {source_id!r} has no asset disposition "
+                        "plan reference."
+                    ),
+                )
+            )
+
+    for source_summary in validated.request.source_summaries:
+        conflicts.extend(
+            _department_summary_conflicts(
+                source_summary,
+                validated.request.target_summary,
+            )
+        )
+        conflicts.extend(
+            _department_policy_conflicts(
+                source_summary.department_id,
+                target_id,
+                policy_summary,
+            )
+        )
+
+    warnings = tuple(
+        f"Manual decision required for {conflict.code.value} between "
+        f"{conflict.source_department_id!r} and {conflict.target_department_id!r}."
+        for conflict in conflicts
+    )
+    manual_decisions = tuple(conflict.summary for conflict in conflicts)
+    status = (
+        DepartmentMergePlanStatus.BLOCKED
+        if blocking_items
+        else DepartmentMergePlanStatus.READY_FOR_APPROVAL
+    )
+    return DepartmentMergePreflightReport(
+        plan_id=validated.plan_id,
+        status=status,
+        blocking_items=tuple(blocking_items),
+        warnings=warnings,
+        conflicts=tuple(conflicts),
+        manual_decisions=manual_decisions,
+        source_refs=validated.source_refs,
+    )
 
 
 def validate_evolution_proposal(
@@ -2114,6 +2387,153 @@ def department_merge_plan_from_dict(data: Mapping[str, Any]) -> DepartmentMergeP
     )
 
 
+def department_merge_preflight_blocking_item_to_dict(
+    item: DepartmentMergePreflightBlockingItem,
+) -> dict[str, Any]:
+    return {
+        "code": item.code.value,
+        "department_id": item.department_id,
+        "summary": item.summary,
+        "source_refs": list(item.source_refs),
+    }
+
+
+def department_merge_preflight_blocking_item_from_dict(
+    data: Mapping[str, Any],
+) -> DepartmentMergePreflightBlockingItem:
+    data = _require_mapping(data, "department merge preflight blocking item")
+    _reject_unknown_fields(
+        data,
+        _DEPARTMENT_MERGE_PREFLIGHT_BLOCKING_FIELDS,
+        "department merge preflight blocking item",
+    )
+    return DepartmentMergePreflightBlockingItem(
+        code=_require_string(data.get("code"), "code"),
+        department_id=_require_string(data.get("department_id"), "department_id"),
+        summary=_require_string(data.get("summary"), "summary"),
+        source_refs=_string_tuple(data.get("source_refs", ()), "source_refs"),
+    )
+
+
+def department_merge_preflight_conflict_to_dict(
+    conflict: DepartmentMergePreflightConflict,
+) -> dict[str, Any]:
+    return {
+        "code": conflict.code.value,
+        "source_department_id": conflict.source_department_id,
+        "target_department_id": conflict.target_department_id,
+        "summary": conflict.summary,
+        "source_value": conflict.source_value,
+        "target_value": conflict.target_value,
+        "source_refs": list(conflict.source_refs),
+    }
+
+
+def department_merge_preflight_conflict_from_dict(
+    data: Mapping[str, Any],
+) -> DepartmentMergePreflightConflict:
+    data = _require_mapping(data, "department merge preflight conflict")
+    _reject_unknown_fields(
+        data,
+        _DEPARTMENT_MERGE_PREFLIGHT_CONFLICT_FIELDS,
+        "department merge preflight conflict",
+    )
+    return DepartmentMergePreflightConflict(
+        code=_require_string(data.get("code"), "code"),
+        source_department_id=_require_string(
+            data.get("source_department_id"),
+            "source_department_id",
+        ),
+        target_department_id=_require_string(
+            data.get("target_department_id"),
+            "target_department_id",
+        ),
+        summary=_require_string(data.get("summary"), "summary"),
+        source_value=_string_value(data.get("source_value", ""), "source_value"),
+        target_value=_string_value(data.get("target_value", ""), "target_value"),
+        source_refs=_string_tuple(data.get("source_refs", ()), "source_refs"),
+    )
+
+
+def department_merge_preflight_report_to_dict(
+    report: DepartmentMergePreflightReport,
+) -> dict[str, Any]:
+    return {
+        "plan_id": report.plan_id,
+        "schema_version": report.schema_version,
+        "status": report.status.value,
+        "blocking_items": [
+            department_merge_preflight_blocking_item_to_dict(item)
+            for item in report.blocking_items
+        ],
+        "warnings": list(report.warnings),
+        "conflicts": [
+            department_merge_preflight_conflict_to_dict(conflict)
+            for conflict in report.conflicts
+        ],
+        "manual_decisions": list(report.manual_decisions),
+        "source_refs": list(report.source_refs),
+    }
+
+
+def department_merge_preflight_report_from_dict(
+    data: Mapping[str, Any],
+) -> DepartmentMergePreflightReport:
+    data = _require_mapping(data, "department merge preflight report")
+    _reject_sensitive_payload(data, "department_merge_preflight_report")
+    _reject_unknown_fields(
+        data,
+        _DEPARTMENT_MERGE_PREFLIGHT_REPORT_FIELDS,
+        "department merge preflight report",
+    )
+    return DepartmentMergePreflightReport(
+        plan_id=_require_string(data.get("plan_id"), "plan_id"),
+        schema_version=data.get(
+            "schema_version",
+            CHILD_AGENT_LIFECYCLE_SCHEMA_VERSION,
+        ),
+        status=_require_string(data.get("status"), "status"),
+        blocking_items=tuple(
+            department_merge_preflight_blocking_item_from_dict(
+                _require_mapping(item, "blocking_items item")
+            )
+            for item in data.get("blocking_items", ())
+        ),
+        warnings=_string_tuple(data.get("warnings", ()), "warnings"),
+        conflicts=tuple(
+            department_merge_preflight_conflict_from_dict(
+                _require_mapping(item, "conflicts item")
+            )
+            for item in data.get("conflicts", ())
+        ),
+        manual_decisions=_string_tuple(
+            data.get("manual_decisions", ()),
+            "manual_decisions",
+        ),
+        source_refs=_string_tuple(data.get("source_refs", ()), "source_refs"),
+    )
+
+
+def dump_department_merge_preflight_report_json(
+    report: DepartmentMergePreflightReport,
+) -> str:
+    """Dump one merge preflight report as stable, newline-terminated JSON."""
+    return json.dumps(department_merge_preflight_report_to_dict(report), indent=2) + "\n"
+
+
+def load_department_merge_preflight_report_json(
+    text: str,
+) -> DepartmentMergePreflightReport:
+    """Load one merge preflight report from JSON text."""
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise OrganizationEvolutionError(
+            f"Invalid department merge preflight report JSON: {exc.msg}"
+        ) from exc
+    return department_merge_preflight_report_from_dict(data)
+
+
 def department_contraction_plan_to_dict(
     plan: DepartmentContractionPlan,
 ) -> dict[str, Any]:
@@ -2451,6 +2871,36 @@ def _department_merge_plan_status(
         ) from exc
 
 
+def _department_merge_blocking_code(
+    value: DepartmentMergePreflightBlockingCode | str,
+) -> DepartmentMergePreflightBlockingCode:
+    try:
+        return (
+            value
+            if isinstance(value, DepartmentMergePreflightBlockingCode)
+            else DepartmentMergePreflightBlockingCode(value)
+        )
+    except ValueError as exc:
+        raise OrganizationEvolutionError(
+            f"Unknown department merge preflight blocking code: {value!r}"
+        ) from exc
+
+
+def _department_merge_conflict_code(
+    value: DepartmentMergePreflightConflictCode | str,
+) -> DepartmentMergePreflightConflictCode:
+    try:
+        return (
+            value
+            if isinstance(value, DepartmentMergePreflightConflictCode)
+            else DepartmentMergePreflightConflictCode(value)
+        )
+    except ValueError as exc:
+        raise OrganizationEvolutionError(
+            f"Unknown department merge preflight conflict code: {value!r}"
+        ) from exc
+
+
 def _department_contraction_mode(
     value: DepartmentContractionMode | str,
 ) -> DepartmentContractionMode:
@@ -2627,6 +3077,34 @@ def _department_summary_tuple(
     return result
 
 
+def _department_merge_blocking_item_tuple(
+    value: Any,
+    field_name: str,
+) -> tuple[DepartmentMergePreflightBlockingItem, ...]:
+    if not isinstance(value, (list, tuple)):
+        raise OrganizationEvolutionError(f"{field_name} must be a list")
+    result = tuple(value)
+    if any(not isinstance(item, DepartmentMergePreflightBlockingItem) for item in result):
+        raise OrganizationEvolutionError(
+            f"{field_name} must contain DepartmentMergePreflightBlockingItem values"
+        )
+    return result
+
+
+def _department_merge_conflict_tuple(
+    value: Any,
+    field_name: str,
+) -> tuple[DepartmentMergePreflightConflict, ...]:
+    if not isinstance(value, (list, tuple)):
+        raise OrganizationEvolutionError(f"{field_name} must be a list")
+    result = tuple(value)
+    if any(not isinstance(item, DepartmentMergePreflightConflict) for item in result):
+        raise OrganizationEvolutionError(
+            f"{field_name} must contain DepartmentMergePreflightConflict values"
+        )
+    return result
+
+
 def _reject_unknown_fields(
     data: Mapping[str, Any], allowed_fields: set[str], field_name: str
 ) -> None:
@@ -2695,6 +3173,270 @@ _APPROVAL_RANK = {
     EvolutionApprovalLevel.MAIN_AGENT_APPROVAL: 1,
     EvolutionApprovalLevel.USER_APPROVAL: 2,
 }
+
+
+def _coerce_asset_disposition_refs(
+    explicit_refs: Mapping[str, str] | None,
+    policy_summary: Mapping[str, Any] | None,
+) -> Mapping[str, str] | None:
+    if explicit_refs is not None:
+        return explicit_refs
+    if policy_summary is None:
+        return None
+    raw_refs = policy_summary.get("asset_disposition_plan_refs")
+    if raw_refs is None:
+        return None
+    return _require_mapping(raw_refs, "asset_disposition_plan_refs")
+
+
+def _active_high_risk_task_blockers(
+    department_id: str,
+    task_state_summary: Mapping[str, Any] | None,
+) -> tuple[DepartmentMergePreflightBlockingItem, ...]:
+    tasks = _summary_items(task_state_summary, department_id, "active_high_risk_tasks")
+    extra_tasks = tuple(
+        item
+        for item in _summary_items(task_state_summary, department_id, "tasks")
+        if _is_active_high_risk_task(item)
+    )
+    blockers = []
+    for task in (*tasks, *extra_tasks):
+        task_id = _summary_item_id(task, "task_id", "unknown_task")
+        blockers.append(
+            DepartmentMergePreflightBlockingItem(
+                code=DepartmentMergePreflightBlockingCode.ACTIVE_HIGH_RISK_TASK,
+                department_id=department_id,
+                summary=f"Active high-risk task {task_id!r} must be resolved.",
+                source_refs=_summary_item_refs(task),
+            )
+        )
+    return tuple(blockers)
+
+
+def _pending_approval_blockers(
+    department_id: str,
+    approval_summary: Mapping[str, Any] | None,
+) -> tuple[DepartmentMergePreflightBlockingItem, ...]:
+    blockers = []
+    for approval in _summary_items(approval_summary, department_id, "pending_approvals"):
+        approval_id = _summary_item_id(approval, "approval_id", "unknown_approval")
+        blockers.append(
+            DepartmentMergePreflightBlockingItem(
+                code=DepartmentMergePreflightBlockingCode.PENDING_APPROVAL,
+                department_id=department_id,
+                summary=f"Pending approval {approval_id!r} must be resolved.",
+                source_refs=_summary_item_refs(approval),
+            )
+        )
+    return tuple(blockers)
+
+
+def _running_runtime_session_blockers(
+    department_id: str,
+    runtime_session_summary: Mapping[str, Any] | None,
+) -> tuple[DepartmentMergePreflightBlockingItem, ...]:
+    blockers = []
+    for session in _summary_items(
+        runtime_session_summary,
+        department_id,
+        "running_sessions",
+    ):
+        session_id = _summary_item_id(session, "session_id", "unknown_session")
+        blockers.append(
+            DepartmentMergePreflightBlockingItem(
+                code=DepartmentMergePreflightBlockingCode.RUNNING_RUNTIME_SESSION,
+                department_id=department_id,
+                summary=f"Running runtime session {session_id!r} must stop first.",
+                source_refs=_summary_item_refs(session),
+            )
+        )
+    return tuple(blockers)
+
+
+def _department_summary_conflicts(
+    source: DepartmentMergeDepartmentSummary,
+    target: DepartmentMergeDepartmentSummary,
+) -> tuple[DepartmentMergePreflightConflict, ...]:
+    conflicts: list[DepartmentMergePreflightConflict] = []
+    source_words = _summary_words(source.responsibility_summary)
+    target_words = _summary_words(target.responsibility_summary)
+    if source_words and len(source_words & target_words) >= 3:
+        conflicts.append(
+            DepartmentMergePreflightConflict(
+                code=DepartmentMergePreflightConflictCode.RESPONSIBILITY_OVERLAP,
+                source_department_id=source.department_id,
+                target_department_id=target.department_id,
+                summary=(
+                    f"Departments {source.department_id!r} and {target.department_id!r} "
+                    "have overlapping responsibility summaries."
+                ),
+                source_value=source.responsibility_summary,
+                target_value=target.responsibility_summary,
+            )
+        )
+    if (
+        source.leader_worker_id is not None
+        and target.leader_worker_id is not None
+        and source.leader_worker_id != target.leader_worker_id
+    ):
+        conflicts.append(
+            DepartmentMergePreflightConflict(
+                code=DepartmentMergePreflightConflictCode.OWNER_MISMATCH,
+                source_department_id=source.department_id,
+                target_department_id=target.department_id,
+                summary=(
+                    f"Source owner {source.leader_worker_id!r} differs from "
+                    f"target owner {target.leader_worker_id!r}."
+                ),
+                source_value=source.leader_worker_id,
+                target_value=target.leader_worker_id,
+            )
+        )
+    return tuple(conflicts)
+
+
+def _department_policy_conflicts(
+    source_department_id: str,
+    target_department_id: str,
+    policy_summary: Mapping[str, Any] | None,
+) -> tuple[DepartmentMergePreflightConflict, ...]:
+    if policy_summary is None:
+        return ()
+    conflict_specs = (
+        (
+            "budget_model_policies",
+            DepartmentMergePreflightConflictCode.BUDGET_MODEL_POLICY_DIFFERENCE,
+            "budget/model policy",
+        ),
+        (
+            "budget_policies",
+            DepartmentMergePreflightConflictCode.BUDGET_MODEL_POLICY_DIFFERENCE,
+            "budget policy",
+        ),
+        (
+            "model_policies",
+            DepartmentMergePreflightConflictCode.BUDGET_MODEL_POLICY_DIFFERENCE,
+            "model policy",
+        ),
+        (
+            "tool_policies",
+            DepartmentMergePreflightConflictCode.TOOL_POLICY_DIFFERENCE,
+            "tool policy",
+        ),
+        (
+            "department_playbooks",
+            DepartmentMergePreflightConflictCode.DEPARTMENT_PLAYBOOK_CONFLICT,
+            "department playbook",
+        ),
+    )
+    conflicts: list[DepartmentMergePreflightConflict] = []
+    seen_codes: set[DepartmentMergePreflightConflictCode] = set()
+    for key, code, label in conflict_specs:
+        values = policy_summary.get(key)
+        if not isinstance(values, Mapping):
+            continue
+        source_value = values.get(source_department_id)
+        target_value = values.get(target_department_id)
+        if source_value is None or target_value is None or source_value == target_value:
+            continue
+        if code in seen_codes:
+            continue
+        conflicts.append(
+            DepartmentMergePreflightConflict(
+                code=code,
+                source_department_id=source_department_id,
+                target_department_id=target_department_id,
+                summary=(
+                    f"Source {label} differs from target {label} for "
+                    f"{source_department_id!r}."
+                ),
+                source_value=_summary_value_text(source_value),
+                target_value=_summary_value_text(target_value),
+            )
+        )
+        seen_codes.add(code)
+    return tuple(conflicts)
+
+
+def _summary_items(
+    summary: Mapping[str, Any] | None,
+    department_id: str,
+    collection_key: str,
+) -> tuple[Mapping[str, Any], ...]:
+    if summary is None:
+        return ()
+    department_value = summary.get(department_id)
+    if department_value is not None:
+        return _summary_items_from_value(department_value, collection_key)
+    collection = summary.get(collection_key)
+    if isinstance(collection, Mapping):
+        return _summary_items_from_value(collection.get(department_id, ()), collection_key)
+    return tuple(
+        item
+        for item in _summary_items_from_value(collection, collection_key)
+        if item.get("department_id") == department_id
+        or item.get("source_department_id") == department_id
+        or item.get("org_node_id") == department_id
+    )
+
+
+def _summary_items_from_value(
+    value: Any,
+    collection_key: str,
+) -> tuple[Mapping[str, Any], ...]:
+    if value is None:
+        return ()
+    if isinstance(value, Mapping):
+        if collection_key in value:
+            return _summary_items_from_value(value.get(collection_key), collection_key)
+        return (value,)
+    if not isinstance(value, (list, tuple)):
+        raise OrganizationEvolutionError(f"{collection_key} must be a list")
+    result = tuple(_require_mapping(item, collection_key) for item in value)
+    return result
+
+
+def _is_active_high_risk_task(item: Mapping[str, Any]) -> bool:
+    status = str(item.get("status", "")).lower()
+    risk_level = str(item.get("risk_level", item.get("risk", ""))).lower()
+    tags = item.get("tags", ())
+    high_risk = item.get("high_risk") is True or risk_level in {"high", "critical"}
+    if isinstance(tags, (list, tuple)) and "high_risk" in tags:
+        high_risk = True
+    return high_risk and status not in {
+        "cancelled",
+        "failed",
+        "succeeded",
+        "expired",
+    }
+
+
+def _summary_item_id(
+    item: Mapping[str, Any],
+    field_name: str,
+    fallback: str,
+) -> str:
+    value = item.get(field_name, fallback)
+    if not isinstance(value, str) or not value:
+        return fallback
+    return value
+
+
+def _summary_item_refs(item: Mapping[str, Any]) -> tuple[str, ...]:
+    raw_refs = item.get("source_refs", ())
+    if not isinstance(raw_refs, (list, tuple)):
+        return ()
+    return _relative_ref_tuple(raw_refs, "source_refs")
+
+
+def _summary_value_text(value: Any) -> str:
+    if isinstance(value, str):
+        return value
+    return json.dumps(value, sort_keys=True, separators=(",", ":"))
+
+
+def _summary_words(value: str) -> set[str]:
+    return {word for word in value.lower().replace("/", " ").replace("-", " ").split() if len(word) > 3}
 
 
 def _merge_explicit_risk_flags(

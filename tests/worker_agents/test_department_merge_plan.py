@@ -2,12 +2,18 @@ import pytest
 
 from worker_agents.organization_evolution import (
     CHILD_AGENT_LIFECYCLE_SCHEMA_VERSION,
+    DepartmentMergePreflightBlockingCode,
+    DepartmentMergePreflightConflictCode,
     DepartmentMergePlanStatus,
     EvolutionProposalType,
     OrganizationEvolutionError,
+    build_department_merge_preflight,
+    department_merge_preflight_report_to_dict,
+    dump_department_merge_preflight_report_json,
     department_merge_plan_from_dict,
     department_merge_plan_to_dict,
     department_merge_request_from_dict,
+    load_department_merge_preflight_report_json,
     organization_evolution_proposal_from_dict,
     validate_department_merge_plan,
 )
@@ -188,3 +194,203 @@ def test_department_merge_plan_requires_sub_plan_refs(missing_ref):
 def test_department_merge_plan_rejects_sensitive_payload_fields():
     with pytest.raises(OrganizationEvolutionError, match="sensitive data"):
         validate_department_merge_plan(_merge_plan(raw_stdout="not allowed"))
+
+
+def test_department_merge_preflight_is_ready_without_blockers():
+    report = build_department_merge_preflight(
+        _merge_plan(),
+        department_lifecycle_states={
+            "platform": "active",
+            "engineering": "active",
+        },
+        asset_disposition_plan_refs={"platform": "merge/assets/platform.json"},
+    )
+
+    assert report.status is DepartmentMergePlanStatus.READY_FOR_APPROVAL
+    assert report.blocking_items == ()
+
+
+@pytest.mark.parametrize(
+    ("summary_name", "summary", "expected_code"),
+    [
+        (
+            "task_state_summary",
+            {
+                "active_high_risk_tasks": {
+                    "platform": [
+                        {
+                            "task_id": "task_high_risk_release",
+                            "source_refs": ["tasks/task_high_risk_release.json"],
+                        }
+                    ]
+                }
+            },
+            DepartmentMergePreflightBlockingCode.ACTIVE_HIGH_RISK_TASK,
+        ),
+        (
+            "approval_summary",
+            {
+                "pending_approvals": {
+                    "platform": [
+                        {
+                            "approval_id": "approval_budget_change",
+                            "source_refs": ["approvals/budget-change.json"],
+                        }
+                    ]
+                }
+            },
+            DepartmentMergePreflightBlockingCode.PENDING_APPROVAL,
+        ),
+        (
+            "runtime_session_summary",
+            {
+                "running_sessions": {
+                    "platform": [
+                        {
+                            "session_id": "runtime_platform_1",
+                            "source_refs": ["sessions/runtime-platform-1.json"],
+                        }
+                    ]
+                }
+            },
+            DepartmentMergePreflightBlockingCode.RUNNING_RUNTIME_SESSION,
+        ),
+    ],
+)
+def test_department_merge_preflight_blocks_active_runtime_work(
+    summary_name,
+    summary,
+    expected_code,
+):
+    kwargs = {
+        "department_lifecycle_states": {
+            "platform": "active",
+            "engineering": "active",
+        },
+        "asset_disposition_plan_refs": {"platform": "merge/assets/platform.json"},
+        summary_name: summary,
+    }
+
+    report = build_department_merge_preflight(_merge_plan(), **kwargs)
+
+    assert report.status is DepartmentMergePlanStatus.BLOCKED
+    assert [item.code for item in report.blocking_items] == [expected_code]
+
+
+def test_department_merge_preflight_blocks_lifecycle_and_missing_assets():
+    report = build_department_merge_preflight(
+        _merge_plan(),
+        department_lifecycle_states={
+            "platform": "archived",
+            "engineering": "active",
+        },
+        asset_disposition_plan_refs={},
+    )
+
+    assert report.status is DepartmentMergePlanStatus.BLOCKED
+    assert [item.code for item in report.blocking_items] == [
+        DepartmentMergePreflightBlockingCode.INVALID_LIFECYCLE_STATE,
+        DepartmentMergePreflightBlockingCode.MISSING_ASSET_DISPOSITION_PLAN,
+    ]
+
+
+def test_department_merge_preflight_records_policy_conflicts_without_blocking():
+    report = build_department_merge_preflight(
+        _merge_plan(
+            request=_merge_request(
+                source_summaries=[
+                    _department_summary(
+                        "platform",
+                        responsibility_summary="Own release platform reliability work.",
+                        leader_worker_id="platform_lead",
+                    )
+                ],
+                target_summary=_department_summary(
+                    "engineering",
+                    responsibility_summary="Own release platform reliability work.",
+                    leader_worker_id="engineering_lead",
+                ),
+            )
+        ),
+        department_lifecycle_states={
+            "platform": "active",
+            "engineering": "active",
+        },
+        asset_disposition_plan_refs={"platform": "merge/assets/platform.json"},
+        policy_summary={
+            "budget_model_policies": {
+                "platform": {"max_task_tokens": 1000, "default_model": "small"},
+                "engineering": {"max_task_tokens": 2000, "default_model": "large"},
+            },
+            "tool_policies": {
+                "platform": ["shell", "read_file"],
+                "engineering": ["read_file"],
+            },
+            "department_playbooks": {
+                "platform": "Ship via platform review.",
+                "engineering": "Ship via engineering review.",
+            },
+        },
+    )
+
+    assert report.status is DepartmentMergePlanStatus.READY_FOR_APPROVAL
+    assert [conflict.code for conflict in report.conflicts] == [
+        DepartmentMergePreflightConflictCode.RESPONSIBILITY_OVERLAP,
+        DepartmentMergePreflightConflictCode.OWNER_MISMATCH,
+        DepartmentMergePreflightConflictCode.BUDGET_MODEL_POLICY_DIFFERENCE,
+        DepartmentMergePreflightConflictCode.TOOL_POLICY_DIFFERENCE,
+        DepartmentMergePreflightConflictCode.DEPARTMENT_PLAYBOOK_CONFLICT,
+    ]
+    assert len(report.manual_decisions) == len(report.conflicts)
+    assert report.warnings
+
+
+def test_department_merge_preflight_report_serialization_is_stable():
+    report = build_department_merge_preflight(
+        _merge_plan(
+            request=_merge_request(
+                target_summary=_department_summary(
+                    "engineering",
+                    leader_worker_id="platform_lead",
+                )
+            )
+        ),
+        department_lifecycle_states={
+            "platform": "active",
+            "engineering": "active",
+        },
+        asset_disposition_plan_refs={"platform": "merge/assets/platform.json"},
+        task_state_summary={
+            "tasks": {
+                "platform": [
+                    {
+                        "task_id": "task_high_risk",
+                        "status": "running",
+                        "risk_level": "high",
+                    }
+                ]
+            }
+        },
+    )
+
+    raw_json = dump_department_merge_preflight_report_json(report)
+    loaded = load_department_merge_preflight_report_json(raw_json)
+
+    assert loaded == report
+    assert department_merge_preflight_report_to_dict(loaded) == {
+        "plan_id": "merge_platform_plan",
+        "schema_version": CHILD_AGENT_LIFECYCLE_SCHEMA_VERSION,
+        "status": "blocked",
+        "blocking_items": [
+            {
+                "code": "active_high_risk_task",
+                "department_id": "platform",
+                "summary": "Active high-risk task 'task_high_risk' must be resolved.",
+                "source_refs": [],
+            }
+        ],
+        "warnings": [],
+        "conflicts": [],
+        "manual_decisions": [],
+        "source_refs": ["merge/request.json"],
+    }
