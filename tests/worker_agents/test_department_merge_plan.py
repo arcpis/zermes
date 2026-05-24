@@ -3,10 +3,12 @@ import pytest
 from worker_agents.organization_evolution import (
     CHILD_AGENT_LIFECYCLE_SCHEMA_VERSION,
     DepartmentMergePlanStatus,
+    EvolutionProposalType,
     OrganizationEvolutionError,
     department_merge_plan_from_dict,
     department_merge_plan_to_dict,
     department_merge_request_from_dict,
+    organization_evolution_proposal_from_dict,
     validate_department_merge_plan,
 )
 
@@ -111,6 +113,13 @@ def test_merge_request_rejects_target_in_sources():
         )
 
 
+def test_merge_request_rejects_duplicate_sources():
+    with pytest.raises(OrganizationEvolutionError, match="duplicates"):
+        department_merge_request_from_dict(
+            _merge_request(source_department_ids=["platform", "platform"])
+        )
+
+
 def test_merge_request_requires_matching_source_summaries():
     with pytest.raises(OrganizationEvolutionError, match="source_summaries"):
         department_merge_request_from_dict(
@@ -125,6 +134,36 @@ def test_department_merge_plan_round_trips_through_dict():
 
     assert loaded == plan
     assert loaded.status is DepartmentMergePlanStatus.READY_FOR_APPROVAL
+
+
+def test_department_merge_plan_can_be_referenced_by_evolution_proposal():
+    plan = department_merge_plan_from_dict(
+        _merge_plan(proposal_ref="proposals/merge-platform.json")
+    )
+
+    proposal = organization_evolution_proposal_from_dict(
+        {
+            "proposal_id": "merge_platform_proposal",
+            "proposal_type": "merge_department",
+            "schema_version": 1,
+            "status": "draft",
+            "initiator": _initiator(),
+            "target_node_ids": [plan.request.target_department_id],
+            "affected_worker_ids": [],
+            "reason": plan.request.reason,
+            "before_summary": "Platform is separate from engineering.",
+            "after_summary": "Platform is merged into engineering.",
+            "risk_flags": ["responsibility_change", "group_chat_closure"],
+            "approval_policy": "unresolved",
+            "asset_disposition_refs": [plan.skill_disposition_plan_ref],
+            "chat_disposition_refs": [plan.chat_freeze_plan_ref],
+            "rollback_summary_ref": plan.rollback_plan_ref,
+            "source_refs": [plan.proposal_ref, "merge/plan.json"],
+        }
+    )
+
+    assert proposal.proposal_type is EvolutionProposalType.MERGE_DEPARTMENT
+    assert plan.proposal_ref in proposal.source_refs
 
 
 @pytest.mark.parametrize(

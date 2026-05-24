@@ -701,6 +701,10 @@ class DepartmentMergeRequest:
             raise OrganizationEvolutionError(
                 "source_department_ids must not be empty"
             )
+        if len(set(self.source_department_ids)) != len(self.source_department_ids):
+            raise OrganizationEvolutionError(
+                "source_department_ids must not contain duplicates"
+            )
         object.__setattr__(
             self,
             "target_department_id",
@@ -721,6 +725,12 @@ class DepartmentMergeRequest:
         ):
             raise OrganizationEvolutionError(
                 "source_summaries must match source_department_ids"
+            )
+        if len({summary.department_id for summary in self.source_summaries}) != len(
+            self.source_summaries
+        ):
+            raise OrganizationEvolutionError(
+                "source_summaries must not contain duplicate departments"
             )
         if not isinstance(self.target_summary, DepartmentMergeDepartmentSummary):
             raise OrganizationEvolutionError(
