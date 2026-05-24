@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import hashlib
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import PurePosixPath, PureWindowsPath
 from typing import Any, Mapping
+from uuid import uuid4
 
 from .department_memory import (
     DepartmentMemoryProposal,
@@ -53,6 +55,7 @@ _SENSITIVITY_RANK = {
 }
 _STALE_FRESHNESS = frozenset({"stale", "expired", "obsolete", "outdated"})
 _HISTORICAL_FRESHNESS = frozenset({"historical", "history", "archived"})
+MEMORY_MERGE_REPORT_SCHEMA_VERSION = 1
 
 
 class OrganizationMemoryMergeError(ValueError):
@@ -87,6 +90,15 @@ class MemoryMergeDisposition(StrEnum):
     REQUIRES_REDACTION = "requires_redaction"
     REQUIRES_DECISION = "requires_decision"
     REJECT = "reject"
+
+
+class MemoryMergeApprovalStatus(StrEnum):
+    """Review state for a memory merge report or report item."""
+
+    NOT_REQUIRED = "not_required"
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
 
 
 @dataclass(frozen=True)
@@ -264,6 +276,172 @@ class MemoryDedupConflictReport:
                 field_name,
                 _identifier_tuple(getattr(self, field_name), field_name),
             )
+
+
+@dataclass(frozen=True)
+class MemoryMergeReportItem:
+    """Low-sensitive report entry for one candidate or candidate group."""
+
+    item_id: str
+    summary: str
+    source_refs: tuple[str, ...]
+    candidate_ids: tuple[str, ...] = ()
+    reasons: tuple[str, ...] = ()
+    sensitivity: DepartmentMemorySensitivity | str = DepartmentMemorySensitivity.LOW
+    approval_status: MemoryMergeApprovalStatus | str = (
+        MemoryMergeApprovalStatus.NOT_REQUIRED
+    )
+    reviewer: str | None = None
+    decision_ref: str | None = None
+
+    def __post_init__(self) -> None:
+        _validate_identifier(self.item_id, "item_id")
+        _require_string(self.summary, "summary")
+        object.__setattr__(
+            self, "source_refs", _relative_ref_tuple(self.source_refs, "source_refs")
+        )
+        object.__setattr__(
+            self,
+            "candidate_ids",
+            _identifier_tuple(self.candidate_ids, "candidate_ids"),
+        )
+        object.__setattr__(self, "reasons", _string_tuple(self.reasons, "reasons"))
+        object.__setattr__(self, "sensitivity", _sensitivity(self.sensitivity))
+        object.__setattr__(
+            self,
+            "approval_status",
+            _approval_status(self.approval_status),
+        )
+        if self.reviewer is not None:
+            _require_string(self.reviewer, "reviewer")
+        if self.decision_ref is not None:
+            object.__setattr__(
+                self,
+                "decision_ref",
+                _validate_relative_ref(self.decision_ref, "decision_ref"),
+            )
+
+
+@dataclass(frozen=True)
+class MemoryMergeReport:
+    """Auditable memory merge disposition report without active writes."""
+
+    report_id: str
+    source_departments: tuple[str, ...]
+    target_department: str
+    created_at: str
+    candidate_counts: Mapping[str, int]
+    adopted: tuple[MemoryMergeReportItem, ...] = ()
+    rejected: tuple[MemoryMergeReportItem, ...] = ()
+    archived: tuple[MemoryMergeReportItem, ...] = ()
+    duplicates: tuple[MemoryMergeReportItem, ...] = ()
+    conflicts: tuple[MemoryMergeReportItem, ...] = ()
+    redactions: tuple[MemoryMergeReportItem, ...] = ()
+    manual_decisions: tuple[MemoryMergeReportItem, ...] = ()
+    approval_status: MemoryMergeApprovalStatus | str = MemoryMergeApprovalStatus.PENDING
+    reviewer: str | None = None
+    asset_disposition_plan_ref: str | None = None
+    schema_version: int = MEMORY_MERGE_REPORT_SCHEMA_VERSION
+
+    def __post_init__(self) -> None:
+        if self.schema_version != MEMORY_MERGE_REPORT_SCHEMA_VERSION:
+            raise OrganizationMemoryMergeError("unsupported memory merge report schema")
+        _validate_identifier(self.report_id, "report_id")
+        object.__setattr__(
+            self,
+            "source_departments",
+            _department_id_tuple(self.source_departments, "source_departments"),
+        )
+        validate_org_node_id(self.target_department)
+        _require_string(self.created_at, "created_at")
+        object.__setattr__(
+            self, "candidate_counts", _candidate_count_mapping(self.candidate_counts)
+        )
+        for field_name in (
+            "adopted",
+            "rejected",
+            "archived",
+            "duplicates",
+            "conflicts",
+            "redactions",
+            "manual_decisions",
+        ):
+            object.__setattr__(
+                self,
+                field_name,
+                _report_item_tuple(getattr(self, field_name), field_name),
+            )
+        object.__setattr__(
+            self, "approval_status", _approval_status(self.approval_status)
+        )
+        if self.reviewer is not None:
+            _require_string(self.reviewer, "reviewer")
+        if self.asset_disposition_plan_ref is not None:
+            object.__setattr__(
+                self,
+                "asset_disposition_plan_ref",
+                _validate_relative_ref(
+                    self.asset_disposition_plan_ref, "asset_disposition_plan_ref"
+                ),
+            )
+
+    @property
+    def has_blockers(self) -> bool:
+        """Return true when an executor must not auto-create an active write plan."""
+
+        if self.conflicts or self.redactions:
+            return True
+        pending_statuses = {
+            MemoryMergeApprovalStatus.PENDING,
+            MemoryMergeApprovalStatus.REJECTED,
+        }
+        if self.approval_status in pending_statuses:
+            return True
+        return any(
+            item.approval_status in pending_statuses
+            for item in self.manual_decisions
+        )
+
+    @property
+    def adopted_refs(self) -> tuple[str, ...]:
+        """Return source refs for adopted candidates only."""
+
+        refs: list[str] = []
+        for item in self.adopted:
+            refs.extend(item.source_refs)
+        return tuple(dict.fromkeys(refs))
+
+    @property
+    def active_write_plan_candidate_refs(self) -> tuple[str, ...]:
+        """Executor-facing adopted refs, empty while blockers remain."""
+
+        return () if self.has_blockers else self.adopted_refs
+
+    def execution_summary(self) -> dict[str, Any]:
+        """Return the compact summary an executor can reference safely."""
+
+        return {
+            "report_id": self.report_id,
+            "target_department": self.target_department,
+            "has_blockers": self.has_blockers,
+            "candidate_counts": dict(self.candidate_counts),
+            "adopted_refs": list(self.active_write_plan_candidate_refs),
+            "asset_disposition_plan_ref": self.asset_disposition_plan_ref,
+        }
+
+    def audit_summary(self) -> dict[str, Any]:
+        """Return a low-sensitive audit summary of all disposition buckets."""
+
+        return {
+            "report_id": self.report_id,
+            "source_departments": list(self.source_departments),
+            "target_department": self.target_department,
+            "created_at": self.created_at,
+            "approval_status": self.approval_status.value,
+            "reviewer": self.reviewer,
+            "candidate_counts": dict(self.candidate_counts),
+            "has_blockers": self.has_blockers,
+        }
 
 
 def validate_memory_merge_candidate_payload(payload: Mapping[str, Any]) -> None:
@@ -496,6 +674,149 @@ def build_memory_dedup_conflict_report(
     )
 
 
+def build_memory_merge_report(
+    candidates: tuple[MemoryMergeCandidate, ...],
+    *,
+    source_departments: tuple[str, ...],
+    target_department: str,
+    target_candidates: tuple[MemoryMergeCandidate, ...] = (),
+    report_id: str | None = None,
+    created_at: str | None = None,
+    reviewer: str | None = None,
+    approval_status: MemoryMergeApprovalStatus | str | None = None,
+    asset_disposition_plan_ref: str | None = None,
+) -> MemoryMergeReport:
+    """Build an auditable memory disposition report without writing memory."""
+
+    _validate_candidate_tuple(candidates, "candidates")
+    _validate_candidate_tuple(target_candidates, "target_candidates")
+    departments = _department_id_tuple(source_departments, "source_departments")
+    validate_org_node_id(target_department)
+    if target_department in departments:
+        raise OrganizationMemoryMergeError(
+            "target_department must not be in source_departments"
+        )
+    if reviewer is not None:
+        _require_string(reviewer, "reviewer")
+
+    classifications = {
+        candidate.candidate_id: classify_memory_merge_candidate(candidate)
+        for candidate in candidates
+    }
+    dedup_conflict_report = build_memory_dedup_conflict_report(
+        candidates,
+        target_candidates=target_candidates,
+        suggested_reviewer=reviewer or "department_lead_or_main_agent",
+    )
+    duplicate_candidate_ids = {
+        candidate_id
+        for group in dedup_conflict_report.duplicate_groups
+        for candidate_id in group.candidate_ids
+        if candidate_id in classifications
+    }
+    conflict_candidate_ids = {
+        item.source_candidate_id
+        for item in dedup_conflict_report.conflict_items
+        if item.source_candidate_id in classifications
+    }
+    explicit_rejected_ids = {
+        candidate_id
+        for candidate_id, result in classifications.items()
+        if result.disposition is MemoryMergeDisposition.REJECT
+    }
+    redaction_ids = {
+        candidate_id
+        for candidate_id, result in classifications.items()
+        if result.disposition is MemoryMergeDisposition.REQUIRES_REDACTION
+    }
+    archived_ids = set(dedup_conflict_report.archive_candidate_ids)
+    manual_decision_ids = {
+        candidate_id
+        for candidate_id, result in classifications.items()
+        if result.disposition is MemoryMergeDisposition.REQUIRES_DECISION
+        and candidate_id not in duplicate_candidate_ids
+        and candidate_id not in conflict_candidate_ids
+    }
+    adopted_ids = set(dedup_conflict_report.adoptable_candidate_ids) - redaction_ids
+
+    adopted = tuple(
+        _candidate_report_item(candidate, classifications[candidate.candidate_id])
+        for candidate in candidates
+        if candidate.candidate_id in adopted_ids
+    )
+    rejected = tuple(
+        _candidate_report_item(candidate, classifications[candidate.candidate_id])
+        for candidate in candidates
+        if candidate.candidate_id in explicit_rejected_ids
+    )
+    archived = tuple(
+        _candidate_report_item(candidate, classifications[candidate.candidate_id])
+        for candidate in candidates
+        if candidate.candidate_id in archived_ids
+    )
+    duplicates = tuple(
+        _duplicate_group_report_item(group)
+        for group in dedup_conflict_report.duplicate_groups
+    )
+    conflicts = tuple(
+        _conflict_report_item(item) for item in dedup_conflict_report.conflict_items
+    )
+    redactions = tuple(
+        _candidate_report_item(
+            candidate,
+            classifications[candidate.candidate_id],
+            approval_status=MemoryMergeApprovalStatus.PENDING,
+            reviewer=reviewer,
+        )
+        for candidate in candidates
+        if candidate.candidate_id in redaction_ids
+    )
+    manual_decisions = tuple(
+        _candidate_report_item(
+            candidate,
+            classifications[candidate.candidate_id],
+            approval_status=MemoryMergeApprovalStatus.PENDING,
+            reviewer=reviewer,
+        )
+        for candidate in candidates
+        if candidate.candidate_id in manual_decision_ids
+    )
+    counts = {
+        "total": len(candidates),
+        "adopted": len(adopted),
+        "rejected": len(rejected),
+        "archived": len(archived),
+        "duplicates": len(duplicate_candidate_ids),
+        "conflicts": len(conflict_candidate_ids),
+        "redactions": len(redactions),
+        "manual_decisions": len(manual_decisions),
+    }
+    if approval_status is None:
+        approval_status = (
+            MemoryMergeApprovalStatus.PENDING
+            if conflicts or redactions or manual_decisions
+            else MemoryMergeApprovalStatus.NOT_REQUIRED
+        )
+
+    return MemoryMergeReport(
+        report_id=report_id or f"memory-merge-{uuid4().hex}",
+        source_departments=departments,
+        target_department=target_department,
+        created_at=created_at or _utc_now_text(),
+        candidate_counts=counts,
+        adopted=adopted,
+        rejected=rejected,
+        archived=archived,
+        duplicates=duplicates,
+        conflicts=conflicts,
+        redactions=redactions,
+        manual_decisions=manual_decisions,
+        approval_status=approval_status,
+        reviewer=reviewer,
+        asset_disposition_plan_ref=asset_disposition_plan_ref,
+    )
+
+
 def memory_merge_classification_result_to_dict(
     result: MemoryMergeClassificationResult,
 ) -> dict[str, Any]:
@@ -559,6 +880,123 @@ def memory_dedup_conflict_report_to_dict(
     }
 
 
+def memory_merge_report_item_to_dict(
+    item: MemoryMergeReportItem,
+) -> dict[str, Any]:
+    """Return a deterministic JSON-ready report item."""
+
+    return {
+        "item_id": item.item_id,
+        "summary": item.summary,
+        "source_refs": list(item.source_refs),
+        "candidate_ids": list(item.candidate_ids),
+        "reasons": list(item.reasons),
+        "sensitivity": item.sensitivity.value,
+        "approval_status": item.approval_status.value,
+        "reviewer": item.reviewer,
+        "decision_ref": item.decision_ref,
+    }
+
+
+def memory_merge_report_item_from_dict(
+    data: Mapping[str, Any],
+) -> MemoryMergeReportItem:
+    """Load one report item from a JSON-ready mapping."""
+
+    data = _require_mapping(data, "memory merge report item")
+    _reject_sensitive_payload(data, "memory_merge_report_item")
+    return MemoryMergeReportItem(
+        item_id=_require_string(data.get("item_id"), "item_id"),
+        summary=_require_string(data.get("summary"), "summary"),
+        source_refs=_string_sequence_tuple(data.get("source_refs", ()), "source_refs"),
+        candidate_ids=_string_sequence_tuple(
+            data.get("candidate_ids", ()), "candidate_ids"
+        ),
+        reasons=_string_sequence_tuple(data.get("reasons", ()), "reasons"),
+        sensitivity=data.get("sensitivity", DepartmentMemorySensitivity.LOW.value),
+        approval_status=data.get(
+            "approval_status", MemoryMergeApprovalStatus.NOT_REQUIRED.value
+        ),
+        reviewer=_optional_string(data.get("reviewer"), "reviewer"),
+        decision_ref=_optional_string(data.get("decision_ref"), "decision_ref"),
+    )
+
+
+def memory_merge_report_to_dict(report: MemoryMergeReport) -> dict[str, Any]:
+    """Return a deterministic JSON-ready memory merge report."""
+
+    return {
+        "report_id": report.report_id,
+        "schema_version": report.schema_version,
+        "source_departments": list(report.source_departments),
+        "target_department": report.target_department,
+        "created_at": report.created_at,
+        "candidate_counts": dict(report.candidate_counts),
+        "adopted": [memory_merge_report_item_to_dict(item) for item in report.adopted],
+        "rejected": [
+            memory_merge_report_item_to_dict(item) for item in report.rejected
+        ],
+        "archived": [
+            memory_merge_report_item_to_dict(item) for item in report.archived
+        ],
+        "duplicates": [
+            memory_merge_report_item_to_dict(item) for item in report.duplicates
+        ],
+        "conflicts": [
+            memory_merge_report_item_to_dict(item) for item in report.conflicts
+        ],
+        "redactions": [
+            memory_merge_report_item_to_dict(item) for item in report.redactions
+        ],
+        "manual_decisions": [
+            memory_merge_report_item_to_dict(item)
+            for item in report.manual_decisions
+        ],
+        "approval_status": report.approval_status.value,
+        "reviewer": report.reviewer,
+        "asset_disposition_plan_ref": report.asset_disposition_plan_ref,
+    }
+
+
+def memory_merge_report_from_dict(data: Mapping[str, Any]) -> MemoryMergeReport:
+    """Load a report from a serialized mapping and re-validate safe fields."""
+
+    data = _require_mapping(data, "memory merge report")
+    _reject_sensitive_payload(data, "memory_merge_report")
+    return MemoryMergeReport(
+        report_id=_require_string(data.get("report_id"), "report_id"),
+        schema_version=data.get(
+            "schema_version", MEMORY_MERGE_REPORT_SCHEMA_VERSION
+        ),
+        source_departments=_string_sequence_tuple(
+            data.get("source_departments"), "source_departments"
+        ),
+        target_department=_require_string(
+            data.get("target_department"), "target_department"
+        ),
+        created_at=_require_string(data.get("created_at"), "created_at"),
+        candidate_counts=_require_mapping(
+            data.get("candidate_counts"), "candidate_counts"
+        ),
+        adopted=_report_item_sequence(data.get("adopted", ()), "adopted"),
+        rejected=_report_item_sequence(data.get("rejected", ()), "rejected"),
+        archived=_report_item_sequence(data.get("archived", ()), "archived"),
+        duplicates=_report_item_sequence(data.get("duplicates", ()), "duplicates"),
+        conflicts=_report_item_sequence(data.get("conflicts", ()), "conflicts"),
+        redactions=_report_item_sequence(data.get("redactions", ()), "redactions"),
+        manual_decisions=_report_item_sequence(
+            data.get("manual_decisions", ()), "manual_decisions"
+        ),
+        approval_status=data.get(
+            "approval_status", MemoryMergeApprovalStatus.PENDING.value
+        ),
+        reviewer=_optional_string(data.get("reviewer"), "reviewer"),
+        asset_disposition_plan_ref=_optional_string(
+            data.get("asset_disposition_plan_ref"), "asset_disposition_plan_ref"
+        ),
+    )
+
+
 def _source_kind(
     value: MemoryMergeCandidateSourceKind | str,
 ) -> MemoryMergeCandidateSourceKind:
@@ -599,6 +1037,21 @@ def _disposition(value: MemoryMergeDisposition | str) -> MemoryMergeDisposition:
     except ValueError as exc:
         raise OrganizationMemoryMergeError(
             f"Unknown memory merge disposition: {value!r}"
+        ) from exc
+
+
+def _approval_status(
+    value: MemoryMergeApprovalStatus | str,
+) -> MemoryMergeApprovalStatus:
+    try:
+        return (
+            value
+            if isinstance(value, MemoryMergeApprovalStatus)
+            else MemoryMergeApprovalStatus(value)
+        )
+    except ValueError as exc:
+        raise OrganizationMemoryMergeError(
+            f"Unknown memory merge approval status: {value!r}"
         ) from exc
 
 
@@ -653,6 +1106,22 @@ def _string_tuple(value: Any, field_name: str) -> tuple[str, ...]:
     return value
 
 
+def _string_sequence_tuple(value: Any, field_name: str) -> tuple[str, ...]:
+    if not isinstance(value, (list, tuple)) or any(
+        not isinstance(item, str) or not item for item in value
+    ):
+        raise OrganizationMemoryMergeError(
+            f"{field_name} must be a sequence of non-empty strings"
+        )
+    return tuple(value)
+
+
+def _optional_string(value: Any, field_name: str) -> str | None:
+    if value is None:
+        return None
+    return _require_string(value, field_name)
+
+
 def _validate_identifier(value: str, field_name: str) -> str:
     _require_string(value, field_name)
     if value in {".", ".."} or "/" in value or "\\" in value:
@@ -688,6 +1157,44 @@ def _identifier_tuple(value: Any, field_name: str) -> tuple[str, ...]:
         _validate_identifier(item, field_name)
         for item in _string_tuple(value, field_name)
     )
+
+
+def _department_id_tuple(value: Any, field_name: str) -> tuple[str, ...]:
+    values = _string_sequence_tuple(value, field_name)
+    for department_id in values:
+        validate_org_node_id(department_id)
+    if len(values) != len(set(values)):
+        raise OrganizationMemoryMergeError(f"{field_name} must not contain duplicates")
+    return values
+
+
+def _candidate_count_mapping(value: Any) -> Mapping[str, int]:
+    data = _require_mapping(value, "candidate_counts")
+    counts: dict[str, int] = {}
+    for key, count in data.items():
+        _require_string(str(key), "candidate_counts key")
+        if not isinstance(count, int) or count < 0:
+            raise OrganizationMemoryMergeError(
+                "candidate_counts values must be non-negative integers"
+            )
+        counts[str(key)] = count
+    return counts
+
+
+def _report_item_tuple(value: Any, field_name: str) -> tuple[MemoryMergeReportItem, ...]:
+    if not isinstance(value, tuple) or any(
+        not isinstance(item, MemoryMergeReportItem) for item in value
+    ):
+        raise OrganizationMemoryMergeError(
+            f"{field_name} must be a tuple of MemoryMergeReportItem items"
+        )
+    return value
+
+
+def _report_item_sequence(value: Any, field_name: str) -> tuple[MemoryMergeReportItem, ...]:
+    if not isinstance(value, (list, tuple)):
+        raise OrganizationMemoryMergeError(f"{field_name} must be a sequence")
+    return tuple(memory_merge_report_item_from_dict(item) for item in value)
 
 
 def _validate_target_scope(value: str) -> str:
@@ -774,6 +1281,63 @@ def _candidate_source_refs(
     for candidate in candidates:
         refs.extend((candidate.source_ref, *candidate.source_refs))
     return tuple(dict.fromkeys(refs))
+
+
+def _candidate_report_item(
+    candidate: MemoryMergeCandidate,
+    result: MemoryMergeClassificationResult,
+    *,
+    approval_status: MemoryMergeApprovalStatus = MemoryMergeApprovalStatus.NOT_REQUIRED,
+    reviewer: str | None = None,
+) -> MemoryMergeReportItem:
+    return MemoryMergeReportItem(
+        item_id=candidate.candidate_id,
+        summary=candidate.summary,
+        source_refs=result.source_refs,
+        candidate_ids=(candidate.candidate_id,),
+        reasons=result.reasons,
+        sensitivity=result.sensitivity,
+        approval_status=approval_status,
+        reviewer=reviewer,
+    )
+
+
+def _duplicate_group_report_item(group: MemoryDuplicateGroup) -> MemoryMergeReportItem:
+    return MemoryMergeReportItem(
+        item_id=f"duplicate-{_stable_item_digest(group.candidate_ids)}",
+        summary=(
+            f"Duplicate memory candidates require one retained summary: "
+            f"{', '.join(group.candidate_ids)}"
+        ),
+        source_refs=group.source_refs,
+        candidate_ids=group.candidate_ids,
+        reasons=(group.reason,),
+        approval_status=MemoryMergeApprovalStatus.NOT_REQUIRED,
+    )
+
+
+def _conflict_report_item(item: MemoryConflictItem) -> MemoryMergeReportItem:
+    return MemoryMergeReportItem(
+        item_id=f"conflict-{_stable_item_digest((item.source_candidate_id, item.target_candidate_id, item.conflict_field))}",
+        summary=(
+            f"{item.conflict_field} conflict between "
+            f"{item.source_candidate_id} and {item.target_candidate_id}"
+        ),
+        source_refs=item.source_refs,
+        candidate_ids=(item.source_candidate_id, item.target_candidate_id),
+        reasons=(item.reason,),
+        approval_status=MemoryMergeApprovalStatus.PENDING,
+        reviewer=item.suggested_reviewer,
+    )
+
+
+def _stable_item_digest(parts: tuple[str, ...]) -> str:
+    text = "\n".join(parts)
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:12]
+
+
+def _utc_now_text() -> str:
+    return datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
 def _find_conflict_items(

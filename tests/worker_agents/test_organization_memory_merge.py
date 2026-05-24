@@ -11,7 +11,10 @@ from worker_agents.organization_memory_merge import (
     MemoryMergeCandidateSourceKind,
     MemoryMergeClassification,
     MemoryMergeDisposition,
+    MemoryMergeReport,
+    MemoryMergeReportItem,
     OrganizationMemoryMergeError,
+    build_memory_merge_report,
     build_memory_dedup_conflict_report,
     classify_memory_merge_candidate,
     memory_dedup_conflict_report_to_dict,
@@ -20,6 +23,8 @@ from worker_agents.organization_memory_merge import (
     memory_merge_candidate_from_historical_summary,
     memory_merge_candidate_from_private_asset_proposal_input,
     memory_merge_classification_result_to_dict,
+    memory_merge_report_from_dict,
+    memory_merge_report_to_dict,
     validate_memory_merge_candidate_payload,
 )
 from worker_agents.private_assets import (
@@ -431,3 +436,167 @@ def test_stale_candidate_is_reported_for_archive_not_silent_delete():
     assert memory_dedup_conflict_report_to_dict(report)["archive_candidate_ids"] == [
         "stale-policy"
     ]
+
+
+def test_memory_merge_report_counts_and_executor_refs():
+    adopted = MemoryMergeCandidate(
+        candidate_id="safe-standard",
+        source_kind=MemoryMergeCandidateSourceKind.DEPARTMENT_PROPOSAL,
+        source_ref="departments/support/memory/proposals/safe-standard",
+        summary="Use customer impact summaries in release handoffs.",
+        sensitivity=DepartmentMemorySensitivity.LOW,
+        freshness="current",
+        target_scope="department:operations",
+    )
+    archived = MemoryMergeCandidate(
+        candidate_id="old-standard",
+        source_kind=MemoryMergeCandidateSourceKind.DEPARTMENT_PROPOSAL,
+        source_ref="departments/support/memory/proposals/old-standard",
+        summary="Use the retired handoff checklist.",
+        sensitivity=DepartmentMemorySensitivity.LOW,
+        freshness="expired",
+        target_scope="department:operations",
+    )
+    rejected = MemoryMergeCandidate(
+        candidate_id="rejected-standard",
+        source_kind=MemoryMergeCandidateSourceKind.DEPARTMENT_PROPOSAL,
+        source_ref="departments/support/memory/proposals/rejected-standard",
+        summary="Do not retain this obsolete preference.",
+        sensitivity=DepartmentMemorySensitivity.LOW,
+        freshness="current",
+        target_scope="department:operations",
+        explicit_markers=("reject",),
+    )
+
+    report = build_memory_merge_report(
+        (adopted, archived, rejected),
+        source_departments=("support",),
+        target_department="operations",
+        report_id="report-1",
+        created_at="2026-05-25T00:00:00Z",
+        approval_status="not_required",
+        asset_disposition_plan_ref="evolution/proposals/report-1.json",
+    )
+
+    assert report.candidate_counts == {
+        "total": 3,
+        "adopted": 1,
+        "rejected": 1,
+        "archived": 1,
+        "duplicates": 0,
+        "conflicts": 0,
+        "redactions": 0,
+        "manual_decisions": 0,
+    }
+    assert report.has_blockers is False
+    assert report.active_write_plan_candidate_refs == (
+        "departments/support/memory/proposals/safe-standard",
+    )
+    assert report.execution_summary()["asset_disposition_plan_ref"] == (
+        "evolution/proposals/report-1.json"
+    )
+
+
+def test_memory_merge_report_blocks_conflict_and_pending_redaction():
+    restricted = MemoryMergeCandidate(
+        candidate_id="restricted-standard",
+        source_kind=MemoryMergeCandidateSourceKind.DEPARTMENT_PROPOSAL,
+        source_ref="departments/support/memory/proposals/restricted-standard",
+        summary="Restricted operational pattern summary.",
+        sensitivity=DepartmentMemorySensitivity.RESTRICTED,
+        freshness="current",
+        target_scope="department:operations",
+    )
+    conflicting = MemoryMergeCandidate(
+        candidate_id="source-policy",
+        source_kind=MemoryMergeCandidateSourceKind.DEPARTMENT_PROPOSAL,
+        source_ref="departments/support/memory/proposals/source-policy",
+        summary="Release workers may use shell for smoke-test checks.",
+        sensitivity=DepartmentMemorySensitivity.LOW,
+        freshness="current",
+        target_scope="department:operations",
+        policy_type="tool_policy",
+        task_type="release_review",
+        tool_rule="allow:shell",
+    )
+    target = MemoryMergeCandidate(
+        candidate_id="target-policy",
+        source_kind=MemoryMergeCandidateSourceKind.DEPARTMENT_MEMORY,
+        source_ref="departments/operations/memory/target-policy",
+        summary="Release workers must not use shell during smoke-test checks.",
+        sensitivity=DepartmentMemorySensitivity.LOW,
+        freshness="current",
+        target_scope="department:operations",
+        policy_type="tool_policy",
+        task_type="release_review",
+        tool_rule="deny:shell",
+    )
+
+    report = build_memory_merge_report(
+        (restricted, conflicting),
+        source_departments=("support",),
+        target_department="operations",
+        target_candidates=(target,),
+        report_id="report-1",
+        created_at="2026-05-25T00:00:00Z",
+        reviewer="operations_lead",
+    )
+
+    assert report.has_blockers is True
+    assert report.active_write_plan_candidate_refs == ()
+    assert report.candidate_counts["redactions"] == 1
+    assert report.candidate_counts["conflicts"] == 1
+    assert report.redactions[0].reviewer == "operations_lead"
+    assert report.conflicts[0].reviewer == "operations_lead"
+
+
+def test_memory_merge_report_serialization_roundtrip_excludes_raw_sensitive_fields():
+    report = build_memory_merge_report(
+        (
+            MemoryMergeCandidate(
+                candidate_id="safe-standard",
+                source_kind=MemoryMergeCandidateSourceKind.DEPARTMENT_PROPOSAL,
+                source_ref="departments/support/memory/proposals/safe-standard",
+                summary="Use safe, redacted handoff summaries.",
+                sensitivity=DepartmentMemorySensitivity.LOW,
+                freshness="current",
+                target_scope="department:operations",
+            ),
+        ),
+        source_departments=("support",),
+        target_department="operations",
+        report_id="report-1",
+        created_at="2026-05-25T00:00:00Z",
+        approval_status="not_required",
+    )
+
+    encoded = memory_merge_report_to_dict(report)
+    decoded = memory_merge_report_from_dict(encoded)
+
+    assert memory_merge_report_to_dict(decoded) == encoded
+    assert "raw_transcript" not in str(encoded)
+    assert "private_memory_text" not in str(encoded)
+    assert "secret raw value" not in str(encoded)
+
+
+def test_memory_merge_report_rejects_sensitive_serialized_fields():
+    item = MemoryMergeReportItem(
+        item_id="safe-standard",
+        summary="Safe summary.",
+        source_refs=("departments/support/memory/proposals/safe-standard",),
+        candidate_ids=("safe-standard",),
+    )
+    report = MemoryMergeReport(
+        report_id="report-1",
+        source_departments=("support",),
+        target_department="operations",
+        created_at="2026-05-25T00:00:00Z",
+        candidate_counts={"total": 1},
+        adopted=(item,),
+        approval_status="not_required",
+    )
+    encoded = memory_merge_report_to_dict(report)
+    encoded["raw_transcript"] = "secret raw value"
+
+    with pytest.raises(OrganizationMemoryMergeError, match="sensitive field"):
+        memory_merge_report_from_dict(encoded)
