@@ -212,6 +212,19 @@ budget or model policy differences, tool policy differences, and department
 playbook differences are recorded as conflicts with manual decision summaries.
 Conflicts require review but do not themselves execute any resolution.
 
+Memory merge planning is represented by `MemoryMergeReport` in
+`worker_agents.organization_memory_merge`. The report records low-sensitive
+summaries, source references, candidate counts, adopted items, rejected items,
+archived items, duplicate groups, conflicts, redaction items, manual decisions,
+approval status, reviewer, and the proposal asset disposition plan reference.
+It is an audit contract only: it does not copy a source department's complete
+raw memory store into the target department and it does not write active
+department memory. Source private memory is not read by this flow. Private
+memory-derived assets default to archive unless a separate low-sensitive,
+redacted proposal summary is explicitly reviewed for adoption. Pending
+conflicts, redactions, or manual decisions keep executor-facing adopted refs
+empty until review resolves them.
+
 Before a merge can be handed to a future executor, the approved plan must be
 paired with a `DepartmentChatFreezePlan` and an `EvolutionRollbackPlan`.
 The freeze plan closes source department chats to new tasks and records final
