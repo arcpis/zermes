@@ -186,3 +186,33 @@ Rejected, expired, executed, and failed proposals are terminal. The store only
 manages proposal files; accepted or approved proposals still require a later
 controlled executor before any active organization tree, registry lifecycle, or
 department asset write occurs.
+
+## Child Agent Lifecycle Plans
+
+Durable child agents are organization members. Creating an internal WorkerAgent,
+an external Agent, or an organization-only team node must start as a
+`ChildAgentCreatePlan` attached to an evolution proposal. The plan records the
+target parent node, responsibility boundary, permission ceiling, budget limit,
+model policy, profile template or profile reference, and chat policy. It does
+not create a registry record, start runtime, provision an adapter, write
+`active.json`, or bind a group chat.
+
+Temporary subagents are task-local delegations. They do not enter the active
+organization tree, do not receive durable WorkerAgent registry lifecycle state,
+and must not be referenced by durable child-agent plan ids, worker ids, node ids,
+or profile refs.
+
+Deleting a durable child agent uses `ChildAgentDeletePlan`. The plan may record
+active tasks, unfinished approvals, downstream child nodes, running sessions,
+and missing asset or chat disposition references. These are preflight blockers:
+they keep the plan from entering approval or execution, but they remain
+representable so review can show the full cleanup work. Private assets default
+to archive disposition unless a separate transfer proposal is supplied.
+
+After a deletion plan changes the shape of a department, use
+`DepartmentContractionPlan` to describe the resulting collaboration surface.
+Departments with multiple remaining workers can keep a department group chat.
+Single-worker departments keep the node with direct worker chat, or explicitly
+rebind collaboration to the parent group chat. Empty departments with no
+remaining responsibilities require asset and chat disposition refs before they
+can be archived or removed from the active tree.

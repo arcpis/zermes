@@ -134,10 +134,27 @@ def test_delete_plan_reports_execution_blockers(field, value, expected_blocker):
     assert summary.can_execute is False
 
 
-@pytest.mark.parametrize("field", ["asset_disposition_refs", "chat_disposition_refs"])
-def test_delete_plan_rejects_missing_asset_or_chat_disposition_refs(field):
-    with pytest.raises(OrganizationEvolutionError, match=field):
-        child_agent_delete_plan_from_dict(_delete_plan(**{field: []}))
+@pytest.mark.parametrize(
+    ("field", "expected_blocker"),
+    [
+        (
+            "asset_disposition_refs",
+            ChildAgentDeleteBlockingCheck.ASSET_DISPOSITION_MISSING,
+        ),
+        (
+            "chat_disposition_refs",
+            ChildAgentDeleteBlockingCheck.CHAT_DISPOSITION_MISSING,
+        ),
+    ],
+)
+def test_delete_plan_reports_missing_disposition_refs_as_blockers(
+    field, expected_blocker
+):
+    plan = child_agent_delete_plan_from_dict(_delete_plan(**{field: []}))
+
+    assert expected_blocker in plan.check_summary.blocking_checks
+    assert plan.check_summary.can_enter_pending_approval is False
+    assert plan.check_summary.can_execute is False
 
 
 def test_delete_plan_rejects_direct_private_asset_drop():

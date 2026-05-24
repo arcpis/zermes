@@ -561,10 +561,8 @@ class ChildAgentDeletePlan:
             "chat_disposition_refs",
             _relative_ref_tuple(self.chat_disposition_refs, "chat_disposition_refs"),
         )
-        if not self.asset_disposition_refs:
-            raise OrganizationEvolutionError("asset_disposition_refs must not be empty")
-        if not self.chat_disposition_refs:
-            raise OrganizationEvolutionError("chat_disposition_refs must not be empty")
+        # Missing disposition refs are preflight blockers, not schema errors.
+        # Keeping them representable lets proposal review show the full cleanup gap.
         object.__setattr__(
             self,
             "active_task_refs",
