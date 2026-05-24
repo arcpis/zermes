@@ -2,20 +2,26 @@ import pytest
 
 from worker_agents.organization_evolution import (
     CHILD_AGENT_LIFECYCLE_SCHEMA_VERSION,
+    DepartmentChatNewTaskEntryStatus,
     DepartmentMergePreflightBlockingCode,
     DepartmentMergePreflightConflictCode,
     DepartmentMergePlanStatus,
     EvolutionProposalType,
     OrganizationEvolutionError,
     build_department_merge_preflight,
+    department_chat_freeze_plan_from_dict,
+    department_chat_freeze_plan_to_dict,
     department_merge_preflight_report_to_dict,
     dump_department_merge_preflight_report_json,
     department_merge_plan_from_dict,
     department_merge_plan_to_dict,
     department_merge_request_from_dict,
+    evolution_rollback_plan_from_dict,
+    evolution_rollback_plan_to_dict,
     load_department_merge_preflight_report_json,
     organization_evolution_proposal_from_dict,
     validate_department_merge_plan,
+    validate_department_merge_ready_for_execution,
 )
 
 
@@ -72,6 +78,46 @@ def _merge_plan(**overrides):
         "rollback_plan_ref": "merge/rollback.json",
         "proposal_ref": "proposals/merge-platform.json",
         "source_refs": ["merge/request.json"],
+    }
+    data.update(overrides)
+    return data
+
+
+def _chat_freeze_plan(**overrides):
+    data = {
+        "plan_id": "freeze_platform_chat",
+        "schema_version": CHILD_AGENT_LIFECYCLE_SCHEMA_VERSION,
+        "source_department_ids": ["platform"],
+        "source_thread_ids": ["thread_platform_department"],
+        "freeze_reason": "Department merge is entering execution.",
+        "new_task_entry_status": "closed_to_new_tasks",
+        "final_summary_requirement_ref": "merge/chat-final-summary.md",
+        "archive_manifest_refs": ["merge/chat-archive-manifest.json"],
+        "audit_refs": ["merge/chat-audit-log.json"],
+        "source_refs": ["merge/chat-freeze-request.json"],
+    }
+    data.update(overrides)
+    return data
+
+
+def _rollback_plan(**overrides):
+    data = {
+        "plan_id": "rollback_platform_merge",
+        "schema_version": CHILD_AGENT_LIFECYCLE_SCHEMA_VERSION,
+        "proposal_type": "merge_department",
+        "original_parent_child_refs": ["org/platform-parent-children.json"],
+        "original_chat_binding_refs": ["chats/platform-binding.json"],
+        "original_asset_adoption_status": [
+            {
+                "department_id": "platform",
+                "asset_kind": "skill_guidance",
+                "asset_id": "release_playbook",
+                "adoption_status": "source_owned",
+                "source_refs": ["assets/release-playbook.json"],
+            }
+        ],
+        "task_transfer_snapshot_ref": "merge/task-transfer-snapshot.json",
+        "source_refs": ["merge/rollback-request.json"],
     }
     data.update(overrides)
     return data
@@ -194,6 +240,76 @@ def test_department_merge_plan_requires_sub_plan_refs(missing_ref):
 def test_department_merge_plan_rejects_sensitive_payload_fields():
     with pytest.raises(OrganizationEvolutionError, match="sensitive data"):
         validate_department_merge_plan(_merge_plan(raw_stdout="not allowed"))
+
+
+def test_department_chat_freeze_plan_round_trips_without_full_transcript():
+    plan = department_chat_freeze_plan_from_dict(_chat_freeze_plan())
+
+    assert plan.source_thread_ids == ("thread_platform_department",)
+    assert (
+        plan.new_task_entry_status
+        is DepartmentChatNewTaskEntryStatus.CLOSED_TO_NEW_TASKS
+    )
+    assert department_chat_freeze_plan_to_dict(plan) == _chat_freeze_plan()
+
+    with pytest.raises(OrganizationEvolutionError, match="sensitive data"):
+        department_chat_freeze_plan_from_dict(
+            _chat_freeze_plan(raw_transcript="full chat text")
+        )
+
+
+def test_evolution_rollback_plan_captures_merge_restore_references():
+    plan = evolution_rollback_plan_from_dict(_rollback_plan())
+
+    assert plan.original_parent_child_refs == ("org/platform-parent-children.json",)
+    assert plan.original_chat_binding_refs == ("chats/platform-binding.json",)
+    assert plan.original_asset_adoption_status[0].department_id == "platform"
+    assert plan.task_transfer_snapshot_ref == "merge/task-transfer-snapshot.json"
+    assert evolution_rollback_plan_to_dict(plan) == _rollback_plan()
+
+
+@pytest.mark.parametrize(
+    "missing_field",
+    [
+        "original_parent_child_refs",
+        "original_chat_binding_refs",
+        "original_asset_adoption_status",
+    ],
+)
+def test_merge_rollback_plan_requires_restore_inputs(missing_field):
+    data = _rollback_plan()
+    data[missing_field] = []
+
+    with pytest.raises(OrganizationEvolutionError, match="merge rollback plan"):
+        evolution_rollback_plan_from_dict(data)
+
+
+def test_department_merge_ready_for_execution_requires_freeze_plan():
+    with pytest.raises(OrganizationEvolutionError, match="chat_freeze_plan"):
+        validate_department_merge_ready_for_execution(
+            _merge_plan(status="approved"),
+            chat_freeze_plan=None,
+            rollback_plan=_rollback_plan(),
+        )
+
+
+def test_department_merge_ready_for_execution_requires_rollback_plan():
+    with pytest.raises(OrganizationEvolutionError, match="rollback_plan"):
+        validate_department_merge_ready_for_execution(
+            _merge_plan(status="approved"),
+            chat_freeze_plan=_chat_freeze_plan(),
+            rollback_plan=None,
+        )
+
+
+def test_department_merge_ready_for_execution_accepts_freeze_and_rollback():
+    plan = validate_department_merge_ready_for_execution(
+        _merge_plan(status="approved"),
+        chat_freeze_plan=_chat_freeze_plan(),
+        rollback_plan=_rollback_plan(),
+    )
+
+    assert plan.status is DepartmentMergePlanStatus.APPROVED
 
 
 def test_department_merge_preflight_is_ready_without_blockers():

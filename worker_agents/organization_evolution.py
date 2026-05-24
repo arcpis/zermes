@@ -178,6 +178,12 @@ class DepartmentMergePreflightConflictCode(StrEnum):
     DEPARTMENT_PLAYBOOK_CONFLICT = "department_playbook_conflict"
 
 
+class DepartmentChatNewTaskEntryStatus(StrEnum):
+    """Allowed new-task entry state while a source department chat is frozen."""
+
+    CLOSED_TO_NEW_TASKS = "closed_to_new_tasks"
+
+
 class DepartmentContractionMode(StrEnum):
     """Post-deletion organization contraction outcome."""
 
@@ -944,6 +950,187 @@ class DepartmentMergePreflightReport:
 
 
 @dataclass(frozen=True)
+class DepartmentChatFreezePlan:
+    """Non-mutating plan for freezing source department chats during a merge."""
+
+    plan_id: str
+    source_department_ids: tuple[str, ...]
+    source_thread_ids: tuple[str, ...]
+    freeze_reason: str
+    new_task_entry_status: DepartmentChatNewTaskEntryStatus | str
+    final_summary_requirement_ref: str
+    archive_manifest_refs: tuple[str, ...]
+    audit_refs: tuple[str, ...]
+    source_refs: tuple[str, ...] = ()
+    schema_version: int = CHILD_AGENT_LIFECYCLE_SCHEMA_VERSION
+
+    def __post_init__(self) -> None:
+        _validate_schema_version_value(
+            self.schema_version,
+            CHILD_AGENT_LIFECYCLE_SCHEMA_VERSION,
+            "department chat freeze plan",
+        )
+        _validate_identifier(self.plan_id, "plan_id")
+        object.__setattr__(
+            self,
+            "source_department_ids",
+            tuple(
+                _validate_org_node_reference(department_id)
+                for department_id in self.source_department_ids
+            ),
+        )
+        if not self.source_department_ids:
+            raise OrganizationEvolutionError(
+                "source_department_ids must not be empty"
+            )
+        if len(set(self.source_department_ids)) != len(self.source_department_ids):
+            raise OrganizationEvolutionError(
+                "source_department_ids must not contain duplicates"
+            )
+        object.__setattr__(
+            self,
+            "source_thread_ids",
+            _string_tuple(self.source_thread_ids, "source_thread_ids"),
+        )
+        if not self.source_thread_ids:
+            raise OrganizationEvolutionError("source_thread_ids must not be empty")
+        _require_string(self.freeze_reason, "freeze_reason")
+        object.__setattr__(
+            self,
+            "new_task_entry_status",
+            _department_chat_new_task_entry_status(self.new_task_entry_status),
+        )
+        object.__setattr__(
+            self,
+            "final_summary_requirement_ref",
+            _validate_relative_ref(
+                self.final_summary_requirement_ref,
+                "final_summary_requirement_ref",
+            ),
+        )
+        object.__setattr__(
+            self,
+            "archive_manifest_refs",
+            _relative_ref_tuple(self.archive_manifest_refs, "archive_manifest_refs"),
+        )
+        if not self.archive_manifest_refs:
+            raise OrganizationEvolutionError(
+                "archive_manifest_refs must not be empty"
+            )
+        object.__setattr__(
+            self,
+            "audit_refs",
+            _relative_ref_tuple(self.audit_refs, "audit_refs"),
+        )
+        if not self.audit_refs:
+            raise OrganizationEvolutionError("audit_refs must not be empty")
+        object.__setattr__(
+            self,
+            "source_refs",
+            _relative_ref_tuple(self.source_refs, "source_refs"),
+        )
+
+
+@dataclass(frozen=True)
+class OriginalAssetAdoptionStatus:
+    """Original ownership/adoption state needed to reverse a merge plan."""
+
+    department_id: str
+    asset_kind: str
+    asset_id: str
+    adoption_status: str
+    source_refs: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "department_id",
+            _validate_org_node_reference(self.department_id),
+        )
+        _require_string(self.asset_kind, "asset_kind")
+        _require_string(self.asset_id, "asset_id")
+        _require_string(self.adoption_status, "adoption_status")
+        object.__setattr__(
+            self,
+            "source_refs",
+            _relative_ref_tuple(self.source_refs, "source_refs"),
+        )
+
+
+@dataclass(frozen=True)
+class EvolutionRollbackPlan:
+    """Non-mutating rollback inputs captured before executing an evolution plan."""
+
+    plan_id: str
+    proposal_type: EvolutionProposalType | str
+    original_parent_child_refs: tuple[str, ...]
+    original_chat_binding_refs: tuple[str, ...]
+    original_asset_adoption_status: tuple[OriginalAssetAdoptionStatus, ...]
+    task_transfer_snapshot_ref: str
+    source_refs: tuple[str, ...] = ()
+    schema_version: int = CHILD_AGENT_LIFECYCLE_SCHEMA_VERSION
+
+    def __post_init__(self) -> None:
+        _validate_schema_version_value(
+            self.schema_version,
+            CHILD_AGENT_LIFECYCLE_SCHEMA_VERSION,
+            "evolution rollback plan",
+        )
+        _validate_identifier(self.plan_id, "plan_id")
+        object.__setattr__(self, "proposal_type", _proposal_type(self.proposal_type))
+        object.__setattr__(
+            self,
+            "original_parent_child_refs",
+            _relative_ref_tuple(
+                self.original_parent_child_refs,
+                "original_parent_child_refs",
+            ),
+        )
+        object.__setattr__(
+            self,
+            "original_chat_binding_refs",
+            _relative_ref_tuple(
+                self.original_chat_binding_refs,
+                "original_chat_binding_refs",
+            ),
+        )
+        object.__setattr__(
+            self,
+            "original_asset_adoption_status",
+            _original_asset_adoption_status_tuple(
+                self.original_asset_adoption_status,
+                "original_asset_adoption_status",
+            ),
+        )
+        object.__setattr__(
+            self,
+            "task_transfer_snapshot_ref",
+            _validate_relative_ref(
+                self.task_transfer_snapshot_ref,
+                "task_transfer_snapshot_ref",
+            ),
+        )
+        object.__setattr__(
+            self,
+            "source_refs",
+            _relative_ref_tuple(self.source_refs, "source_refs"),
+        )
+        if self.proposal_type is EvolutionProposalType.MERGE_DEPARTMENT:
+            if not self.original_parent_child_refs:
+                raise OrganizationEvolutionError(
+                    "merge rollback plan requires original_parent_child_refs"
+                )
+            if not self.original_chat_binding_refs:
+                raise OrganizationEvolutionError(
+                    "merge rollback plan requires original_chat_binding_refs"
+                )
+            if not self.original_asset_adoption_status:
+                raise OrganizationEvolutionError(
+                    "merge rollback plan requires original_asset_adoption_status"
+                )
+
+
+@dataclass(frozen=True)
 class DepartmentContractionPlan:
     """Plan for parent/child department shape after deleting a child agent.
 
@@ -1394,6 +1581,35 @@ _DEPARTMENT_MERGE_PREFLIGHT_REPORT_FIELDS = {
     "manual_decisions",
     "source_refs",
 }
+_DEPARTMENT_CHAT_FREEZE_PLAN_FIELDS = {
+    "plan_id",
+    "schema_version",
+    "source_department_ids",
+    "source_thread_ids",
+    "freeze_reason",
+    "new_task_entry_status",
+    "final_summary_requirement_ref",
+    "archive_manifest_refs",
+    "audit_refs",
+    "source_refs",
+}
+_ORIGINAL_ASSET_ADOPTION_STATUS_FIELDS = {
+    "department_id",
+    "asset_kind",
+    "asset_id",
+    "adoption_status",
+    "source_refs",
+}
+_EVOLUTION_ROLLBACK_PLAN_FIELDS = {
+    "plan_id",
+    "schema_version",
+    "proposal_type",
+    "original_parent_child_refs",
+    "original_chat_binding_refs",
+    "original_asset_adoption_status",
+    "task_transfer_snapshot_ref",
+    "source_refs",
+}
 _DEPARTMENT_CONTRACTION_PLAN_FIELDS = {
     "plan_id",
     "schema_version",
@@ -1489,6 +1705,30 @@ def validate_department_merge_preflight_report(
         data = report
     _reject_sensitive_payload(data, "department_merge_preflight_report")
     return department_merge_preflight_report_from_dict(data)
+
+
+def validate_department_chat_freeze_plan(
+    plan: DepartmentChatFreezePlan | Mapping[str, Any],
+) -> DepartmentChatFreezePlan:
+    """Return a validated department chat freeze plan."""
+    if isinstance(plan, DepartmentChatFreezePlan):
+        data = department_chat_freeze_plan_to_dict(plan)
+    else:
+        data = plan
+    _reject_sensitive_payload(data, "department_chat_freeze_plan")
+    return department_chat_freeze_plan_from_dict(data)
+
+
+def validate_evolution_rollback_plan(
+    plan: EvolutionRollbackPlan | Mapping[str, Any],
+) -> EvolutionRollbackPlan:
+    """Return a validated non-mutating evolution rollback plan."""
+    if isinstance(plan, EvolutionRollbackPlan):
+        data = evolution_rollback_plan_to_dict(plan)
+    else:
+        data = plan
+    _reject_sensitive_payload(data, "evolution_rollback_plan")
+    return evolution_rollback_plan_from_dict(data)
 
 
 def validate_department_contraction_plan(
@@ -1687,6 +1927,56 @@ def build_department_merge_preflight(
         manual_decisions=manual_decisions,
         source_refs=validated.source_refs,
     )
+
+
+def validate_department_merge_ready_for_execution(
+    plan: DepartmentMergePlan | Mapping[str, Any],
+    *,
+    chat_freeze_plan: DepartmentChatFreezePlan | Mapping[str, Any] | None,
+    rollback_plan: EvolutionRollbackPlan | Mapping[str, Any] | None,
+) -> DepartmentMergePlan:
+    """Validate merge execution prerequisites without mutating runtime state."""
+    validated_plan = (
+        plan
+        if isinstance(plan, DepartmentMergePlan)
+        else validate_department_merge_plan(plan)
+    )
+    if validated_plan.status is not DepartmentMergePlanStatus.APPROVED:
+        raise OrganizationEvolutionError(
+            "department merge plan must be approved before execution"
+        )
+    if chat_freeze_plan is None:
+        raise OrganizationEvolutionError(
+            "chat_freeze_plan is required before department merge execution"
+        )
+    if rollback_plan is None:
+        raise OrganizationEvolutionError(
+            "rollback_plan is required before department merge execution"
+        )
+
+    validated_freeze_plan = validate_department_chat_freeze_plan(chat_freeze_plan)
+    validated_rollback_plan = validate_evolution_rollback_plan(rollback_plan)
+    if set(validated_freeze_plan.source_department_ids) != set(
+        validated_plan.request.source_department_ids
+    ):
+        raise OrganizationEvolutionError(
+            "chat_freeze_plan source_department_ids must match merge sources"
+        )
+    if (
+        validated_freeze_plan.new_task_entry_status
+        is not DepartmentChatNewTaskEntryStatus.CLOSED_TO_NEW_TASKS
+    ):
+        raise OrganizationEvolutionError(
+            "chat_freeze_plan must close new task entry"
+        )
+    if (
+        validated_rollback_plan.proposal_type
+        is not EvolutionProposalType.MERGE_DEPARTMENT
+    ):
+        raise OrganizationEvolutionError(
+            "rollback_plan proposal_type must be merge_department"
+        )
+    return validated_plan
 
 
 def validate_evolution_proposal(
@@ -2534,6 +2824,154 @@ def load_department_merge_preflight_report_json(
     return department_merge_preflight_report_from_dict(data)
 
 
+def department_chat_freeze_plan_to_dict(
+    plan: DepartmentChatFreezePlan,
+) -> dict[str, Any]:
+    return {
+        "plan_id": plan.plan_id,
+        "schema_version": plan.schema_version,
+        "source_department_ids": list(plan.source_department_ids),
+        "source_thread_ids": list(plan.source_thread_ids),
+        "freeze_reason": plan.freeze_reason,
+        "new_task_entry_status": plan.new_task_entry_status.value,
+        "final_summary_requirement_ref": plan.final_summary_requirement_ref,
+        "archive_manifest_refs": list(plan.archive_manifest_refs),
+        "audit_refs": list(plan.audit_refs),
+        "source_refs": list(plan.source_refs),
+    }
+
+
+def department_chat_freeze_plan_from_dict(
+    data: Mapping[str, Any],
+) -> DepartmentChatFreezePlan:
+    data = _require_mapping(data, "department chat freeze plan")
+    _reject_sensitive_payload(data, "department_chat_freeze_plan")
+    _reject_unknown_fields(
+        data,
+        _DEPARTMENT_CHAT_FREEZE_PLAN_FIELDS,
+        "department chat freeze plan",
+    )
+    return DepartmentChatFreezePlan(
+        plan_id=_require_string(data.get("plan_id"), "plan_id"),
+        schema_version=data.get(
+            "schema_version",
+            CHILD_AGENT_LIFECYCLE_SCHEMA_VERSION,
+        ),
+        source_department_ids=_string_tuple(
+            data.get("source_department_ids", ()),
+            "source_department_ids",
+        ),
+        source_thread_ids=_string_tuple(
+            data.get("source_thread_ids", ()),
+            "source_thread_ids",
+        ),
+        freeze_reason=_require_string(data.get("freeze_reason"), "freeze_reason"),
+        new_task_entry_status=_require_string(
+            data.get("new_task_entry_status"),
+            "new_task_entry_status",
+        ),
+        final_summary_requirement_ref=_require_string(
+            data.get("final_summary_requirement_ref"),
+            "final_summary_requirement_ref",
+        ),
+        archive_manifest_refs=_string_tuple(
+            data.get("archive_manifest_refs", ()),
+            "archive_manifest_refs",
+        ),
+        audit_refs=_string_tuple(data.get("audit_refs", ()), "audit_refs"),
+        source_refs=_string_tuple(data.get("source_refs", ()), "source_refs"),
+    )
+
+
+def original_asset_adoption_status_to_dict(
+    status: OriginalAssetAdoptionStatus,
+) -> dict[str, Any]:
+    return {
+        "department_id": status.department_id,
+        "asset_kind": status.asset_kind,
+        "asset_id": status.asset_id,
+        "adoption_status": status.adoption_status,
+        "source_refs": list(status.source_refs),
+    }
+
+
+def original_asset_adoption_status_from_dict(
+    data: Mapping[str, Any],
+) -> OriginalAssetAdoptionStatus:
+    data = _require_mapping(data, "original asset adoption status")
+    _reject_sensitive_payload(data, "original_asset_adoption_status")
+    _reject_unknown_fields(
+        data,
+        _ORIGINAL_ASSET_ADOPTION_STATUS_FIELDS,
+        "original asset adoption status",
+    )
+    return OriginalAssetAdoptionStatus(
+        department_id=_require_string(data.get("department_id"), "department_id"),
+        asset_kind=_require_string(data.get("asset_kind"), "asset_kind"),
+        asset_id=_require_string(data.get("asset_id"), "asset_id"),
+        adoption_status=_require_string(
+            data.get("adoption_status"),
+            "adoption_status",
+        ),
+        source_refs=_string_tuple(data.get("source_refs", ()), "source_refs"),
+    )
+
+
+def evolution_rollback_plan_to_dict(plan: EvolutionRollbackPlan) -> dict[str, Any]:
+    return {
+        "plan_id": plan.plan_id,
+        "schema_version": plan.schema_version,
+        "proposal_type": plan.proposal_type.value,
+        "original_parent_child_refs": list(plan.original_parent_child_refs),
+        "original_chat_binding_refs": list(plan.original_chat_binding_refs),
+        "original_asset_adoption_status": [
+            original_asset_adoption_status_to_dict(status)
+            for status in plan.original_asset_adoption_status
+        ],
+        "task_transfer_snapshot_ref": plan.task_transfer_snapshot_ref,
+        "source_refs": list(plan.source_refs),
+    }
+
+
+def evolution_rollback_plan_from_dict(
+    data: Mapping[str, Any],
+) -> EvolutionRollbackPlan:
+    data = _require_mapping(data, "evolution rollback plan")
+    _reject_sensitive_payload(data, "evolution_rollback_plan")
+    _reject_unknown_fields(
+        data,
+        _EVOLUTION_ROLLBACK_PLAN_FIELDS,
+        "evolution rollback plan",
+    )
+    return EvolutionRollbackPlan(
+        plan_id=_require_string(data.get("plan_id"), "plan_id"),
+        schema_version=data.get(
+            "schema_version",
+            CHILD_AGENT_LIFECYCLE_SCHEMA_VERSION,
+        ),
+        proposal_type=_require_string(data.get("proposal_type"), "proposal_type"),
+        original_parent_child_refs=_string_tuple(
+            data.get("original_parent_child_refs", ()),
+            "original_parent_child_refs",
+        ),
+        original_chat_binding_refs=_string_tuple(
+            data.get("original_chat_binding_refs", ()),
+            "original_chat_binding_refs",
+        ),
+        original_asset_adoption_status=tuple(
+            original_asset_adoption_status_from_dict(
+                _require_mapping(item, "original_asset_adoption_status item")
+            )
+            for item in data.get("original_asset_adoption_status", ())
+        ),
+        task_transfer_snapshot_ref=_require_string(
+            data.get("task_transfer_snapshot_ref"),
+            "task_transfer_snapshot_ref",
+        ),
+        source_refs=_string_tuple(data.get("source_refs", ()), "source_refs"),
+    )
+
+
 def department_contraction_plan_to_dict(
     plan: DepartmentContractionPlan,
 ) -> dict[str, Any]:
@@ -2901,6 +3339,21 @@ def _department_merge_conflict_code(
         ) from exc
 
 
+def _department_chat_new_task_entry_status(
+    value: DepartmentChatNewTaskEntryStatus | str,
+) -> DepartmentChatNewTaskEntryStatus:
+    try:
+        return (
+            value
+            if isinstance(value, DepartmentChatNewTaskEntryStatus)
+            else DepartmentChatNewTaskEntryStatus(value)
+        )
+    except ValueError as exc:
+        raise OrganizationEvolutionError(
+            f"Unknown department chat new task entry status: {value!r}"
+        ) from exc
+
+
 def _department_contraction_mode(
     value: DepartmentContractionMode | str,
 ) -> DepartmentContractionMode:
@@ -3101,6 +3554,20 @@ def _department_merge_conflict_tuple(
     if any(not isinstance(item, DepartmentMergePreflightConflict) for item in result):
         raise OrganizationEvolutionError(
             f"{field_name} must contain DepartmentMergePreflightConflict values"
+        )
+    return result
+
+
+def _original_asset_adoption_status_tuple(
+    value: Any,
+    field_name: str,
+) -> tuple[OriginalAssetAdoptionStatus, ...]:
+    if not isinstance(value, (list, tuple)):
+        raise OrganizationEvolutionError(f"{field_name} must be a list")
+    result = tuple(value)
+    if any(not isinstance(item, OriginalAssetAdoptionStatus) for item in result):
+        raise OrganizationEvolutionError(
+            f"{field_name} must contain OriginalAssetAdoptionStatus values"
         )
     return result
 
