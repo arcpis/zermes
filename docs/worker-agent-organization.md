@@ -187,6 +187,40 @@ manages proposal files; accepted or approved proposals still require a later
 controlled executor before any active organization tree, registry lifecycle, or
 department asset write occurs.
 
+## Department Merge Planning
+
+Department merges are planned by `DepartmentMergeRequest`,
+`DepartmentMergePlan`, and `build_department_merge_preflight()` in
+`worker_agents.organization_evolution`. The planner accepts compact department
+summaries, lifecycle states, task or approval summaries, runtime session
+summaries, policy summaries, and asset disposition references. It does not read
+full transcripts, private memories, raw policy files, or runtime state directly.
+
+The merge request contract supports one or more source departments and exactly
+one target department. The target cannot also be a source, source departments
+must be unique, and each source must have a matching low-sensitivity department
+summary. The plan records references to the task transfer plan, chat freeze
+plan, memory merge report, skill disposition plan, tool disposition plan,
+rollback plan, and optional proposal. These are references only; the planner
+does not transfer tasks, adopt memory, change skill or tool policy bindings, or
+mutate `active.json`.
+
+Preflight blocks approval when source departments still have active high-risk
+tasks, pending approvals, running runtime sessions, invalid lifecycle state, or
+missing asset disposition references. Responsibility overlap, owner mismatch,
+budget or model policy differences, tool policy differences, and department
+playbook differences are recorded as conflicts with manual decision summaries.
+Conflicts require review but do not themselves execute any resolution.
+
+Before a merge can be handed to a future executor, the approved plan must be
+paired with a `DepartmentChatFreezePlan` and an `EvolutionRollbackPlan`.
+The freeze plan closes source department chats to new tasks and records final
+summary, archive manifest, and audit references; it does not close chat threads.
+The rollback plan preserves original parent/child references, chat binding
+references, original asset adoption status, and a task transfer snapshot
+reference. Actual execution still depends on dedicated memory merge,
+skill/tool disposition, chat, and organization executor components.
+
 ## Child Agent Lifecycle Plans
 
 Durable child agents are organization members. Creating an internal WorkerAgent,

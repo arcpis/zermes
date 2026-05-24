@@ -1,5 +1,6 @@
 import pytest
 
+import worker_agents
 from worker_agents.organization_evolution import (
     CHILD_AGENT_LIFECYCLE_SCHEMA_VERSION,
     DepartmentChatNewTaskEntryStatus,
@@ -510,3 +511,21 @@ def test_department_merge_preflight_report_serialization_is_stable():
         "manual_decisions": [],
         "source_refs": ["merge/request.json"],
     }
+
+
+def test_department_merge_planner_public_exports_cover_preflight_contract():
+    report = worker_agents.build_department_merge_preflight(
+        _merge_plan(),
+        department_lifecycle_states={
+            "platform": "active",
+            "engineering": "active",
+        },
+        asset_disposition_plan_refs={"platform": "merge/assets/platform.json"},
+    )
+
+    loaded = worker_agents.validate_department_merge_preflight_report(
+        worker_agents.department_merge_preflight_report_to_dict(report)
+    )
+
+    assert loaded.status is worker_agents.DepartmentMergePlanStatus.READY_FOR_APPROVAL
+    assert loaded.blocking_items == ()
