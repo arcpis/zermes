@@ -39,6 +39,17 @@ from .storage.safe_paths import validate_single_path_segment
 
 
 EVOLUTION_EXECUTION_SCHEMA_VERSION = 1
+SENSITIVE_EXECUTION_AUDIT_FIELDS = frozenset(
+    {
+        "credential",
+        "credentials",
+        "private_memory_text",
+        "raw_stderr",
+        "raw_stdout",
+        "raw_transcript",
+        "secret",
+    }
+)
 
 
 class EvolutionExecutionStatus(StrEnum):
@@ -119,6 +130,99 @@ class EvolutionExecutionState:
             _require_string(self.failure_reason, "failure_reason")
         if not isinstance(self.manual_recovery_hint, str):
             raise OrganizationEvolutionError("manual_recovery_hint must be a string")
+
+
+@dataclass(frozen=True)
+class EvolutionExecutionAuditRecord:
+    """Low-sensitivity final audit record for an evolution execution."""
+
+    change_id: str
+    proposal_id: str
+    execution_id: str
+    status: EvolutionExecutionStatus | str
+    initiator: str
+    approvers: tuple[str, ...]
+    affected_node_ids: tuple[str, ...]
+    affected_worker_ids: tuple[str, ...]
+    before_summary: str
+    after_summary: str
+    created_at: str
+    memory_merge_report_ref: str | None = None
+    skill_tool_disposition_report_ref: str | None = None
+    chat_disposition_report_ref: str | None = None
+    asset_disposition_refs: tuple[str, ...] = ()
+    chat_disposition_refs: tuple[str, ...] = ()
+    completed_steps: tuple[EvolutionExecutionStep, ...] = ()
+    failed_step: EvolutionExecutionStep | str | None = None
+    failure_reason: str | None = None
+    manual_recovery_hint: str = ""
+    rollback_summary_ref: str = ""
+    schema_version: int = EVOLUTION_EXECUTION_SCHEMA_VERSION
+
+    def __post_init__(self) -> None:
+        _validate_schema_version(self.schema_version)
+        _safe_id(self.change_id, "change id")
+        _safe_id(self.proposal_id, "proposal id")
+        _safe_id(self.execution_id, "execution id")
+        object.__setattr__(self, "status", _execution_status(self.status))
+        if self.status not in {
+            EvolutionExecutionStatus.COMPLETED,
+            EvolutionExecutionStatus.FAILED,
+        }:
+            raise OrganizationEvolutionError(
+                "audit record status must be completed or failed"
+            )
+        _require_string(self.initiator, "initiator")
+        object.__setattr__(self, "approvers", _string_tuple(self.approvers, "approvers"))
+        object.__setattr__(
+            self,
+            "affected_node_ids",
+            _unique_org_node_ids(self.affected_node_ids, "affected_node_ids"),
+        )
+        object.__setattr__(
+            self,
+            "affected_worker_ids",
+            _unique_worker_ids(self.affected_worker_ids, "affected_worker_ids"),
+        )
+        _require_string(self.before_summary, "before_summary")
+        _require_string(self.after_summary, "after_summary")
+        _require_string(self.created_at, "created_at")
+        for field_name in (
+            "memory_merge_report_ref",
+            "skill_tool_disposition_report_ref",
+            "chat_disposition_report_ref",
+        ):
+            value = getattr(self, field_name)
+            if value is not None:
+                object.__setattr__(self, field_name, _safe_relative_ref(value, field_name))
+        object.__setattr__(
+            self,
+            "asset_disposition_refs",
+            _relative_ref_tuple(self.asset_disposition_refs, "asset_disposition_refs"),
+        )
+        object.__setattr__(
+            self,
+            "chat_disposition_refs",
+            _relative_ref_tuple(self.chat_disposition_refs, "chat_disposition_refs"),
+        )
+        object.__setattr__(
+            self,
+            "completed_steps",
+            tuple(_execution_step(step) for step in self.completed_steps),
+        )
+        if self.failed_step is not None:
+            object.__setattr__(self, "failed_step", _execution_step(self.failed_step))
+        if self.failure_reason is not None:
+            _require_string(self.failure_reason, "failure_reason")
+        if not isinstance(self.manual_recovery_hint, str):
+            raise OrganizationEvolutionError("manual_recovery_hint must be a string")
+        if self.rollback_summary_ref:
+            object.__setattr__(
+                self,
+                "rollback_summary_ref",
+                _safe_relative_ref(self.rollback_summary_ref, "rollback_summary_ref"),
+            )
+        _reject_sensitive_payload(evolution_execution_audit_record_to_dict(self), "audit")
 
 
 @dataclass(frozen=True)
@@ -227,8 +331,13 @@ class EvolutionExecutionStore:
     def asset_disposition_marker_path(self) -> Path:
         return self.root / "asset-disposition-markers.json"
 
+    @property
+    def audit_history_dir(self) -> Path:
+        return self.root / "history" / "evolution-executions"
+
     def initialize(self) -> Path:
         self.executions_dir.mkdir(parents=True, exist_ok=True)
+        self.audit_history_dir.mkdir(parents=True, exist_ok=True)
         return self.root
 
     def execution_path(self, execution_id: str) -> Path:
@@ -315,6 +424,66 @@ class EvolutionExecutionStore:
             validate_org_node_id(node_id): _require_string(marker, "asset marker")
             for node_id, marker in markers.items()
         }
+
+    def audit_record_path(self, change_id: str) -> Path:
+        safe_id = _safe_id(change_id, "change id")
+        return self.audit_history_dir / f"{safe_id}.json"
+
+    def save_audit_record(self, record: EvolutionExecutionAuditRecord) -> Path:
+        self.initialize()
+        path = self.audit_record_path(record.change_id)
+        atomic_json_write(path, evolution_execution_audit_record_to_dict(record))
+        return path
+
+    def load_audit_record(self, change_id: str) -> EvolutionExecutionAuditRecord:
+        path = self.audit_record_path(change_id)
+        if not path.exists():
+            raise OrganizationEvolutionError(
+                f"Evolution execution audit does not exist: {change_id!r}"
+            )
+        return evolution_execution_audit_record_from_dict(
+            _load_json_object(path, "evolution execution audit")
+        )
+
+    def list_audit_records(self) -> list[EvolutionExecutionAuditRecord]:
+        if not self.audit_history_dir.exists():
+            return []
+        return sorted(
+            (
+                evolution_execution_audit_record_from_dict(
+                    _load_json_object(path, "evolution execution audit")
+                )
+                for path in self.audit_history_dir.glob("*.json")
+            ),
+            key=lambda record: (record.created_at, record.change_id),
+        )
+
+    def find_audit_records(
+        self,
+        *,
+        proposal_id: str | None = None,
+        affected_node_id: str | None = None,
+    ) -> list[EvolutionExecutionAuditRecord]:
+        expected_proposal_id = (
+            _safe_id(proposal_id, "proposal id") if proposal_id is not None else None
+        )
+        expected_node_id = (
+            validate_org_node_id(affected_node_id)
+            if affected_node_id is not None
+            else None
+        )
+        return [
+            record
+            for record in self.list_audit_records()
+            if (
+                expected_proposal_id is None
+                or record.proposal_id == expected_proposal_id
+            )
+            and (
+                expected_node_id is None
+                or expected_node_id in record.affected_node_ids
+            )
+        ]
 
 
 def begin_evolution_execution(
@@ -443,6 +612,69 @@ def apply_approved_evolution_plan(
         raise OrganizationEvolutionError(str(exc)) from exc
 
 
+def finalize_evolution_execution(
+    state: EvolutionExecutionState,
+    *,
+    proposal: OrganizationEvolutionProposal,
+    execution_store: EvolutionExecutionStore,
+    created_at: str,
+    approvers: tuple[str, ...],
+    after_summary: str | None = None,
+    memory_merge_report_ref: str | None = None,
+    skill_tool_disposition_report_ref: str | None = None,
+    chat_disposition_report_ref: str | None = None,
+    change_id: str | None = None,
+) -> tuple[EvolutionExecutionState, EvolutionExecutionAuditRecord]:
+    """Write the final audit record before changing execution terminal state."""
+
+    validated_proposal = validate_evolution_proposal(proposal)
+    if validated_proposal.proposal_id != state.proposal_id:
+        raise OrganizationEvolutionError("audit proposal does not match execution")
+    audit_status = (
+        EvolutionExecutionStatus.COMPLETED
+        if state.status is EvolutionExecutionStatus.RUNNING
+        else EvolutionExecutionStatus.FAILED
+    )
+    record = EvolutionExecutionAuditRecord(
+        change_id=change_id or f"change_{state.execution_id}",
+        proposal_id=validated_proposal.proposal_id,
+        execution_id=state.execution_id,
+        status=audit_status,
+        initiator=validated_proposal.initiator.initiator_id,
+        approvers=approvers,
+        affected_node_ids=validated_proposal.target_node_ids,
+        affected_worker_ids=validated_proposal.affected_worker_ids,
+        before_summary=validated_proposal.before_summary,
+        after_summary=after_summary or validated_proposal.after_summary,
+        created_at=created_at,
+        memory_merge_report_ref=memory_merge_report_ref,
+        skill_tool_disposition_report_ref=skill_tool_disposition_report_ref,
+        chat_disposition_report_ref=chat_disposition_report_ref,
+        asset_disposition_refs=validated_proposal.asset_disposition_refs,
+        chat_disposition_refs=validated_proposal.chat_disposition_refs,
+        completed_steps=state.completed_steps,
+        failed_step=state.failed_step,
+        failure_reason=state.failure_reason,
+        manual_recovery_hint=state.manual_recovery_hint,
+        rollback_summary_ref=validated_proposal.rollback_summary_ref,
+    )
+    execution_store.save_audit_record(record)
+    if audit_status is EvolutionExecutionStatus.COMPLETED:
+        updated_state = mark_execution_step_completed(
+            state,
+            EvolutionExecutionStep.AUDIT_WRITE,
+            updated_at=created_at,
+        )
+        updated_state = replace(
+            updated_state,
+            status=EvolutionExecutionStatus.COMPLETED,
+            updated_at=created_at,
+        )
+        execution_store.save_state(updated_state)
+        return updated_state, record
+    return state, record
+
+
 def mark_execution_step_completed(
     state: EvolutionExecutionState,
     step: EvolutionExecutionStep | str,
@@ -495,6 +727,30 @@ _EXECUTION_STATE_FIELDS = {
     "failure_reason",
     "manual_recovery_hint",
 }
+_AUDIT_RECORD_FIELDS = {
+    "schema_version",
+    "change_id",
+    "proposal_id",
+    "execution_id",
+    "status",
+    "initiator",
+    "approvers",
+    "affected_node_ids",
+    "affected_worker_ids",
+    "before_summary",
+    "after_summary",
+    "created_at",
+    "memory_merge_report_ref",
+    "skill_tool_disposition_report_ref",
+    "chat_disposition_report_ref",
+    "asset_disposition_refs",
+    "chat_disposition_refs",
+    "completed_steps",
+    "failed_step",
+    "failure_reason",
+    "manual_recovery_hint",
+    "rollback_summary_ref",
+}
 
 
 def evolution_execution_state_to_dict(
@@ -545,6 +801,88 @@ def evolution_execution_state_from_dict(
         failure_reason=_optional_string(data.get("failure_reason"), "failure_reason"),
         manual_recovery_hint=_string_value(
             data.get("manual_recovery_hint", ""), "manual_recovery_hint"
+        ),
+    )
+
+
+def evolution_execution_audit_record_to_dict(
+    record: EvolutionExecutionAuditRecord,
+) -> dict[str, Any]:
+    return {
+        "schema_version": record.schema_version,
+        "change_id": record.change_id,
+        "proposal_id": record.proposal_id,
+        "execution_id": record.execution_id,
+        "status": record.status.value,
+        "initiator": record.initiator,
+        "approvers": list(record.approvers),
+        "affected_node_ids": list(record.affected_node_ids),
+        "affected_worker_ids": list(record.affected_worker_ids),
+        "before_summary": record.before_summary,
+        "after_summary": record.after_summary,
+        "created_at": record.created_at,
+        "memory_merge_report_ref": record.memory_merge_report_ref,
+        "skill_tool_disposition_report_ref": record.skill_tool_disposition_report_ref,
+        "chat_disposition_report_ref": record.chat_disposition_report_ref,
+        "asset_disposition_refs": list(record.asset_disposition_refs),
+        "chat_disposition_refs": list(record.chat_disposition_refs),
+        "completed_steps": [step.value for step in record.completed_steps],
+        "failed_step": record.failed_step.value if record.failed_step else None,
+        "failure_reason": record.failure_reason,
+        "manual_recovery_hint": record.manual_recovery_hint,
+        "rollback_summary_ref": record.rollback_summary_ref,
+    }
+
+
+def evolution_execution_audit_record_from_dict(
+    data: Mapping[str, Any],
+) -> EvolutionExecutionAuditRecord:
+    data = _require_mapping(data, "evolution execution audit")
+    _reject_sensitive_payload(data, "audit")
+    _reject_unknown_fields(data, _AUDIT_RECORD_FIELDS, "evolution execution audit")
+    return EvolutionExecutionAuditRecord(
+        schema_version=data.get("schema_version", EVOLUTION_EXECUTION_SCHEMA_VERSION),
+        change_id=_require_string(data.get("change_id"), "change_id"),
+        proposal_id=_require_string(data.get("proposal_id"), "proposal_id"),
+        execution_id=_require_string(data.get("execution_id"), "execution_id"),
+        status=_require_string(data.get("status"), "status"),
+        initiator=_require_string(data.get("initiator"), "initiator"),
+        approvers=_string_tuple(data.get("approvers", ()), "approvers"),
+        affected_node_ids=_string_tuple(
+            data.get("affected_node_ids", ()), "affected_node_ids"
+        ),
+        affected_worker_ids=_string_tuple(
+            data.get("affected_worker_ids", ()), "affected_worker_ids"
+        ),
+        before_summary=_require_string(data.get("before_summary"), "before_summary"),
+        after_summary=_require_string(data.get("after_summary"), "after_summary"),
+        created_at=_require_string(data.get("created_at"), "created_at"),
+        memory_merge_report_ref=_optional_string(
+            data.get("memory_merge_report_ref"), "memory_merge_report_ref"
+        ),
+        skill_tool_disposition_report_ref=_optional_string(
+            data.get("skill_tool_disposition_report_ref"),
+            "skill_tool_disposition_report_ref",
+        ),
+        chat_disposition_report_ref=_optional_string(
+            data.get("chat_disposition_report_ref"), "chat_disposition_report_ref"
+        ),
+        asset_disposition_refs=_string_tuple(
+            data.get("asset_disposition_refs", ()), "asset_disposition_refs"
+        ),
+        chat_disposition_refs=_string_tuple(
+            data.get("chat_disposition_refs", ()), "chat_disposition_refs"
+        ),
+        completed_steps=_string_tuple(
+            data.get("completed_steps", ()), "completed_steps"
+        ),
+        failed_step=_optional_string(data.get("failed_step"), "failed_step"),
+        failure_reason=_optional_string(data.get("failure_reason"), "failure_reason"),
+        manual_recovery_hint=_string_value(
+            data.get("manual_recovery_hint", ""), "manual_recovery_hint"
+        ),
+        rollback_summary_ref=_string_value(
+            data.get("rollback_summary_ref", ""), "rollback_summary_ref"
         ),
     )
 
@@ -879,6 +1217,29 @@ def _safe_id(value: str, field_name: str) -> str:
         raise OrganizationEvolutionError(str(exc)) from exc
 
 
+def _safe_relative_ref(value: str, field_name: str) -> str:
+    from pathlib import PurePosixPath, PureWindowsPath
+
+    _require_string(value, field_name)
+    posix = PurePosixPath(value)
+    windows = PureWindowsPath(value)
+    if (
+        posix.is_absolute()
+        or windows.is_absolute()
+        or ".." in posix.parts
+        or ".." in windows.parts
+    ):
+        raise OrganizationEvolutionError(f"{field_name} must be a relative reference")
+    return value
+
+
+def _relative_ref_tuple(value: Any, field_name: str) -> tuple[str, ...]:
+    return tuple(
+        _safe_relative_ref(item, field_name)
+        for item in _string_tuple(value, field_name)
+    )
+
+
 def _validate_schema_version(value: int) -> None:
     if value != EVOLUTION_EXECUTION_SCHEMA_VERSION:
         raise OrganizationEvolutionError(
@@ -934,3 +1295,20 @@ def _reject_unknown_fields(
     if unknown_fields:
         joined = ", ".join(unknown_fields)
         raise OrganizationEvolutionError(f"{field_name} has unknown fields: {joined}")
+
+
+def _reject_sensitive_payload(value: Any, path: str) -> None:
+    if isinstance(value, Mapping):
+        for key, item in value.items():
+            key_text = str(key)
+            if key_text.lower() in SENSITIVE_EXECUTION_AUDIT_FIELDS:
+                raise OrganizationEvolutionError(f"{path}.{key_text} contains sensitive data")
+            _reject_sensitive_payload(item, f"{path}.{key_text}")
+    elif isinstance(value, (list, tuple)):
+        for index, item in enumerate(value):
+            _reject_sensitive_payload(item, f"{path}[{index}]")
+    elif isinstance(value, str):
+        lowered = value.lower()
+        for marker in SENSITIVE_EXECUTION_AUDIT_FIELDS:
+            if marker in lowered:
+                raise OrganizationEvolutionError(f"{path} contains sensitive data")

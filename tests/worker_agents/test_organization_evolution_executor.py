@@ -17,14 +17,17 @@ from worker_agents.organization import (
 from worker_agents.organization_evolution_executor import (
     ControlledEvolutionOperation,
     ControlledEvolutionPlan,
+    EvolutionExecutionAuditRecord,
     EvolutionExecutionState,
     EvolutionExecutionStatus,
     EvolutionExecutionStep,
     EvolutionExecutionStore,
     apply_approved_evolution_plan,
     begin_evolution_execution,
+    evolution_execution_audit_record_from_dict,
     evolution_execution_state_from_dict,
     evolution_execution_state_to_dict,
+    finalize_evolution_execution,
     mark_execution_failed,
     mark_execution_step_completed,
 )
@@ -571,3 +574,177 @@ def test_partial_failure_preserves_completed_steps(tmp_path):
         EvolutionExecutionStep.REGISTRY_LIFECYCLE_UPDATE,
     )
     assert failed_state.failed_step is EvolutionExecutionStep.ORGANIZATION_TREE_UPDATE
+
+
+def test_finalize_success_writes_completed_audit_and_marks_completed(tmp_path):
+    execution_store = _store(tmp_path)
+    proposal = _proposal()
+    state = EvolutionExecutionState(
+        execution_id="execution_success",
+        proposal_id=proposal.proposal_id,
+        status=EvolutionExecutionStatus.RUNNING,
+        actor="executor",
+        started_at=NOW,
+        updated_at=NOW,
+        locked_org_node_ids=proposal.target_node_ids,
+        locked_worker_ids=proposal.affected_worker_ids,
+        completed_steps=(
+            EvolutionExecutionStep.REGISTRY_PRECHECK,
+            EvolutionExecutionStep.REGISTRY_LIFECYCLE_UPDATE,
+            EvolutionExecutionStep.ORGANIZATION_TREE_UPDATE,
+            EvolutionExecutionStep.CHAT_BINDING_UPDATE,
+            EvolutionExecutionStep.ASSET_DISPOSITION_UPDATE,
+        ),
+    )
+    execution_store.save_state(state)
+
+    completed_state, audit = finalize_evolution_execution(
+        state,
+        proposal=proposal,
+        execution_store=execution_store,
+        created_at="2026-05-26T00:10:00Z",
+        approvers=("policy",),
+        memory_merge_report_ref="memory/merge-report.json",
+        skill_tool_disposition_report_ref="assets/disposition-report.json",
+        chat_disposition_report_ref="chats/disposition-report.json",
+        change_id="change_success",
+    )
+
+    assert completed_state.status is EvolutionExecutionStatus.COMPLETED
+    assert EvolutionExecutionStep.AUDIT_WRITE in completed_state.completed_steps
+    assert audit.status is EvolutionExecutionStatus.COMPLETED
+    assert audit.initiator == "zermes_main_agent"
+    assert audit.approvers == ("policy",)
+    assert execution_store.load_audit_record("change_success") == audit
+
+
+def test_finalize_failure_writes_failed_audit_with_recovery_hint(tmp_path):
+    execution_store = _store(tmp_path)
+    proposal = _proposal()
+    failed_state = mark_execution_failed(
+        EvolutionExecutionState(
+            execution_id="execution_failed",
+            proposal_id=proposal.proposal_id,
+            status=EvolutionExecutionStatus.RUNNING,
+            actor="executor",
+            started_at=NOW,
+            updated_at=NOW,
+            locked_org_node_ids=proposal.target_node_ids,
+            locked_worker_ids=proposal.affected_worker_ids,
+            completed_steps=(EvolutionExecutionStep.REGISTRY_PRECHECK,),
+        ),
+        EvolutionExecutionStep.ORGANIZATION_TREE_UPDATE,
+        reason="active tree changed",
+        manual_recovery_hint="Review active tree before retry.",
+        updated_at="2026-05-26T00:05:00Z",
+    )
+
+    returned_state, audit = finalize_evolution_execution(
+        failed_state,
+        proposal=proposal,
+        execution_store=execution_store,
+        created_at="2026-05-26T00:10:00Z",
+        approvers=("policy",),
+        change_id="change_failed",
+    )
+
+    assert returned_state == failed_state
+    assert audit.status is EvolutionExecutionStatus.FAILED
+    assert audit.failed_step is EvolutionExecutionStep.ORGANIZATION_TREE_UPDATE
+    assert audit.failure_reason == "active tree changed"
+    assert audit.manual_recovery_hint == "Review active tree before retry."
+
+
+def test_audit_records_reject_sensitive_fields():
+    with pytest.raises(OrganizationEvolutionError, match="sensitive data"):
+        evolution_execution_audit_record_from_dict(
+            {
+                "schema_version": 1,
+                "change_id": "change_bad",
+                "proposal_id": "proposal_001",
+                "execution_id": "execution_001",
+                "status": "completed",
+                "initiator": "zermes_main_agent",
+                "approvers": ["policy"],
+                "affected_node_ids": ["platform"],
+                "affected_worker_ids": ["platform_worker"],
+                "before_summary": "Before.",
+                "after_summary": "Contains raw_transcript text.",
+                "created_at": NOW,
+                "rollback_summary_ref": "rollback/ref.md",
+            }
+        )
+
+
+def test_audit_records_can_query_by_proposal_and_node(tmp_path):
+    execution_store = _store(tmp_path)
+    first = EvolutionExecutionAuditRecord(
+        change_id="change_one",
+        proposal_id="proposal_001",
+        execution_id="execution_one",
+        status=EvolutionExecutionStatus.COMPLETED,
+        initiator="zermes_main_agent",
+        approvers=("policy",),
+        affected_node_ids=("platform",),
+        affected_worker_ids=("platform_worker",),
+        before_summary="Before one.",
+        after_summary="After one.",
+        created_at="2026-05-26T00:01:00Z",
+        rollback_summary_ref="rollback/one.md",
+    )
+    second = EvolutionExecutionAuditRecord(
+        change_id="change_two",
+        proposal_id="proposal_002",
+        execution_id="execution_two",
+        status=EvolutionExecutionStatus.FAILED,
+        initiator="zermes_main_agent",
+        approvers=("policy",),
+        affected_node_ids=("design",),
+        affected_worker_ids=(),
+        before_summary="Before two.",
+        after_summary="After two.",
+        created_at="2026-05-26T00:02:00Z",
+        failed_step=EvolutionExecutionStep.REGISTRY_PRECHECK,
+        failure_reason="registry changed",
+        manual_recovery_hint="Review registry.",
+        rollback_summary_ref="rollback/two.md",
+    )
+    execution_store.save_audit_record(first)
+    execution_store.save_audit_record(second)
+
+    assert execution_store.find_audit_records(proposal_id="proposal_001") == [first]
+    assert execution_store.find_audit_records(affected_node_id="design") == [second]
+
+
+def test_audit_write_failure_does_not_mark_execution_completed(tmp_path, monkeypatch):
+    execution_store = _store(tmp_path)
+    proposal = _proposal()
+    state = EvolutionExecutionState(
+        execution_id="execution_audit_failure",
+        proposal_id=proposal.proposal_id,
+        status=EvolutionExecutionStatus.RUNNING,
+        actor="executor",
+        started_at=NOW,
+        updated_at=NOW,
+        locked_org_node_ids=proposal.target_node_ids,
+        locked_worker_ids=proposal.affected_worker_ids,
+        completed_steps=(EvolutionExecutionStep.ASSET_DISPOSITION_UPDATE,),
+    )
+    execution_store.save_state(state)
+
+    def fail_save(_record):
+        raise OrganizationEvolutionError("audit storage unavailable")
+
+    monkeypatch.setattr(execution_store, "save_audit_record", fail_save)
+
+    with pytest.raises(OrganizationEvolutionError, match="audit storage unavailable"):
+        finalize_evolution_execution(
+            state,
+            proposal=proposal,
+            execution_store=execution_store,
+            created_at="2026-05-26T00:10:00Z",
+            approvers=("policy",),
+            change_id="change_failed_write",
+        )
+
+    assert execution_store.load_state("execution_audit_failure").status is EvolutionExecutionStatus.RUNNING
