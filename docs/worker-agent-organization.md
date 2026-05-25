@@ -187,6 +187,60 @@ manages proposal files; accepted or approved proposals still require a later
 controlled executor before any active organization tree, registry lifecycle, or
 department asset write occurs.
 
+## Evolution Execution
+
+Approved organization changes are executed through
+`worker_agents.organization_evolution_executor`. This executor is the controlled
+write boundary for active organization tree updates, WorkerAgent registry
+lifecycle changes, chat binding status markers, asset disposition markers, and
+execution audit records. It is not a generic organization tree patch runner.
+
+`begin_evolution_execution()` only starts an execution for an approved proposal
+with no blocking flags and a non-expired plan. The execution state records the
+proposal id, actor, locked organization node ids, locked worker ids, completed
+steps, failed step, failure reason, and manual recovery hint. Locks are stored
+under profile-home organization storage, so tests and profiles use the same
+profile-safe path rules as the rest of worker-agent durable storage.
+
+`apply_approved_evolution_plan()` accepts a `ControlledEvolutionPlan`, not an
+arbitrary patch. The plan must stay inside the proposal's target nodes and
+affected workers. Before writing, the executor reloads the active organization
+tree and registry and checks the expected tree revision. It then records each
+completed step after registry precheck, registry lifecycle update, organization
+tree update, chat binding update, and asset disposition update. Revision
+mismatches or out-of-scope writes stop execution and leave a recoverable failed
+state with the last completed step.
+
+`finalize_evolution_execution()` writes an `EvolutionExecutionAuditRecord`
+before marking a successful execution completed. If audit persistence fails,
+the execution is not marked completed. Failed executions can also produce a
+failed audit record with the completed steps, failed step, failure reason, and
+manual recovery hint. The audit record stores only summaries and references:
+proposal id, execution id, initiator, approvers, affected nodes and workers,
+before/after summaries, disposition report refs, chat refs, asset refs, rollback
+summary ref, and terminal status. Raw transcripts, credentials, stdout/stderr,
+secrets, and private memory text are rejected.
+
+Execution records are stored under:
+
+```text
+<zermes_home>/worker_agents/organization/
+  executions/
+    <execution_id>.json
+  execution-locks.json
+  chat-binding-status.json
+  asset-disposition-markers.json
+  history/
+    evolution-executions/
+      <change_id>.json
+```
+
+Failures are intentionally not rolled back automatically. Operators should use
+the failed execution state and final audit record to inspect completed steps,
+active organization state, registry lifecycle state, chat status markers, and
+asset disposition markers before deciding whether to repair, retry, or supersede
+the proposal.
+
 ## Department Merge Planning
 
 Department merges are planned by `DepartmentMergeRequest`,
