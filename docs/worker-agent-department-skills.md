@@ -41,6 +41,20 @@ request changes, and expire update proposal state without writing active records
 Department defaults never modify worker profiles and never grant tools, workspace
 paths, budget, or external adapter access.
 
+## Organization Changes
+
+Department deletion and merge flows use `SkillDispositionPlan` before any
+accepted skill binding can be considered for the target department. The plan
+classifies source bindings as already present, adoption candidates, review
+required, not applicable, missing dependency, or referencing unavailable tools.
+Only adoption candidates become proposal refs; they are not written to active
+bindings.
+
+Private skill experience is handled separately. It can only become a proposal
+input after redaction and personalization removal. Rejected, blocked, missing,
+or unavailable-tool items stay in the disposition audit and are not copied into
+department active assets.
+
 ## Inheritance
 
 Only `inheritable_guidance` and `organization_guidance` can be inherited by child

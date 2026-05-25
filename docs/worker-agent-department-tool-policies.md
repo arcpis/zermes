@@ -80,6 +80,21 @@ Approval requests do not approve anything by themselves and do not execute tools
 `approved_tool_policy_refs_from_decisions` only returns refs for matching,
 approved decisions with the same profile snapshot hash.
 
+## Organization Changes
+
+Department deletion and merge flows use `ToolPolicyDispositionPlan` before any
+tool policy item can be considered for the target department. Deny rules,
+approval rules, and safe low-risk templates may become conservative candidates.
+New allowed tools, workspace permissions, high-risk tools, budget or model
+capabilities, and external adapter capabilities are not silently migrated.
+
+`review_disposition_permissions` cross-checks disposition candidates against the
+target department policy, worker permission snapshot, optional parent policy,
+and governance policy. Profile denials and parent or governance denials block
+adoption. Workspace, budget, model, high-risk, and adapter changes require
+explicit approval or adapter review. Rejected or blocked items remain audit
+records and never enter active department policy.
+
 ## Boundaries
 
 This module deliberately avoids broad integration:

@@ -225,6 +225,16 @@ redacted proposal summary is explicitly reviewed for adoption. Pending
 conflicts, redactions, or manual decisions keep executor-facing adopted refs
 empty until review resolves them.
 
+Skill and tool disposition planning is represented by
+`worker_agents.organization_asset_disposition`. These plans classify source
+department skill bindings, private skill experience, and tool policy records
+before merge execution. They do not install skills, copy active bindings, grant
+tools, expand workspace permissions, raise budgets, change worker profiles, or
+approve external adapter access. Missing skill dependencies, unavailable tools,
+profile denials, parent policy denials, governance denials, and high-risk
+approval gaps stay blocked or review-only. Only reviewed candidate refs can be
+passed forward to the normal department skill or tool proposal flow.
+
 Before a merge can be handed to a future executor, the approved plan must be
 paired with a `DepartmentChatFreezePlan` and an `EvolutionRollbackPlan`.
 The freeze plan closes source department chats to new tasks and records final
