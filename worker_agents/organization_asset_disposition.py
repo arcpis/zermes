@@ -12,6 +12,7 @@ from .department_skills import (
     DepartmentSkillBindingState,
 )
 from .department_tool_policies import (
+    DepartmentToolPolicySnapshot,
     DepartmentToolPolicyRecord,
     DepartmentToolRiskLevel,
     DepartmentToolRuleEffect,
@@ -19,10 +20,12 @@ from .department_tool_policies import (
 from .organization import validate_org_node_id
 from .private_assets import PrivateAssetSensitivity
 from .private_skill_experience import PrivateSkillExperience
+from .tool_permission_snapshot import WorkerToolPermissionSnapshot
 
 
 SKILL_DISPOSITION_SCHEMA_VERSION = 1
 TOOL_POLICY_DISPOSITION_SCHEMA_VERSION = 1
+PERMISSION_DISPOSITION_REVIEW_SCHEMA_VERSION = 1
 
 
 class OrganizationAssetDispositionError(ValueError):
@@ -70,6 +73,29 @@ class ToolPolicyDispositionDecision(StrEnum):
     ADAPTER_REVIEW_REQUIRED = "adapter_review_required"
     BLOCKED = "blocked"
     REJECTED = "rejected"
+
+
+class PermissionDispositionDecision(StrEnum):
+    """Permission review outcome for one disposition candidate."""
+
+    ALLOWED = "allowed"
+    REQUIRES_APPROVAL = "requires_approval"
+    BLOCKED = "blocked"
+    NOT_APPLICABLE = "not_applicable"
+
+
+class PermissionDispositionFindingCode(StrEnum):
+    """Stable permission review findings for audit and proposal summaries."""
+
+    PROFILE_DENIES_TOOL = "profile_denies_tool"
+    SOURCE_EXCEEDS_TARGET_POLICY = "source_exceeds_target_policy"
+    HIGH_RISK_APPROVAL_MISSING = "high_risk_approval_missing"
+    WORKSPACE_SCOPE_EXPANSION = "workspace_scope_expansion"
+    BUDGET_OR_MODEL_EXPANSION = "budget_or_model_expansion"
+    PARENT_POLICY_DENIES_TOOL = "parent_policy_denies_tool"
+    GOVERNANCE_POLICY_DENIES_TOOL = "governance_policy_denies_tool"
+    SKILL_REQUIRES_REVIEW = "skill_requires_review"
+    SKILL_BLOCKED = "skill_blocked"
 
 
 @dataclass(frozen=True)
@@ -322,10 +348,91 @@ class ToolPolicyDispositionPlan:
                 raise OrganizationAssetDispositionError(
                     "tool disposition source department does not match plan"
                 )
-            if disposition.target_department_id != self.target_department_id:
-                raise OrganizationAssetDispositionError(
-                    "tool disposition target department does not match plan"
-                )
+
+
+@dataclass(frozen=True)
+class GovernanceDispositionPolicy:
+    """Small governance snapshot used by disposition permission review."""
+
+    denied_tools: tuple[str, ...] = ()
+    high_risk_tools: tuple[str, ...] = ()
+    approved_high_risk_tools: tuple[str, ...] = ()
+    require_user_approval_for_budget_increase: bool = True
+
+    def __post_init__(self) -> None:
+        for field_name in (
+            "denied_tools",
+            "high_risk_tools",
+            "approved_high_risk_tools",
+        ):
+            object.__setattr__(
+                self,
+                field_name,
+                tuple(_require_string(value, field_name) for value in getattr(self, field_name)),
+            )
+        if not isinstance(self.require_user_approval_for_budget_increase, bool):
+            raise OrganizationAssetDispositionError(
+                "require_user_approval_for_budget_increase must be a boolean"
+            )
+
+
+@dataclass(frozen=True)
+class PermissionDispositionReviewItem:
+    """One permission review result for a skill or tool disposition item."""
+
+    item_ref: str
+    asset_kind: str
+    decision: PermissionDispositionDecision | str
+    reason: str
+    finding_codes: tuple[str, ...] = ()
+    approval_requirements: tuple[str, ...] = ()
+    blocking_items: tuple[str, ...] = ()
+    source_refs: tuple[str, ...] = ()
+    schema_version: int = PERMISSION_DISPOSITION_REVIEW_SCHEMA_VERSION
+
+    def __post_init__(self) -> None:
+        _require_permission_schema_version(self.schema_version)
+        _require_string(self.item_ref, "item_ref")
+        _require_string(self.asset_kind, "asset_kind")
+        object.__setattr__(self, "decision", _permission_decision(self.decision))
+        _require_string(self.reason, "reason")
+        for field_name in (
+            "finding_codes",
+            "approval_requirements",
+            "blocking_items",
+        ):
+            object.__setattr__(
+                self,
+                field_name,
+                tuple(_require_string(value, field_name) for value in getattr(self, field_name)),
+            )
+        object.__setattr__(
+            self,
+            "source_refs",
+            tuple(_validate_relative_ref(ref, "source_refs") for ref in self.source_refs),
+        )
+
+
+@dataclass(frozen=True)
+class PermissionDispositionReview:
+    """Read-only permission review for skill and tool disposition plans."""
+
+    target_department_id: str
+    worker_id: str
+    profile_snapshot_hash: str
+    items: tuple[PermissionDispositionReviewItem, ...] = ()
+    approval_summary: str = ""
+    blocking_summary: str = ""
+    schema_version: int = PERMISSION_DISPOSITION_REVIEW_SCHEMA_VERSION
+
+    def __post_init__(self) -> None:
+        _require_permission_schema_version(self.schema_version)
+        validate_org_node_id(self.target_department_id)
+        _validate_segment(self.worker_id, "worker_id")
+        _require_string(self.profile_snapshot_hash, "profile_snapshot_hash")
+        _coerce_typed_tuple(self, "items", PermissionDispositionReviewItem)
+        _string_value(self.approval_summary, "approval_summary")
+        _string_value(self.blocking_summary, "blocking_summary")
 
 
 @dataclass(frozen=True)
@@ -450,6 +557,82 @@ def plan_tool_policy_disposition(
     )
 
 
+def review_disposition_permissions(
+    *,
+    skill_plan: SkillDispositionPlan | None = None,
+    tool_policy_plan: ToolPolicyDispositionPlan | None = None,
+    target_department_policy: DepartmentToolPolicySnapshot,
+    worker_permission_snapshot: WorkerToolPermissionSnapshot,
+    parent_policy: DepartmentToolPolicySnapshot | None = None,
+    governance_policy: GovernanceDispositionPolicy | None = None,
+) -> PermissionDispositionReview:
+    """Cross-check disposition candidates against department, profile, and governance policy."""
+
+    if not isinstance(target_department_policy, DepartmentToolPolicySnapshot):
+        raise OrganizationAssetDispositionError(
+            "target_department_policy must be a DepartmentToolPolicySnapshot"
+        )
+    if not isinstance(worker_permission_snapshot, WorkerToolPermissionSnapshot):
+        raise OrganizationAssetDispositionError(
+            "worker_permission_snapshot must be a WorkerToolPermissionSnapshot"
+        )
+    if parent_policy is not None and not isinstance(parent_policy, DepartmentToolPolicySnapshot):
+        raise OrganizationAssetDispositionError(
+            "parent_policy must be a DepartmentToolPolicySnapshot"
+        )
+    governance = governance_policy or GovernanceDispositionPolicy()
+    if not isinstance(governance, GovernanceDispositionPolicy):
+        raise OrganizationAssetDispositionError(
+            "governance_policy must be a GovernanceDispositionPolicy"
+        )
+    items: list[PermissionDispositionReviewItem] = []
+
+    if skill_plan is not None:
+        if skill_plan.target_department_id != target_department_policy.department_id:
+            raise OrganizationAssetDispositionError(
+                "skill plan target department does not match target policy"
+            )
+        items.extend(_review_skill_dispositions(skill_plan))
+
+    if tool_policy_plan is not None:
+        if tool_policy_plan.target_department_id != target_department_policy.department_id:
+            raise OrganizationAssetDispositionError(
+                "tool policy plan target department does not match target policy"
+            )
+        items.extend(
+            _review_tool_policy_dispositions(
+                tool_policy_plan,
+                target_department_policy=target_department_policy,
+                worker_snapshot=worker_permission_snapshot,
+                parent_policy=parent_policy,
+                governance_policy=governance,
+            )
+        )
+
+    approval_count = sum(
+        1 for item in items if item.decision is PermissionDispositionDecision.REQUIRES_APPROVAL
+    )
+    blocking_count = sum(
+        1 for item in items if item.decision is PermissionDispositionDecision.BLOCKED
+    )
+    return PermissionDispositionReview(
+        target_department_id=target_department_policy.department_id,
+        worker_id=worker_permission_snapshot.worker_id,
+        profile_snapshot_hash=worker_permission_snapshot.profile_hash,
+        items=tuple(items),
+        approval_summary=(
+            f"{approval_count} disposition item(s) require approval"
+            if approval_count
+            else "no disposition approvals required"
+        ),
+        blocking_summary=(
+            f"{blocking_count} disposition item(s) are blocked"
+            if blocking_count
+            else "no blocked disposition items"
+        ),
+    )
+
+
 def skill_disposition_plan_to_dict(plan: SkillDispositionPlan) -> dict[str, Any]:
     """Return a deterministic JSON-ready skill disposition plan."""
 
@@ -559,6 +742,43 @@ def tool_policy_disposition_item_to_dict(
         "active_write_candidate": item.active_write_candidate,
         "user_approval_required": item.user_approval_required,
         "adapter_review_required": item.adapter_review_required,
+    }
+
+
+def permission_disposition_review_to_dict(
+    review: PermissionDispositionReview,
+) -> dict[str, Any]:
+    """Return a deterministic JSON-ready permission disposition review."""
+
+    return {
+        "target_department_id": review.target_department_id,
+        "worker_id": review.worker_id,
+        "profile_snapshot_hash": review.profile_snapshot_hash,
+        "schema_version": review.schema_version,
+        "items": [
+            permission_disposition_review_item_to_dict(item)
+            for item in review.items
+        ],
+        "approval_summary": review.approval_summary,
+        "blocking_summary": review.blocking_summary,
+    }
+
+
+def permission_disposition_review_item_to_dict(
+    item: PermissionDispositionReviewItem,
+) -> dict[str, Any]:
+    """Return a deterministic JSON-ready permission review item."""
+
+    return {
+        "item_ref": item.item_ref,
+        "asset_kind": item.asset_kind,
+        "schema_version": item.schema_version,
+        "decision": item.decision.value,
+        "reason": item.reason,
+        "finding_codes": list(item.finding_codes),
+        "approval_requirements": list(item.approval_requirements),
+        "blocking_items": list(item.blocking_items),
+        "source_refs": list(item.source_refs),
     }
 
 
@@ -745,6 +965,63 @@ def tool_policy_disposition_item_from_dict(
         active_write_candidate=data.get("active_write_candidate", False),
         user_approval_required=data.get("user_approval_required", False),
         adapter_review_required=data.get("adapter_review_required", False),
+    )
+
+
+def permission_disposition_review_from_dict(
+    data: Mapping[str, Any],
+) -> PermissionDispositionReview:
+    """Load a permission disposition review after boundary validation."""
+
+    data = _require_mapping(data, "permission disposition review")
+    _reject_unknown_fields(data, _PERMISSION_REVIEW_FIELDS, "permission disposition review")
+    return PermissionDispositionReview(
+        target_department_id=_require_string(
+            data.get("target_department_id"), "target_department_id"
+        ),
+        worker_id=_require_string(data.get("worker_id"), "worker_id"),
+        profile_snapshot_hash=_require_string(
+            data.get("profile_snapshot_hash"), "profile_snapshot_hash"
+        ),
+        schema_version=data.get(
+            "schema_version", PERMISSION_DISPOSITION_REVIEW_SCHEMA_VERSION
+        ),
+        items=tuple(
+            permission_disposition_review_item_from_dict(item)
+            for item in _mapping_tuple(data.get("items", ()), "items")
+        ),
+        approval_summary=_string_value(
+            data.get("approval_summary", ""), "approval_summary"
+        ),
+        blocking_summary=_string_value(
+            data.get("blocking_summary", ""), "blocking_summary"
+        ),
+    )
+
+
+def permission_disposition_review_item_from_dict(
+    data: Mapping[str, Any],
+) -> PermissionDispositionReviewItem:
+    """Load a permission disposition review item after boundary validation."""
+
+    data = _require_mapping(data, "permission disposition review item")
+    _reject_unknown_fields(
+        data, _PERMISSION_REVIEW_ITEM_FIELDS, "permission disposition review item"
+    )
+    return PermissionDispositionReviewItem(
+        item_ref=_require_string(data.get("item_ref"), "item_ref"),
+        asset_kind=_require_string(data.get("asset_kind"), "asset_kind"),
+        schema_version=data.get(
+            "schema_version", PERMISSION_DISPOSITION_REVIEW_SCHEMA_VERSION
+        ),
+        decision=data.get("decision", PermissionDispositionDecision.NOT_APPLICABLE),
+        reason=_require_string(data.get("reason"), "reason"),
+        finding_codes=_string_tuple(data.get("finding_codes", ()), "finding_codes"),
+        approval_requirements=_string_tuple(
+            data.get("approval_requirements", ()), "approval_requirements"
+        ),
+        blocking_items=_string_tuple(data.get("blocking_items", ()), "blocking_items"),
+        source_refs=_string_tuple(data.get("source_refs", ()), "source_refs"),
     )
 
 
@@ -961,6 +1238,150 @@ def _plan_tool_policy_item(
     )
 
 
+def _review_skill_dispositions(
+    skill_plan: SkillDispositionPlan,
+) -> tuple[PermissionDispositionReviewItem, ...]:
+    items: list[PermissionDispositionReviewItem] = []
+    for disposition in skill_plan.binding_dispositions:
+        if disposition.decision in {
+            SkillDispositionDecision.MISSING_DEPENDENCY,
+            SkillDispositionDecision.REFERENCES_UNAVAILABLE_TOOL,
+        }:
+            decision = PermissionDispositionDecision.BLOCKED
+            findings = (PermissionDispositionFindingCode.SKILL_BLOCKED.value,)
+            reason = "skill disposition is blocked before permission review"
+            blocking = (disposition.decision.value,)
+            approvals: tuple[str, ...] = ()
+        elif disposition.decision in {
+            SkillDispositionDecision.REQUIRES_REVIEW,
+            SkillDispositionDecision.CANDIDATE_FOR_ADOPTION,
+        }:
+            decision = PermissionDispositionDecision.REQUIRES_APPROVAL
+            findings = (PermissionDispositionFindingCode.SKILL_REQUIRES_REVIEW.value,)
+            reason = "skill disposition requires department skill review"
+            blocking = ()
+            approvals = ("department_skill_review",)
+        else:
+            decision = PermissionDispositionDecision.NOT_APPLICABLE
+            findings = ()
+            reason = "skill disposition does not request new permission"
+            blocking = ()
+            approvals = ()
+        items.append(
+            PermissionDispositionReviewItem(
+                item_ref=disposition.source_binding_ref,
+                asset_kind="skill_binding",
+                decision=decision,
+                reason=reason,
+                finding_codes=findings,
+                approval_requirements=approvals,
+                blocking_items=blocking,
+                source_refs=disposition.source_refs,
+            )
+        )
+    return tuple(items)
+
+
+def _review_tool_policy_dispositions(
+    tool_plan: ToolPolicyDispositionPlan,
+    *,
+    target_department_policy: DepartmentToolPolicySnapshot,
+    worker_snapshot: WorkerToolPermissionSnapshot,
+    parent_policy: DepartmentToolPolicySnapshot | None,
+    governance_policy: GovernanceDispositionPolicy,
+) -> tuple[PermissionDispositionReviewItem, ...]:
+    items: list[PermissionDispositionReviewItem] = []
+    target_allowed = set(target_department_policy.allowed_tools)
+    target_approval = set(target_department_policy.approval_required_tools) | set(
+        target_department_policy.user_confirmation_required_tools
+    )
+    target_denied = set(target_department_policy.denied_tools)
+    worker_allowed = set(worker_snapshot.allowed_tools)
+    worker_approval = set(worker_snapshot.approval_required_tools)
+    parent_denied = set(parent_policy.denied_tools) if parent_policy else set()
+    governance_denied = set(governance_policy.denied_tools)
+    high_risk_tools = set(governance_policy.high_risk_tools)
+    approved_high_risk = set(governance_policy.approved_high_risk_tools)
+
+    for item in tool_plan.policy_dispositions:
+        findings: list[str] = []
+        approvals: list[str] = []
+        blocking: list[str] = []
+
+        for tool_ref in item.tool_refs:
+            if tool_ref in parent_denied:
+                findings.append(PermissionDispositionFindingCode.PARENT_POLICY_DENIES_TOOL.value)
+                blocking.append(f"parent denies {tool_ref}")
+            if tool_ref in governance_denied:
+                findings.append(
+                    PermissionDispositionFindingCode.GOVERNANCE_POLICY_DENIES_TOOL.value
+                )
+                blocking.append(f"governance denies {tool_ref}")
+            if tool_ref in target_denied and item.decision is not ToolPolicyDispositionDecision.CONSERVATIVE_CANDIDATE:
+                findings.append(PermissionDispositionFindingCode.SOURCE_EXCEEDS_TARGET_POLICY.value)
+                blocking.append(f"target policy denies {tool_ref}")
+            if tool_ref not in worker_allowed and tool_ref not in worker_approval:
+                findings.append(PermissionDispositionFindingCode.PROFILE_DENIES_TOOL.value)
+                blocking.append(f"profile denies {tool_ref}")
+            if (
+                tool_ref in high_risk_tools
+                and tool_ref not in approved_high_risk
+                and item.decision is not ToolPolicyDispositionDecision.ADAPTER_REVIEW_REQUIRED
+            ):
+                findings.append(
+                    PermissionDispositionFindingCode.HIGH_RISK_APPROVAL_MISSING.value
+                )
+                blocking.append(f"high-risk approval missing for {tool_ref}")
+
+        if item.item_kind is ToolPolicyDispositionItemKind.WORKSPACE_PERMISSION:
+            findings.append(PermissionDispositionFindingCode.WORKSPACE_SCOPE_EXPANSION.value)
+            approvals.append("workspace_permission_user_approval")
+        if item.item_kind is ToolPolicyDispositionItemKind.BUDGET_MODEL_CAPABILITY:
+            findings.append(PermissionDispositionFindingCode.BUDGET_OR_MODEL_EXPANSION.value)
+            approvals.append("budget_model_user_approval")
+        if item.user_approval_required:
+            approvals.append("user_approval")
+        if item.adapter_review_required:
+            approvals.append("external_adapter_review")
+        if item.decision is ToolPolicyDispositionDecision.CONSERVATIVE_CANDIDATE:
+            for tool_ref in item.tool_refs:
+                if tool_ref not in target_allowed and tool_ref not in target_approval and tool_ref not in target_denied:
+                    findings.append(
+                        PermissionDispositionFindingCode.SOURCE_EXCEEDS_TARGET_POLICY.value
+                    )
+                    approvals.append("target_department_policy_review")
+
+        unique_findings = tuple(dict.fromkeys(findings))
+        unique_approvals = tuple(dict.fromkeys(approvals))
+        unique_blocking = tuple(dict.fromkeys(blocking))
+        if unique_blocking:
+            decision = PermissionDispositionDecision.BLOCKED
+            reason = "disposition conflicts with profile, parent, target, or governance policy"
+        elif unique_approvals:
+            decision = PermissionDispositionDecision.REQUIRES_APPROVAL
+            reason = "disposition requires explicit approval before adoption"
+        elif item.decision is ToolPolicyDispositionDecision.CONSERVATIVE_CANDIDATE:
+            decision = PermissionDispositionDecision.ALLOWED
+            reason = "conservative disposition is within reviewed permission boundaries"
+        else:
+            decision = PermissionDispositionDecision.NOT_APPLICABLE
+            reason = "disposition is not an active permission candidate"
+
+        items.append(
+            PermissionDispositionReviewItem(
+                item_ref=item.source_policy_ref,
+                asset_kind="tool_policy",
+                decision=decision,
+                reason=reason,
+                finding_codes=unique_findings,
+                approval_requirements=unique_approvals,
+                blocking_items=unique_blocking,
+                source_refs=item.source_refs,
+            )
+        )
+    return tuple(items)
+
+
 def _require_schema_version(schema_version: int) -> None:
     if schema_version != SKILL_DISPOSITION_SCHEMA_VERSION:
         raise OrganizationAssetDispositionError(
@@ -972,6 +1393,13 @@ def _require_tool_schema_version(schema_version: int) -> None:
     if schema_version != TOOL_POLICY_DISPOSITION_SCHEMA_VERSION:
         raise OrganizationAssetDispositionError(
             f"Unsupported tool policy disposition schema_version: {schema_version!r}"
+        )
+
+
+def _require_permission_schema_version(schema_version: int) -> None:
+    if schema_version != PERMISSION_DISPOSITION_REVIEW_SCHEMA_VERSION:
+        raise OrganizationAssetDispositionError(
+            f"Unsupported permission disposition review schema_version: {schema_version!r}"
         )
 
 
@@ -1113,6 +1541,21 @@ def _tool_decision(
         ) from exc
 
 
+def _permission_decision(
+    value: PermissionDispositionDecision | str,
+) -> PermissionDispositionDecision:
+    try:
+        return (
+            value
+            if isinstance(value, PermissionDispositionDecision)
+            else PermissionDispositionDecision(value)
+        )
+    except ValueError as exc:
+        raise OrganizationAssetDispositionError(
+            f"Unknown permission disposition decision: {value!r}"
+        ) from exc
+
+
 _PLAN_FIELDS = {
     "source_department_id",
     "target_department_id",
@@ -1182,4 +1625,26 @@ _TOOL_ITEM_FIELDS = {
     "active_write_candidate",
     "user_approval_required",
     "adapter_review_required",
+}
+
+_PERMISSION_REVIEW_FIELDS = {
+    "target_department_id",
+    "worker_id",
+    "profile_snapshot_hash",
+    "schema_version",
+    "items",
+    "approval_summary",
+    "blocking_summary",
+}
+
+_PERMISSION_REVIEW_ITEM_FIELDS = {
+    "item_ref",
+    "asset_kind",
+    "schema_version",
+    "decision",
+    "reason",
+    "finding_codes",
+    "approval_requirements",
+    "blocking_items",
+    "source_refs",
 }

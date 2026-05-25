@@ -5,12 +5,16 @@ from worker_agents.department_skills import (
     DepartmentSkillBindingState,
 )
 from worker_agents.department_tool_policies import (
+    DepartmentToolPolicySnapshot,
     DepartmentToolPolicyRecord,
     DepartmentToolRiskLevel,
     DepartmentToolRuleEffect,
 )
 from worker_agents.organization_asset_disposition import (
+    GovernanceDispositionPolicy,
     OrganizationAssetDispositionError,
+    PermissionDispositionDecision,
+    PermissionDispositionFindingCode,
     SkillDispositionDecision,
     SkillExperienceDispositionDecision,
     SkillExperienceDispositionInput,
@@ -18,6 +22,9 @@ from worker_agents.organization_asset_disposition import (
     ToolPolicyDispositionItemKind,
     plan_skill_disposition,
     plan_tool_policy_disposition,
+    permission_disposition_review_from_dict,
+    permission_disposition_review_to_dict,
+    review_disposition_permissions,
     skill_disposition_plan_from_dict,
     skill_disposition_plan_to_dict,
     tool_policy_disposition_plan_from_dict,
@@ -25,6 +32,7 @@ from worker_agents.organization_asset_disposition import (
 )
 from worker_agents.private_assets import PrivateAssetSensitivity
 from worker_agents.private_skill_experience import PrivateSkillExperience
+from worker_agents.tool_permission_snapshot import WorkerToolPermissionSnapshot
 
 
 def _binding(
@@ -74,6 +82,32 @@ def _tool_policy(**overrides) -> DepartmentToolPolicyRecord:
     }
     values.update(overrides)
     return DepartmentToolPolicyRecord(**values)
+
+
+def _target_policy(**overrides) -> DepartmentToolPolicySnapshot:
+    values = {
+        "department_id": "target-dept",
+        "allowed_tools": ("read_file",),
+        "policy_refs": ("departments/target-dept/policies/tools/read-policy",),
+    }
+    values.update(overrides)
+    return DepartmentToolPolicySnapshot(**values)
+
+
+def _worker_snapshot(**overrides) -> WorkerToolPermissionSnapshot:
+    values = {
+        "worker_id": "worker-1",
+        "profile_hash": "sha256:profile",
+        "allowed_tools": ("read_file",),
+        "approval_required_tools": (),
+        "read_roots": ("repo",),
+        "write_roots": ("repo/src",),
+        "max_task_tokens": 1000,
+        "max_turn_tokens": 250,
+        "max_task_cost_usd": 1.0,
+    }
+    values.update(overrides)
+    return WorkerToolPermissionSnapshot(**values)
 
 
 def test_skill_disposition_marks_existing_target_binding():
@@ -336,4 +370,135 @@ def test_tool_policy_disposition_contract_round_trips():
         "decision_status",
         "policy_dispositions",
         "target_active_write_candidate_refs",
+    ]
+
+
+def test_permission_review_profile_deny_blocks_department_allow():
+    tool_plan = plan_tool_policy_disposition(
+        source_department_id="source-dept",
+        target_department_id="target-dept",
+        source_policies=(_tool_policy(tool_refs=("shell",)),),
+        target_allowed_tool_ids=("shell",),
+    )
+
+    review = review_disposition_permissions(
+        tool_policy_plan=tool_plan,
+        target_department_policy=_target_policy(allowed_tools=("shell",)),
+        worker_permission_snapshot=_worker_snapshot(allowed_tools=("read_file",)),
+    )
+
+    item = review.items[0]
+    assert item.decision == PermissionDispositionDecision.BLOCKED
+    assert PermissionDispositionFindingCode.PROFILE_DENIES_TOOL.value in (
+        item.finding_codes
+    )
+
+
+def test_permission_review_blocks_high_risk_tool_without_approval():
+    tool_plan = plan_tool_policy_disposition(
+        source_department_id="source-dept",
+        target_department_id="target-dept",
+        source_policies=(
+            _tool_policy(
+                tool_refs=("network",),
+                risk_level=DepartmentToolRiskLevel.HIGH,
+            ),
+        ),
+        target_allowed_tool_ids=("network",),
+    )
+
+    review = review_disposition_permissions(
+        tool_policy_plan=tool_plan,
+        target_department_policy=_target_policy(allowed_tools=("network",)),
+        worker_permission_snapshot=_worker_snapshot(allowed_tools=("network",)),
+        governance_policy=GovernanceDispositionPolicy(high_risk_tools=("network",)),
+    )
+
+    item = review.items[0]
+    assert item.decision == PermissionDispositionDecision.BLOCKED
+    assert (
+        PermissionDispositionFindingCode.HIGH_RISK_APPROVAL_MISSING.value
+        in item.finding_codes
+    )
+
+
+def test_permission_review_budget_increase_requires_user_confirmation():
+    tool_plan = plan_tool_policy_disposition(
+        source_department_id="source-dept",
+        target_department_id="target-dept",
+        source_policies=(
+            _tool_policy(
+                policy_id="budget-policy",
+                max_task_tokens=4000,
+            ),
+        ),
+        target_allowed_tool_ids=("read_file",),
+    )
+
+    review = review_disposition_permissions(
+        tool_policy_plan=tool_plan,
+        target_department_policy=_target_policy(),
+        worker_permission_snapshot=_worker_snapshot(max_task_tokens=5000),
+    )
+
+    item = review.items[0]
+    assert item.decision == PermissionDispositionDecision.REQUIRES_APPROVAL
+    assert "budget_model_user_approval" in item.approval_requirements
+    assert (
+        PermissionDispositionFindingCode.BUDGET_OR_MODEL_EXPANSION.value
+        in item.finding_codes
+    )
+
+
+def test_permission_review_parent_deny_blocks_child_migration():
+    tool_plan = plan_tool_policy_disposition(
+        source_department_id="source-dept",
+        target_department_id="target-dept",
+        source_policies=(_tool_policy(tool_refs=("write_file",)),),
+        target_allowed_tool_ids=("write_file",),
+    )
+
+    review = review_disposition_permissions(
+        tool_policy_plan=tool_plan,
+        target_department_policy=_target_policy(allowed_tools=("write_file",)),
+        worker_permission_snapshot=_worker_snapshot(allowed_tools=("write_file",)),
+        parent_policy=_target_policy(
+            department_id="parent-dept",
+            allowed_tools=(),
+            denied_tools=("write_file",),
+        ),
+    )
+
+    item = review.items[0]
+    assert item.decision == PermissionDispositionDecision.BLOCKED
+    assert (
+        PermissionDispositionFindingCode.PARENT_POLICY_DENIES_TOOL.value
+        in item.finding_codes
+    )
+
+
+def test_permission_review_contract_round_trips():
+    skill_plan = plan_skill_disposition(
+        source_department_id="source-dept",
+        target_department_id="target-dept",
+        source_bindings=(_binding(),),
+        available_skill_ids=("release_review",),
+    )
+    review = review_disposition_permissions(
+        skill_plan=skill_plan,
+        target_department_policy=_target_policy(),
+        worker_permission_snapshot=_worker_snapshot(),
+    )
+
+    payload = permission_disposition_review_to_dict(review)
+
+    assert permission_disposition_review_from_dict(payload) == review
+    assert list(payload) == [
+        "target_department_id",
+        "worker_id",
+        "profile_snapshot_hash",
+        "schema_version",
+        "items",
+        "approval_summary",
+        "blocking_summary",
     ]
