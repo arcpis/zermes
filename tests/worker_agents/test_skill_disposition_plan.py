@@ -4,14 +4,24 @@ from worker_agents.department_skills import (
     DepartmentSkillBindingRecord,
     DepartmentSkillBindingState,
 )
+from worker_agents.department_tool_policies import (
+    DepartmentToolPolicyRecord,
+    DepartmentToolRiskLevel,
+    DepartmentToolRuleEffect,
+)
 from worker_agents.organization_asset_disposition import (
     OrganizationAssetDispositionError,
     SkillDispositionDecision,
     SkillExperienceDispositionDecision,
     SkillExperienceDispositionInput,
+    ToolPolicyDispositionDecision,
+    ToolPolicyDispositionItemKind,
     plan_skill_disposition,
+    plan_tool_policy_disposition,
     skill_disposition_plan_from_dict,
     skill_disposition_plan_to_dict,
+    tool_policy_disposition_plan_from_dict,
+    tool_policy_disposition_plan_to_dict,
 )
 from worker_agents.private_assets import PrivateAssetSensitivity
 from worker_agents.private_skill_experience import PrivateSkillExperience
@@ -52,6 +62,18 @@ def _experience(
         shareable=shareable,
         sensitivity=sensitivity,
     )
+
+
+def _tool_policy(**overrides) -> DepartmentToolPolicyRecord:
+    values = {
+        "department_id": "source-dept",
+        "policy_id": "read-policy",
+        "tool_refs": ("read_file",),
+        "effect": DepartmentToolRuleEffect.ALLOW,
+        "source_refs": ("tasks/task-1/tool-policy.json",),
+    }
+    values.update(overrides)
+    return DepartmentToolPolicyRecord(**values)
 
 
 def test_skill_disposition_marks_existing_target_binding():
@@ -204,3 +226,114 @@ def test_blocked_dispositions_cannot_be_active_write_candidates():
         payload["binding_dispositions"][0]["active_write_candidate"] = True
         skill_disposition_plan_from_dict(payload)
 
+
+def test_tool_policy_deny_rule_is_conservative_candidate():
+    plan = plan_tool_policy_disposition(
+        source_department_id="source-dept",
+        target_department_id="target-dept",
+        source_policies=(
+            _tool_policy(
+                policy_id="deny-shell",
+                tool_refs=("shell",),
+                effect=DepartmentToolRuleEffect.DENY,
+            ),
+        ),
+    )
+
+    disposition = plan.policy_dispositions[0]
+    assert disposition.item_kind == ToolPolicyDispositionItemKind.DENY_RULE
+    assert disposition.decision == ToolPolicyDispositionDecision.CONSERVATIVE_CANDIDATE
+    assert disposition.active_write_candidate is True
+    assert plan.target_active_write_candidate_refs == (
+        "departments/source-dept/policies/tools/deny-shell",
+    )
+
+
+def test_tool_policy_high_risk_tool_requires_user_approval():
+    plan = plan_tool_policy_disposition(
+        source_department_id="source-dept",
+        target_department_id="target-dept",
+        source_policies=(
+            _tool_policy(
+                policy_id="network-policy",
+                tool_refs=("network",),
+                risk_level=DepartmentToolRiskLevel.HIGH,
+            ),
+        ),
+        target_allowed_tool_ids=("network",),
+    )
+
+    disposition = plan.policy_dispositions[0]
+    assert disposition.item_kind == ToolPolicyDispositionItemKind.HIGH_RISK_TOOL
+    assert disposition.decision == ToolPolicyDispositionDecision.USER_APPROVAL_REQUIRED
+    assert disposition.user_approval_required is True
+    assert disposition.active_write_candidate is False
+
+
+def test_tool_policy_workspace_permission_requires_user_approval():
+    plan = plan_tool_policy_disposition(
+        source_department_id="source-dept",
+        target_department_id="target-dept",
+        source_policies=(
+            _tool_policy(
+                policy_id="workspace-policy",
+                workspace_write_roots=("repo/src",),
+            ),
+        ),
+        target_allowed_tool_ids=("read_file",),
+    )
+
+    disposition = plan.policy_dispositions[0]
+    assert disposition.item_kind == ToolPolicyDispositionItemKind.WORKSPACE_PERMISSION
+    assert disposition.decision == ToolPolicyDispositionDecision.USER_APPROVAL_REQUIRED
+    assert disposition.user_approval_required is True
+
+
+def test_tool_policy_external_adapter_requires_adapter_review():
+    plan = plan_tool_policy_disposition(
+        source_department_id="source-dept",
+        target_department_id="target-dept",
+        source_policies=(
+            _tool_policy(
+                policy_id="adapter-policy",
+                tool_refs=("adapter_calendar",),
+            ),
+        ),
+        target_allowed_tool_ids=("adapter_calendar",),
+        external_adapter_tool_refs=("adapter_calendar",),
+    )
+
+    disposition = plan.policy_dispositions[0]
+    assert disposition.item_kind == (
+        ToolPolicyDispositionItemKind.EXTERNAL_ADAPTER_CAPABILITY
+    )
+    assert disposition.decision == ToolPolicyDispositionDecision.ADAPTER_REVIEW_REQUIRED
+    assert disposition.adapter_review_required is True
+    assert disposition.active_write_candidate is False
+
+
+def test_tool_policy_disposition_contract_round_trips():
+    plan = plan_tool_policy_disposition(
+        source_department_id="source-dept",
+        target_department_id="target-dept",
+        source_policies=(
+            _tool_policy(
+                policy_id="approval-policy",
+                effect=DepartmentToolRuleEffect.REQUIRES_APPROVAL,
+            ),
+        ),
+        target_policies=(_tool_policy(department_id="target-dept"),),
+    )
+
+    payload = tool_policy_disposition_plan_to_dict(plan)
+
+    assert tool_policy_disposition_plan_from_dict(payload) == plan
+    assert list(payload) == [
+        "source_department_id",
+        "target_department_id",
+        "schema_version",
+        "reviewer",
+        "decision_status",
+        "policy_dispositions",
+        "target_active_write_candidate_refs",
+    ]

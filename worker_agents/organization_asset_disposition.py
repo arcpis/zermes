@@ -11,12 +11,18 @@ from .department_skills import (
     DepartmentSkillBindingRecord,
     DepartmentSkillBindingState,
 )
+from .department_tool_policies import (
+    DepartmentToolPolicyRecord,
+    DepartmentToolRiskLevel,
+    DepartmentToolRuleEffect,
+)
 from .organization import validate_org_node_id
 from .private_assets import PrivateAssetSensitivity
 from .private_skill_experience import PrivateSkillExperience
 
 
 SKILL_DISPOSITION_SCHEMA_VERSION = 1
+TOOL_POLICY_DISPOSITION_SCHEMA_VERSION = 1
 
 
 class OrganizationAssetDispositionError(ValueError):
@@ -41,6 +47,29 @@ class SkillExperienceDispositionDecision(StrEnum):
     REDACT_AND_PROPOSE = "redact_and_propose"
     REJECT = "reject"
     REQUIRES_USER_REVIEW = "requires_user_review"
+
+
+class ToolPolicyDispositionItemKind(StrEnum):
+    """Kinds of tool-policy assets found during organization changes."""
+
+    DENY_RULE = "deny_rule"
+    APPROVAL_RULE = "approval_rule"
+    SAFE_TEMPLATE = "safe_template"
+    NEW_ALLOWED_TOOL = "new_allowed_tool"
+    WORKSPACE_PERMISSION = "workspace_permission"
+    HIGH_RISK_TOOL = "high_risk_tool"
+    BUDGET_MODEL_CAPABILITY = "budget_model_capability"
+    EXTERNAL_ADAPTER_CAPABILITY = "external_adapter_capability"
+
+
+class ToolPolicyDispositionDecision(StrEnum):
+    """Disposition outcomes for department tool policy during org changes."""
+
+    CONSERVATIVE_CANDIDATE = "conservative_candidate"
+    USER_APPROVAL_REQUIRED = "user_approval_required"
+    ADAPTER_REVIEW_REQUIRED = "adapter_review_required"
+    BLOCKED = "blocked"
+    REJECTED = "rejected"
 
 
 @dataclass(frozen=True)
@@ -193,6 +222,113 @@ class SkillDispositionPlan:
 
 
 @dataclass(frozen=True)
+class ToolPolicyDispositionItem:
+    """Reviewable decision for one source department tool policy."""
+
+    source_department_id: str
+    target_department_id: str
+    source_policy_ref: str
+    tool_refs: tuple[str, ...]
+    item_kind: ToolPolicyDispositionItemKind | str
+    decision: ToolPolicyDispositionDecision | str
+    reason: str
+    source_refs: tuple[str, ...] = ()
+    target_policy_refs: tuple[str, ...] = ()
+    profile_cross_check_refs: tuple[str, ...] = ()
+    reviewer: str = "department_tool_policy_review"
+    decision_status: str = "planned"
+    active_write_candidate: bool = False
+    user_approval_required: bool = False
+    adapter_review_required: bool = False
+    schema_version: int = TOOL_POLICY_DISPOSITION_SCHEMA_VERSION
+
+    def __post_init__(self) -> None:
+        _require_tool_schema_version(self.schema_version)
+        validate_org_node_id(self.source_department_id)
+        validate_org_node_id(self.target_department_id)
+        _validate_relative_ref(self.source_policy_ref, "source_policy_ref")
+        object.__setattr__(
+            self,
+            "tool_refs",
+            tuple(_require_string(ref, "tool_refs") for ref in self.tool_refs),
+        )
+        if not self.tool_refs:
+            raise OrganizationAssetDispositionError("tool_refs must not be empty")
+        object.__setattr__(self, "item_kind", _tool_item_kind(self.item_kind))
+        object.__setattr__(self, "decision", _tool_decision(self.decision))
+        _require_string(self.reason, "reason")
+        _require_string(self.reviewer, "reviewer")
+        _require_string(self.decision_status, "decision_status")
+        for field_name in (
+            "source_refs",
+            "target_policy_refs",
+            "profile_cross_check_refs",
+        ):
+            object.__setattr__(
+                self,
+                field_name,
+                tuple(
+                    _validate_relative_ref(ref, field_name)
+                    for ref in getattr(self, field_name)
+                ),
+            )
+        for value, field_name in (
+            (self.active_write_candidate, "active_write_candidate"),
+            (self.user_approval_required, "user_approval_required"),
+            (self.adapter_review_required, "adapter_review_required"),
+        ):
+            if not isinstance(value, bool):
+                raise OrganizationAssetDispositionError(f"{field_name} must be a boolean")
+        if self.decision is ToolPolicyDispositionDecision.CONSERVATIVE_CANDIDATE:
+            if self.user_approval_required or self.adapter_review_required:
+                raise OrganizationAssetDispositionError(
+                    "conservative candidates cannot require extra approval"
+                )
+        elif self.active_write_candidate:
+            raise OrganizationAssetDispositionError(
+                "non-conservative tool dispositions cannot be active write candidates"
+            )
+
+
+@dataclass(frozen=True)
+class ToolPolicyDispositionPlan:
+    """Tool policy disposition plan produced before active policy writes."""
+
+    source_department_id: str
+    target_department_id: str
+    policy_dispositions: tuple[ToolPolicyDispositionItem, ...] = ()
+    reviewer: str = "department_tool_policy_review"
+    decision_status: str = "planned"
+    target_active_write_candidate_refs: tuple[str, ...] = ()
+    schema_version: int = TOOL_POLICY_DISPOSITION_SCHEMA_VERSION
+
+    def __post_init__(self) -> None:
+        _require_tool_schema_version(self.schema_version)
+        validate_org_node_id(self.source_department_id)
+        validate_org_node_id(self.target_department_id)
+        _require_string(self.reviewer, "reviewer")
+        _require_string(self.decision_status, "decision_status")
+        _coerce_typed_tuple(self, "policy_dispositions", ToolPolicyDispositionItem)
+        object.__setattr__(
+            self,
+            "target_active_write_candidate_refs",
+            tuple(
+                _validate_relative_ref(ref, "target_active_write_candidate_refs")
+                for ref in self.target_active_write_candidate_refs
+            ),
+        )
+        for disposition in self.policy_dispositions:
+            if disposition.source_department_id != self.source_department_id:
+                raise OrganizationAssetDispositionError(
+                    "tool disposition source department does not match plan"
+                )
+            if disposition.target_department_id != self.target_department_id:
+                raise OrganizationAssetDispositionError(
+                    "tool disposition target department does not match plan"
+                )
+
+
+@dataclass(frozen=True)
 class SkillExperienceDispositionInput:
     """Sanitization facts used to plan private skill experience disposition."""
 
@@ -269,6 +405,51 @@ def plan_skill_disposition(
     )
 
 
+def plan_tool_policy_disposition(
+    *,
+    source_department_id: str,
+    target_department_id: str,
+    source_policies: tuple[DepartmentToolPolicyRecord, ...] = (),
+    target_policies: tuple[DepartmentToolPolicyRecord, ...] = (),
+    target_allowed_tool_ids: tuple[str, ...] = (),
+    external_adapter_tool_refs: tuple[str, ...] = (),
+    reviewer: str = "department_tool_policy_review",
+) -> ToolPolicyDispositionPlan:
+    """Build a conservative tool-policy plan without mutating active policy."""
+
+    validate_org_node_id(source_department_id)
+    validate_org_node_id(target_department_id)
+    target_policy_refs = tuple(
+        f"departments/{policy.department_id}/policies/tools/{policy.policy_id}"
+        for policy in target_policies
+    )
+    target_allowed_tools = set(_string_tuple(target_allowed_tool_ids, "target_allowed_tool_ids"))
+    external_adapter_tools = set(
+        _string_tuple(external_adapter_tool_refs, "external_adapter_tool_refs")
+    )
+    policy_dispositions = tuple(
+        _plan_tool_policy_item(
+            policy,
+            target_department_id=target_department_id,
+            target_policy_refs=target_policy_refs,
+            target_allowed_tools=target_allowed_tools,
+            external_adapter_tools=external_adapter_tools,
+            reviewer=reviewer,
+        )
+        for policy in source_policies
+    )
+    target_active_write_candidate_refs = tuple(
+        item.source_policy_ref for item in policy_dispositions if item.active_write_candidate
+    )
+    return ToolPolicyDispositionPlan(
+        source_department_id=source_department_id,
+        target_department_id=target_department_id,
+        policy_dispositions=policy_dispositions,
+        reviewer=reviewer,
+        target_active_write_candidate_refs=target_active_write_candidate_refs,
+    )
+
+
 def skill_disposition_plan_to_dict(plan: SkillDispositionPlan) -> dict[str, Any]:
     """Return a deterministic JSON-ready skill disposition plan."""
 
@@ -332,6 +513,52 @@ def skill_experience_disposition_to_dict(
         "reviewer": disposition.reviewer,
         "decision_status": disposition.decision_status,
         "proposal_input_candidate": disposition.proposal_input_candidate,
+    }
+
+
+def tool_policy_disposition_plan_to_dict(
+    plan: ToolPolicyDispositionPlan,
+) -> dict[str, Any]:
+    """Return a deterministic JSON-ready tool policy disposition plan."""
+
+    return {
+        "source_department_id": plan.source_department_id,
+        "target_department_id": plan.target_department_id,
+        "schema_version": plan.schema_version,
+        "reviewer": plan.reviewer,
+        "decision_status": plan.decision_status,
+        "policy_dispositions": [
+            tool_policy_disposition_item_to_dict(item)
+            for item in plan.policy_dispositions
+        ],
+        "target_active_write_candidate_refs": list(
+            plan.target_active_write_candidate_refs
+        ),
+    }
+
+
+def tool_policy_disposition_item_to_dict(
+    item: ToolPolicyDispositionItem,
+) -> dict[str, Any]:
+    """Return a deterministic JSON-ready tool policy disposition item."""
+
+    return {
+        "source_department_id": item.source_department_id,
+        "target_department_id": item.target_department_id,
+        "schema_version": item.schema_version,
+        "source_policy_ref": item.source_policy_ref,
+        "tool_refs": list(item.tool_refs),
+        "item_kind": item.item_kind.value,
+        "decision": item.decision.value,
+        "reason": item.reason,
+        "source_refs": list(item.source_refs),
+        "target_policy_refs": list(item.target_policy_refs),
+        "profile_cross_check_refs": list(item.profile_cross_check_refs),
+        "reviewer": item.reviewer,
+        "decision_status": item.decision_status,
+        "active_write_candidate": item.active_write_candidate,
+        "user_approval_required": item.user_approval_required,
+        "adapter_review_required": item.adapter_review_required,
     }
 
 
@@ -438,6 +665,89 @@ def skill_experience_disposition_from_dict(
     )
 
 
+def tool_policy_disposition_plan_from_dict(
+    data: Mapping[str, Any],
+) -> ToolPolicyDispositionPlan:
+    """Load a tool policy disposition plan after boundary validation."""
+
+    data = _require_mapping(data, "tool policy disposition plan")
+    _reject_unknown_fields(data, _TOOL_PLAN_FIELDS, "tool policy disposition plan")
+    return ToolPolicyDispositionPlan(
+        source_department_id=_require_string(
+            data.get("source_department_id"), "source_department_id"
+        ),
+        target_department_id=_require_string(
+            data.get("target_department_id"), "target_department_id"
+        ),
+        schema_version=data.get(
+            "schema_version", TOOL_POLICY_DISPOSITION_SCHEMA_VERSION
+        ),
+        reviewer=_string_value(
+            data.get("reviewer", "department_tool_policy_review"), "reviewer"
+        ),
+        decision_status=_string_value(
+            data.get("decision_status", "planned"), "decision_status"
+        ),
+        policy_dispositions=tuple(
+            tool_policy_disposition_item_from_dict(item)
+            for item in _mapping_tuple(
+                data.get("policy_dispositions", ()), "policy_dispositions"
+            )
+        ),
+        target_active_write_candidate_refs=_string_tuple(
+            data.get("target_active_write_candidate_refs", ()),
+            "target_active_write_candidate_refs",
+        ),
+    )
+
+
+def tool_policy_disposition_item_from_dict(
+    data: Mapping[str, Any],
+) -> ToolPolicyDispositionItem:
+    """Load a tool policy disposition item after boundary validation."""
+
+    data = _require_mapping(data, "tool policy disposition item")
+    _reject_unknown_fields(
+        data, _TOOL_ITEM_FIELDS, "tool policy disposition item"
+    )
+    return ToolPolicyDispositionItem(
+        source_department_id=_require_string(
+            data.get("source_department_id"), "source_department_id"
+        ),
+        target_department_id=_require_string(
+            data.get("target_department_id"), "target_department_id"
+        ),
+        schema_version=data.get(
+            "schema_version", TOOL_POLICY_DISPOSITION_SCHEMA_VERSION
+        ),
+        source_policy_ref=_require_string(
+            data.get("source_policy_ref"), "source_policy_ref"
+        ),
+        tool_refs=_string_tuple(data.get("tool_refs", ()), "tool_refs"),
+        item_kind=data.get("item_kind", ToolPolicyDispositionItemKind.SAFE_TEMPLATE),
+        decision=data.get(
+            "decision", ToolPolicyDispositionDecision.USER_APPROVAL_REQUIRED
+        ),
+        reason=_require_string(data.get("reason"), "reason"),
+        source_refs=_string_tuple(data.get("source_refs", ()), "source_refs"),
+        target_policy_refs=_string_tuple(
+            data.get("target_policy_refs", ()), "target_policy_refs"
+        ),
+        profile_cross_check_refs=_string_tuple(
+            data.get("profile_cross_check_refs", ()), "profile_cross_check_refs"
+        ),
+        reviewer=_string_value(
+            data.get("reviewer", "department_tool_policy_review"), "reviewer"
+        ),
+        decision_status=_string_value(
+            data.get("decision_status", "planned"), "decision_status"
+        ),
+        active_write_candidate=data.get("active_write_candidate", False),
+        user_approval_required=data.get("user_approval_required", False),
+        adapter_review_required=data.get("adapter_review_required", False),
+    )
+
+
 def _plan_binding_disposition(
     binding: DepartmentSkillBindingRecord,
     *,
@@ -539,10 +849,129 @@ def _plan_experience_disposition(
     )
 
 
+def _plan_tool_policy_item(
+    policy: DepartmentToolPolicyRecord,
+    *,
+    target_department_id: str,
+    target_policy_refs: tuple[str, ...],
+    target_allowed_tools: set[str],
+    external_adapter_tools: set[str],
+    reviewer: str,
+) -> ToolPolicyDispositionItem:
+    source_policy_ref = (
+        f"departments/{policy.department_id}/policies/tools/{policy.policy_id}"
+    )
+    adapter_refs = tuple(
+        tool_ref
+        for tool_ref in policy.tool_refs
+        if tool_ref in external_adapter_tools or tool_ref.startswith("external_adapter")
+    )
+    has_workspace_permission = bool(
+        policy.workspace_read_roots or policy.workspace_write_roots
+    )
+    has_budget_or_model_capability = any(
+        value is not None
+        for value in (
+            policy.max_task_tokens,
+            policy.max_turn_tokens,
+            policy.max_task_cost_usd,
+        )
+    )
+    new_allowed_tools = tuple(
+        tool_ref for tool_ref in policy.tool_refs if tool_ref not in target_allowed_tools
+    )
+
+    if adapter_refs:
+        kind = ToolPolicyDispositionItemKind.EXTERNAL_ADAPTER_CAPABILITY
+        decision = ToolPolicyDispositionDecision.ADAPTER_REVIEW_REQUIRED
+        reason = "external adapter capability requires adapter-specific review"
+        active_write_candidate = False
+        user_approval_required = False
+        adapter_review_required = True
+    elif policy.effect is DepartmentToolRuleEffect.DENY:
+        kind = ToolPolicyDispositionItemKind.DENY_RULE
+        decision = ToolPolicyDispositionDecision.CONSERVATIVE_CANDIDATE
+        reason = "deny rules are conservative migration candidates"
+        active_write_candidate = True
+        user_approval_required = False
+        adapter_review_required = False
+    elif policy.effect in {
+        DepartmentToolRuleEffect.REQUIRES_APPROVAL,
+        DepartmentToolRuleEffect.REQUIRES_USER_CONFIRMATION,
+    }:
+        kind = ToolPolicyDispositionItemKind.APPROVAL_RULE
+        decision = ToolPolicyDispositionDecision.CONSERVATIVE_CANDIDATE
+        reason = "approval rules preserve review boundaries"
+        active_write_candidate = True
+        user_approval_required = False
+        adapter_review_required = False
+    elif policy.risk_level in {
+        DepartmentToolRiskLevel.HIGH,
+        DepartmentToolRiskLevel.RESTRICTED,
+    }:
+        kind = ToolPolicyDispositionItemKind.HIGH_RISK_TOOL
+        decision = ToolPolicyDispositionDecision.USER_APPROVAL_REQUIRED
+        reason = "high-risk tools require explicit user approval"
+        active_write_candidate = False
+        user_approval_required = True
+        adapter_review_required = False
+    elif has_workspace_permission:
+        kind = ToolPolicyDispositionItemKind.WORKSPACE_PERMISSION
+        decision = ToolPolicyDispositionDecision.USER_APPROVAL_REQUIRED
+        reason = "workspace permissions require explicit user approval"
+        active_write_candidate = False
+        user_approval_required = True
+        adapter_review_required = False
+    elif has_budget_or_model_capability:
+        kind = ToolPolicyDispositionItemKind.BUDGET_MODEL_CAPABILITY
+        decision = ToolPolicyDispositionDecision.USER_APPROVAL_REQUIRED
+        reason = "budget or model capability changes require explicit user approval"
+        active_write_candidate = False
+        user_approval_required = True
+        adapter_review_required = False
+    elif new_allowed_tools:
+        kind = ToolPolicyDispositionItemKind.NEW_ALLOWED_TOOL
+        decision = ToolPolicyDispositionDecision.USER_APPROVAL_REQUIRED
+        reason = "new allowed tools require explicit user approval"
+        active_write_candidate = False
+        user_approval_required = True
+        adapter_review_required = False
+    else:
+        kind = ToolPolicyDispositionItemKind.SAFE_TEMPLATE
+        decision = ToolPolicyDispositionDecision.CONSERVATIVE_CANDIDATE
+        reason = "low-risk existing allowed tool can be a conservative template"
+        active_write_candidate = True
+        user_approval_required = False
+        adapter_review_required = False
+
+    return ToolPolicyDispositionItem(
+        source_department_id=policy.department_id,
+        target_department_id=target_department_id,
+        source_policy_ref=source_policy_ref,
+        tool_refs=policy.tool_refs,
+        item_kind=kind,
+        decision=decision,
+        reason=reason,
+        source_refs=policy.source_refs,
+        target_policy_refs=target_policy_refs,
+        reviewer=reviewer,
+        active_write_candidate=active_write_candidate,
+        user_approval_required=user_approval_required,
+        adapter_review_required=adapter_review_required,
+    )
+
+
 def _require_schema_version(schema_version: int) -> None:
     if schema_version != SKILL_DISPOSITION_SCHEMA_VERSION:
         raise OrganizationAssetDispositionError(
             f"Unsupported skill disposition schema_version: {schema_version!r}"
+        )
+
+
+def _require_tool_schema_version(schema_version: int) -> None:
+    if schema_version != TOOL_POLICY_DISPOSITION_SCHEMA_VERSION:
+        raise OrganizationAssetDispositionError(
+            f"Unsupported tool policy disposition schema_version: {schema_version!r}"
         )
 
 
@@ -654,6 +1083,36 @@ def _experience_decision(
         ) from exc
 
 
+def _tool_item_kind(
+    value: ToolPolicyDispositionItemKind | str,
+) -> ToolPolicyDispositionItemKind:
+    try:
+        return (
+            value
+            if isinstance(value, ToolPolicyDispositionItemKind)
+            else ToolPolicyDispositionItemKind(value)
+        )
+    except ValueError as exc:
+        raise OrganizationAssetDispositionError(
+            f"Unknown tool policy disposition item kind: {value!r}"
+        ) from exc
+
+
+def _tool_decision(
+    value: ToolPolicyDispositionDecision | str,
+) -> ToolPolicyDispositionDecision:
+    try:
+        return (
+            value
+            if isinstance(value, ToolPolicyDispositionDecision)
+            else ToolPolicyDispositionDecision(value)
+        )
+    except ValueError as exc:
+        raise OrganizationAssetDispositionError(
+            f"Unknown tool policy disposition decision: {value!r}"
+        ) from exc
+
+
 _PLAN_FIELDS = {
     "source_department_id",
     "target_department_id",
@@ -694,4 +1153,33 @@ _EXPERIENCE_DISPOSITION_FIELDS = {
     "reviewer",
     "decision_status",
     "proposal_input_candidate",
+}
+
+_TOOL_PLAN_FIELDS = {
+    "source_department_id",
+    "target_department_id",
+    "schema_version",
+    "reviewer",
+    "decision_status",
+    "policy_dispositions",
+    "target_active_write_candidate_refs",
+}
+
+_TOOL_ITEM_FIELDS = {
+    "source_department_id",
+    "target_department_id",
+    "schema_version",
+    "source_policy_ref",
+    "tool_refs",
+    "item_kind",
+    "decision",
+    "reason",
+    "source_refs",
+    "target_policy_refs",
+    "profile_cross_check_refs",
+    "reviewer",
+    "decision_status",
+    "active_write_candidate",
+    "user_approval_required",
+    "adapter_review_required",
 }
