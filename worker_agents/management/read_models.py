@@ -1147,6 +1147,63 @@ def tool_policy_review_detail_to_dict(
     }
 
 
+def build_asset_adoption_history_item(data: Mapping[str, Any]) -> AssetAdoptionHistoryItem:
+    return AssetAdoptionHistoryItem(
+        asset_id=str(data.get("asset_id", "")),
+        proposal_id=str(data.get("proposal_id", "")),
+        department_id=str(data.get("department_id", "")),
+        asset_kind=str(data.get("asset_kind", data.get("proposal_kind", "memory"))),
+        decision=str(data.get("decision", "reject")),
+        reviewer_id=str(data.get("reviewer_id", "")),
+        reason=str(data.get("reason", "")),
+        decided_at=str(data.get("decided_at", "")),
+        source_refs=(
+            ManagementSourceRef(
+                str(data.get("asset_kind", data.get("proposal_kind", "memory"))),
+                str(data.get("proposal_id", "")),
+            ),
+        ),
+        accepted_refs=_string_tuple(data.get("accepted_refs", ())),
+        rejected_refs=_string_tuple(data.get("rejected_refs", ())),
+    )
+
+
+def filter_asset_adoption_history(
+    items: Iterable[AssetAdoptionHistoryItem],
+    *,
+    department_id: str | None = None,
+    asset_kind: AssetProposalKind | str | None = None,
+    decision: AssetReviewDecision | str | None = None,
+) -> tuple[AssetAdoptionHistoryItem, ...]:
+    expected_kind = AssetProposalKind(asset_kind) if asset_kind is not None else None
+    expected_decision = AssetReviewDecision(decision) if decision is not None else None
+    return tuple(
+        item
+        for item in items
+        if (department_id is None or item.department_id == department_id)
+        and (expected_kind is None or item.asset_kind == expected_kind)
+        and (expected_decision is None or item.decision == expected_decision)
+    )
+
+
+def asset_adoption_history_item_to_dict(
+    item: AssetAdoptionHistoryItem,
+) -> dict[str, Any]:
+    return {
+        "asset_id": item.asset_id,
+        "proposal_id": item.proposal_id,
+        "department_id": item.department_id,
+        "asset_kind": item.asset_kind.value,
+        "decision": item.decision.value,
+        "reviewer_id": item.reviewer_id,
+        "reason": item.reason,
+        "decided_at": item.decided_at,
+        "source_refs": [source_ref_to_dict(ref) for ref in item.source_refs],
+        "accepted_refs": list(item.accepted_refs),
+        "rejected_refs": list(item.rejected_refs),
+    }
+
+
 def build_thread_archive_summary_view(
     data: Mapping[str, Any],
 ) -> ThreadArchiveSummaryView:
