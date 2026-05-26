@@ -71,6 +71,27 @@ class ApprovalDecision(StrEnum):
     EXPIRE = "expire"
 
 
+class AssetProposalKind(StrEnum):
+    """Department asset proposal kinds shown in the asset review console."""
+
+    MEMORY = "memory"
+    SKILL_BINDING = "skill_binding"
+    SKILL_EXPERIENCE = "skill_experience"
+    TOOL_POLICY = "tool_policy"
+    WORKING_STANDARD = "working_standard"
+
+
+class AssetReviewDecision(StrEnum):
+    """Supported asset review decisions."""
+
+    ACCEPT = "accept"
+    REJECT = "reject"
+    PARTIAL_ACCEPT = "partial_accept"
+    REQUEST_REDACTION = "request_redaction"
+    EXPIRE = "expire"
+    ARCHIVE = "archive"
+
+
 @dataclass(frozen=True)
 class ManagementSourceRef:
     """Low-sensitivity reference to the source data used by a view model."""
@@ -326,6 +347,75 @@ class ApprovalRiskPresentation:
         object.__setattr__(self, "risks", tuple(self.risks))
         object.__setattr__(self, "blockers", tuple(self.blockers))
         object.__setattr__(self, "warnings", tuple(self.warnings))
+
+
+@dataclass(frozen=True)
+class AssetReviewItem:
+    """Low-sensitive asset proposal row for department asset review."""
+
+    proposal_id: str
+    proposal_kind: AssetProposalKind | str
+    status: str
+    target_department_id: str
+    summary: str
+    source_refs: tuple[ManagementSourceRef, ...] = ()
+    sensitivity: str = "low"
+    reviewer_id: str | None = None
+    conflict_refs: tuple[str, ...] = ()
+    redaction_required: bool = False
+    user_approval_required: bool = False
+    blocked: bool = False
+    risk_badges: tuple[ManagementRiskBadge, ...] = ()
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "proposal_kind", AssetProposalKind(self.proposal_kind))
+        object.__setattr__(self, "summary", _redact_sensitive_text(self.summary))
+        object.__setattr__(self, "source_refs", tuple(self.source_refs))
+        object.__setattr__(self, "conflict_refs", tuple(self.conflict_refs))
+        object.__setattr__(self, "risk_badges", tuple(self.risk_badges))
+
+
+@dataclass(frozen=True)
+class AssetReviewActionRequest:
+    """Controlled request produced by the asset review console."""
+
+    proposal_id: str
+    decision: AssetReviewDecision | str
+    actor_id: str
+    reason: str
+    accepted_refs: tuple[str, ...] = ()
+    rejected_refs: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "decision", AssetReviewDecision(self.decision))
+        object.__setattr__(self, "reason", _redact_sensitive_text(self.reason))
+        object.__setattr__(self, "accepted_refs", tuple(self.accepted_refs))
+        object.__setattr__(self, "rejected_refs", tuple(self.rejected_refs))
+
+
+@dataclass(frozen=True)
+class AssetAdoptionHistoryItem:
+    """Low-sensitive history row linking accepted/rejected assets to proposals."""
+
+    asset_id: str
+    proposal_id: str
+    department_id: str
+    asset_kind: AssetProposalKind | str
+    decision: AssetReviewDecision | str
+    reviewer_id: str
+    reason: str
+    decided_at: str
+    source_refs: tuple[ManagementSourceRef, ...] = ()
+    accepted_refs: tuple[str, ...] = ()
+    rejected_refs: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "asset_kind", AssetProposalKind(self.asset_kind))
+        object.__setattr__(self, "decision", AssetReviewDecision(self.decision))
+        object.__setattr__(self, "reason", _redact_sensitive_text(self.reason))
+        object.__setattr__(self, "source_refs", tuple(self.source_refs))
+        object.__setattr__(self, "accepted_refs", tuple(self.accepted_refs))
+        object.__setattr__(self, "rejected_refs", tuple(self.rejected_refs))
 
 
 @dataclass(frozen=True)
@@ -876,6 +966,74 @@ def approval_risk_presentation_to_dict(
         "warnings": list(presentation.warnings),
         "user_required_summary": presentation.user_required_summary,
         "disabled_action_reason": presentation.disabled_action_reason,
+    }
+
+
+def build_asset_review_item(data: Mapping[str, Any]) -> AssetReviewItem:
+    """Build a low-sensitive department asset proposal review row."""
+
+    proposal_kind = AssetProposalKind(str(data.get("proposal_kind")))
+    proposal_id = str(data.get("proposal_id", ""))
+    sensitivity = str(data.get("sensitivity", "low"))
+    conflicts = _string_tuple(data.get("conflict_refs", ()))
+    redaction_required = bool(data.get("redaction_required", False)) or sensitivity in {
+        "sensitive",
+        "high",
+    }
+    blocked = bool(data.get("blocked", False)) or (
+        redaction_required and bool(data.get("requires_redaction_before_accept", False))
+    )
+    risks: list[ManagementRiskBadge] = []
+    if redaction_required:
+        risks.append(
+            ManagementRiskBadge(
+                code="redaction_required",
+                label="Sensitive asset summary needs redaction review",
+                severity=ManagementRiskSeverity.WARNING,
+                source_refs=(ManagementSourceRef(proposal_kind.value, proposal_id),),
+            )
+        )
+    if conflicts:
+        risks.append(
+            ManagementRiskBadge(
+                code="conflict_refs",
+                label="Proposal has conflicting asset refs",
+                severity=ManagementRiskSeverity.WARNING,
+                source_refs=(ManagementSourceRef(proposal_kind.value, proposal_id),),
+            )
+        )
+    return AssetReviewItem(
+        proposal_id=proposal_id,
+        proposal_kind=proposal_kind,
+        status=str(data.get("status", "pending")),
+        target_department_id=str(data.get("target_department_id", "")),
+        summary=str(data.get("summary", "")),
+        source_refs=(ManagementSourceRef(proposal_kind.value, proposal_id),),
+        sensitivity=sensitivity,
+        reviewer_id=_optional_string(data.get("reviewer_id")),
+        conflict_refs=conflicts,
+        redaction_required=redaction_required,
+        user_approval_required=bool(data.get("user_approval_required", False)),
+        blocked=blocked,
+        risk_badges=tuple(risks),
+    )
+
+
+def asset_review_item_to_dict(item: AssetReviewItem) -> dict[str, Any]:
+    return {
+        "proposal_id": item.proposal_id,
+        "proposal_kind": item.proposal_kind.value,
+        "status": item.status,
+        "target_department_id": item.target_department_id,
+        "summary": item.summary,
+        "source_refs": [source_ref_to_dict(ref) for ref in item.source_refs],
+        "sensitivity": item.sensitivity,
+        "reviewer_id": item.reviewer_id,
+        "conflict_refs": list(item.conflict_refs),
+        "redaction_required": item.redaction_required,
+        "user_approval_required": item.user_approval_required,
+        "blocked": item.blocked,
+        "risk_badges": [risk_badge_to_dict(badge) for badge in item.risk_badges],
     }
 
 
