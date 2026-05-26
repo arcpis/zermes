@@ -61,6 +61,16 @@ class ApprovalSourceKind(StrEnum):
     EXTERNAL_AGENT = "external_agent"
 
 
+class ApprovalDecision(StrEnum):
+    """Supported approval center decisions."""
+
+    APPROVE = "approve"
+    REJECT = "reject"
+    REQUEST_CHANGES = "request_changes"
+    DELEGATE_REVIEW = "delegate_review"
+    EXPIRE = "expire"
+
+
 @dataclass(frozen=True)
 class ManagementSourceRef:
     """Low-sensitivity reference to the source data used by a view model."""
@@ -262,6 +272,42 @@ class ApprovalQueueItem:
         object.__setattr__(self, "risk_badges", tuple(self.risk_badges))
         object.__setattr__(self, "blockers", tuple(self.blockers))
         object.__setattr__(self, "warnings", tuple(self.warnings))
+        object.__setattr__(self, "source_refs", tuple(self.source_refs))
+
+
+@dataclass(frozen=True)
+class ApprovalActionRequest:
+    """User or agent request to change an approval record through a service."""
+
+    approval_id: str
+    decision: ApprovalDecision | str
+    actor_id: str
+    reason: str
+    explicit_high_risk_confirmation: bool = False
+    delegated_reviewer_id: str | None = None
+    decided_at: str | None = None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "decision", ApprovalDecision(self.decision))
+        object.__setattr__(self, "reason", _redact_sensitive_text(self.reason))
+
+
+@dataclass(frozen=True)
+class ApprovalAuditRecord:
+    """Immutable low-sensitive audit summary for an approval action."""
+
+    approval_id: str
+    actor_id: str
+    decision: ApprovalDecision | str
+    reason: str
+    timestamp: str
+    risk_summary: str
+    source_refs: tuple[ManagementSourceRef, ...] = ()
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "decision", ApprovalDecision(self.decision))
+        object.__setattr__(self, "reason", _redact_sensitive_text(self.reason))
+        object.__setattr__(self, "risk_summary", _redact_sensitive_text(self.risk_summary))
         object.__setattr__(self, "source_refs", tuple(self.source_refs))
 
 
@@ -707,6 +753,71 @@ def approval_queue_item_to_dict(item: ApprovalQueueItem) -> dict[str, Any]:
         "deadline_at": item.deadline_at,
         "user_confirmation_required": item.user_confirmation_required,
         "source_refs": [source_ref_to_dict(ref) for ref in item.source_refs],
+    }
+
+
+def validate_approval_action_request(
+    item: ApprovalQueueItem,
+    request: ApprovalActionRequest,
+    *,
+    allowed_actor_ids: Iterable[str],
+) -> None:
+    """Validate approval action policy before a caller invokes a proposal service."""
+
+    if item.status in {"approved", "rejected", "expired"}:
+        raise ValueError(f"approval {item.approval_id!r} is already terminal")
+    if request.actor_id not in set(allowed_actor_ids):
+        raise ValueError("approval actor is not allowed for this item")
+    if request.decision == ApprovalDecision.APPROVE:
+        if item.blockers:
+            raise ValueError("blocked approvals cannot be approved")
+        if item.user_confirmation_required and not request.explicit_high_risk_confirmation:
+            raise ValueError("high-risk approval requires explicit confirmation")
+    if request.decision == ApprovalDecision.DELEGATE_REVIEW and not request.delegated_reviewer_id:
+        raise ValueError("delegate_review requires delegated_reviewer_id")
+
+
+def create_approval_audit_record(
+    item: ApprovalQueueItem,
+    request: ApprovalActionRequest,
+    *,
+    timestamp: str,
+) -> ApprovalAuditRecord:
+    """Create a low-sensitive audit record after validation succeeds."""
+
+    risk_codes = ", ".join(badge.code for badge in item.risk_badges) or "none"
+    return ApprovalAuditRecord(
+        approval_id=item.approval_id,
+        actor_id=request.actor_id,
+        decision=request.decision,
+        reason=request.reason,
+        timestamp=request.decided_at or timestamp,
+        risk_summary=risk_codes,
+        source_refs=item.source_refs,
+    )
+
+
+def approval_action_request_to_dict(request: ApprovalActionRequest) -> dict[str, Any]:
+    return {
+        "approval_id": request.approval_id,
+        "decision": request.decision.value,
+        "actor_id": request.actor_id,
+        "reason": request.reason,
+        "explicit_high_risk_confirmation": request.explicit_high_risk_confirmation,
+        "delegated_reviewer_id": request.delegated_reviewer_id,
+        "decided_at": request.decided_at,
+    }
+
+
+def approval_audit_record_to_dict(record: ApprovalAuditRecord) -> dict[str, Any]:
+    return {
+        "approval_id": record.approval_id,
+        "actor_id": record.actor_id,
+        "decision": record.decision.value,
+        "reason": record.reason,
+        "timestamp": record.timestamp,
+        "risk_summary": record.risk_summary,
+        "source_refs": [source_ref_to_dict(ref) for ref in record.source_refs],
     }
 
 
