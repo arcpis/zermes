@@ -65,6 +65,12 @@ WEB_DIST = Path(os.environ["HERMES_WEB_DIST"]) if "HERMES_WEB_DIST" in os.enviro
 _log = logging.getLogger(__name__)
 
 app = FastAPI(title="Zermes", version=__version__)
+try:
+    from hermes_cli.worker_agents_api import router as _worker_agents_router
+
+    app.include_router(_worker_agents_router, prefix="/api/worker-agents")
+except Exception:
+    _log.debug("Worker Agents dashboard API registration failed", exc_info=True)
 
 # ---------------------------------------------------------------------------
 # Session token for protecting sensitive endpoints (reveal).
