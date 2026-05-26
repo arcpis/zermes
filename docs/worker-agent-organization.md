@@ -361,3 +361,16 @@ and explicit confirmation for high-risk approvals before callers invoke the
 underlying proposal service. They produce audit records with actor, decision,
 reason, timestamp, risk summary, and source refs, but they do not execute
 organization changes or bypass underlying approval policy.
+
+## Evolution Operations Console Projection
+
+The evolution operations models in `worker_agents.management` expose proposal
+workbench rows, wizard proposal drafts, and executor state views. They only
+derive controlled console affordances such as `can_execute`, disabled reasons,
+next required action, retry availability, manual recovery hints, report refs,
+and audit refs.
+
+Wizard builders validate create-child, delete-child, merge-department, and
+archive-node inputs before a proposal is persisted. They return draft blockers,
+risk badges, and approval requirements without writing the active organization
+tree or invoking the executor.
