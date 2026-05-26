@@ -92,6 +92,23 @@ Organization evolution is proposal-first. Creation, deletion, merge, archive, as
 
 These modules are not a frontend and are not execution shortcuts. They should not mutate the active organization tree, bypass approval policy, read raw transcripts, or expose credentials and private memory contents.
 
+## Product Entrypoints
+
+`hermes_cli/worker_agents_product.py` is the shared adapter used by the CLI and dashboard API. It loads the active profile's low-sensitivity management state, builds existing `worker_agents.management` DTOs, and appends controlled message envelopes under `worker_agents/threads/<thread_id>/messages.jsonl`.
+
+CLI registration lives in `hermes_cli/worker_agents_cmd.py` and is exposed as `hermes worker-agents`. Dashboard registration lives in `hermes_cli/worker_agents_api.py` under `/api/worker-agents/*`, then `hermes_cli/web_server.py` mounts the router behind the existing dashboard session token and Host-header protections.
+
+The dashboard page is `web/src/pages/WorkerAgentsPage.tsx`, routed at `/worker-agents`.
+
+These entrypoints must stay thin:
+
+- Use management DTO serializers such as `dashboard_snapshot_to_dict`, `worker_management_list_item_to_dict`, and related action request serializers.
+- Keep chat history scoped by `thread_id`.
+- Send messages through `MessageRouter` validation before writing controlled envelopes.
+- Do not read or reconstruct runtime raw transcripts.
+- Do not turn dashboard APIs into file browsers or executors.
+- Do not directly edit active organization trees, registry records, department active assets, tool policies, or retention deletions.
+
 ## Temporary Subagents
 
 WorkerAgents can request temporary subagents only inside the parent's effective policy. The policy checks model, tool, workspace, token/cost budget, timeout, and concurrency boundaries. A temporary subagent can return a result envelope to its parent task, but it cannot create a long-term worker profile, registry entry, private memory, or chat thread.
