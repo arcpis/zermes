@@ -66,3 +66,19 @@ long-term worker memory or skill experience by the retention service.
 
 Background scheduling, UI approval cards, message-router transcript management,
 and memory personalization are separate later stages.
+## Management Import, Export, and Cleanup Plans
+
+`worker_agents.management.import_export` defines read-only operational models
+for profile migration and cleanup:
+
+- export package manifests list long-term sections, counts, checksums, source
+  refs, and sensitivity summaries;
+- export payload validation rejects secret, credential, token, stdout/stderr,
+  and raw transcript fields;
+- import dry-runs report schema blockers, id conflicts, missing skill/adapter
+  warnings, permission-expansion confirmations, and proposed import steps;
+- retention cleanup plans separate candidates, protected long-term assets,
+  active task blockers, and audit summaries.
+
+These models do not write profile-home data and do not delete files. Cleanup
+execution remains the responsibility of the governed retention service.
