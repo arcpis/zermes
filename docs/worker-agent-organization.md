@@ -347,3 +347,17 @@ The dashboard snapshot deliberately keeps low-sensitivity fields only:
 Single-worker departments do not expose an independent department group chat
 entry. They are shown as `private_or_parent_chat` so any later action still
 routes through the governed chat or approval flow.
+
+## Approval Center Read Models
+
+The approval center models in `worker_agents.management` aggregate low-sensitive
+proposal summaries from organization evolution, department memory, department
+skill, tool policy, budget, and external-agent requests. Queue rows carry source
+refs, requester, recommended approver, deadline, impact summary, blockers,
+warnings, and risk badges.
+
+Approval action helpers validate actor eligibility, terminal states, blockers,
+and explicit confirmation for high-risk approvals before callers invoke the
+underlying proposal service. They produce audit records with actor, decision,
+reason, timestamp, risk summary, and source refs, but they do not execute
+organization changes or bypass underlying approval policy.
