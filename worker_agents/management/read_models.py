@@ -312,6 +312,23 @@ class ApprovalAuditRecord:
 
 
 @dataclass(frozen=True)
+class ApprovalRiskPresentation:
+    """UI-ready risk and blocker summary for one approval item."""
+
+    approval_id: str
+    risks: tuple[ManagementRiskBadge, ...]
+    blockers: tuple[str, ...]
+    warnings: tuple[str, ...]
+    user_required_summary: str = ""
+    disabled_action_reason: str = ""
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "risks", tuple(self.risks))
+        object.__setattr__(self, "blockers", tuple(self.blockers))
+        object.__setattr__(self, "warnings", tuple(self.warnings))
+
+
+@dataclass(frozen=True)
 class ThreadArchiveSummaryView:
     """Read-only thread summary, retention, and archive state view."""
 
@@ -818,6 +835,47 @@ def approval_audit_record_to_dict(record: ApprovalAuditRecord) -> dict[str, Any]
         "timestamp": record.timestamp,
         "risk_summary": record.risk_summary,
         "source_refs": [source_ref_to_dict(ref) for ref in record.source_refs],
+    }
+
+
+def build_approval_risk_presentation(item: ApprovalQueueItem) -> ApprovalRiskPresentation:
+    """Separate approval blockers, warnings, and user-confirmation hints."""
+
+    risk_warnings = tuple(
+        badge.label
+        for badge in item.risk_badges
+        if badge.severity == ManagementRiskSeverity.WARNING
+    )
+    user_summary = (
+        "Explicit user confirmation is required before approval."
+        if item.user_confirmation_required
+        else ""
+    )
+    disabled_reason = ""
+    if item.blockers:
+        disabled_reason = "; ".join(item.blockers)
+    elif item.status in {"rejected", "expired"}:
+        disabled_reason = f"{item.status} proposals cannot be executed"
+    return ApprovalRiskPresentation(
+        approval_id=item.approval_id,
+        risks=item.risk_badges,
+        blockers=item.blockers,
+        warnings=tuple((*item.warnings, *risk_warnings)),
+        user_required_summary=user_summary,
+        disabled_action_reason=disabled_reason,
+    )
+
+
+def approval_risk_presentation_to_dict(
+    presentation: ApprovalRiskPresentation,
+) -> dict[str, Any]:
+    return {
+        "approval_id": presentation.approval_id,
+        "risks": [risk_badge_to_dict(badge) for badge in presentation.risks],
+        "blockers": list(presentation.blockers),
+        "warnings": list(presentation.warnings),
+        "user_required_summary": presentation.user_required_summary,
+        "disabled_action_reason": presentation.disabled_action_reason,
     }
 
 
