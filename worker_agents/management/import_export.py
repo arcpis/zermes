@@ -25,6 +25,32 @@ class ExportSectionKind(StrEnum):
 
 
 @dataclass(frozen=True)
+class ImportValidationIssue:
+    code: str
+    message: str
+    severity: ManagementRiskSeverity | str = ManagementRiskSeverity.WARNING
+    source_ref: ManagementSourceRef | None = None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "severity", ManagementRiskSeverity(self.severity))
+
+
+@dataclass(frozen=True)
+class ImportDryRunReport:
+    profile_id: str
+    blockers: tuple[ImportValidationIssue, ...] = ()
+    warnings: tuple[ImportValidationIssue, ...] = ()
+    user_confirmations: tuple[str, ...] = ()
+    proposed_steps: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "blockers", tuple(self.blockers))
+        object.__setattr__(self, "warnings", tuple(self.warnings))
+        object.__setattr__(self, "user_confirmations", tuple(self.user_confirmations))
+        object.__setattr__(self, "proposed_steps", tuple(self.proposed_steps))
+
+
+@dataclass(frozen=True)
 class ExportPackageSection:
     section_kind: ExportSectionKind | str
     count: int
@@ -84,6 +110,84 @@ def validate_export_payload(payload: Mapping[str, Any]) -> None:
         raise ValueError(f"export payload contains forbidden sensitive field: {bad_path}")
 
 
+def build_import_dry_run_report(
+    manifest: WorkerAgentsExportPackageManifest,
+    current_profile_summary: Mapping[str, Any],
+) -> ImportDryRunReport:
+    """Validate an import package without writing profile-home data."""
+
+    blockers: list[ImportValidationIssue] = []
+    warnings: list[ImportValidationIssue] = []
+    confirmations: list[str] = []
+    if manifest.schema_version != EXPORT_SCHEMA_VERSION:
+        blockers.append(_import_issue("schema_mismatch", "export schema version is not supported"))
+    current_ids = set(_string_iter(current_profile_summary.get("known_ids", ())))
+    incoming_ids = set(
+        _string_iter(current_profile_summary.get("incoming_ids", ()))
+    )
+    conflicts = sorted(current_ids & incoming_ids)
+    if conflicts:
+        blockers.append(
+            _import_issue(
+                "id_conflict",
+                "incoming ids conflict with current profile: " + ", ".join(conflicts),
+            )
+        )
+    missing_skills = tuple(_string_iter(current_profile_summary.get("missing_skills", ())))
+    if missing_skills:
+        warnings.append(
+            _import_issue(
+                "missing_skill",
+                "skill references must be installed or remapped: " + ", ".join(missing_skills),
+            )
+        )
+    missing_adapters = tuple(_string_iter(current_profile_summary.get("missing_adapters", ())))
+    if missing_adapters:
+        warnings.append(
+            _import_issue(
+                "missing_adapter",
+                "external adapters require reconfiguration: " + ", ".join(missing_adapters),
+            )
+        )
+    permission_expansions = tuple(
+        _string_iter(current_profile_summary.get("permission_expansions", ()))
+    )
+    if permission_expansions:
+        confirmations.append(
+            "permission expansion requires user confirmation: "
+            + ", ".join(permission_expansions)
+        )
+    steps = tuple(
+        f"import_{section.section_kind.value}" for section in manifest.sections
+    )
+    return ImportDryRunReport(
+        profile_id=manifest.profile_id,
+        blockers=tuple(blockers),
+        warnings=tuple(warnings),
+        user_confirmations=tuple(confirmations),
+        proposed_steps=steps,
+    )
+
+
+def import_dry_run_report_to_dict(report: ImportDryRunReport) -> dict[str, Any]:
+    return {
+        "profile_id": report.profile_id,
+        "blockers": [import_issue_to_dict(issue) for issue in report.blockers],
+        "warnings": [import_issue_to_dict(issue) for issue in report.warnings],
+        "user_confirmations": list(report.user_confirmations),
+        "proposed_steps": list(report.proposed_steps),
+    }
+
+
+def import_issue_to_dict(issue: ImportValidationIssue) -> dict[str, Any]:
+    return {
+        "code": issue.code,
+        "message": issue.message,
+        "severity": issue.severity.value,
+        "source_ref": source_ref_to_dict(issue.source_ref) if issue.source_ref else None,
+    }
+
+
 def dump_export_manifest_json(manifest: WorkerAgentsExportPackageManifest) -> str:
     return json.dumps(export_package_manifest_to_dict(manifest), sort_keys=True, indent=2)
 
@@ -105,3 +209,19 @@ def _find_forbidden_payload_path(value: Any, prefix: str = "") -> str:
             if found:
                 return found
     return ""
+
+
+def _import_issue(code: str, message: str) -> ImportValidationIssue:
+    return ImportValidationIssue(
+        code=code,
+        message=message,
+        severity=ManagementRiskSeverity.BLOCKER
+        if code in {"schema_mismatch", "id_conflict"}
+        else ManagementRiskSeverity.WARNING,
+    )
+
+
+def _string_iter(value: Any) -> tuple[str, ...]:
+    if not isinstance(value, (list, tuple, set)):
+        return ()
+    return tuple(str(item) for item in value if isinstance(item, str) and item)

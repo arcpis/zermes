@@ -80,10 +80,15 @@ from .read_models import (
 from .import_export import (
     ExportPackageSection,
     ExportSectionKind,
+    ImportDryRunReport,
+    ImportValidationIssue,
     WorkerAgentsExportPackageManifest,
+    build_import_dry_run_report,
     dump_export_manifest_json,
     export_package_manifest_to_dict,
     export_section_to_dict,
+    import_dry_run_report_to_dict,
+    import_issue_to_dict,
     validate_export_payload,
 )
 
@@ -165,9 +170,14 @@ __all__ = [
     "worker_management_list_item_to_dict",
     "ExportPackageSection",
     "ExportSectionKind",
+    "ImportDryRunReport",
+    "ImportValidationIssue",
     "WorkerAgentsExportPackageManifest",
+    "build_import_dry_run_report",
     "dump_export_manifest_json",
     "export_package_manifest_to_dict",
     "export_section_to_dict",
+    "import_dry_run_report_to_dict",
+    "import_issue_to_dict",
     "validate_export_payload",
 ]
