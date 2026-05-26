@@ -327,3 +327,23 @@ Single-worker departments keep the node with direct worker chat, or explicitly
 rebind collaboration to the parent group chat. Empty departments with no
 remaining responsibilities require asset and chat disposition refs before they
 can be archived or removed from the active tree.
+## Management Dashboard Read Models
+
+The management dashboard models live under `worker_agents.management`. They are
+read-only projections over already-loaded worker registry, organization,
+department, chat, health, and policy summaries. They do not open profile-home
+files and do not mutate registry or organization stores.
+
+The dashboard snapshot deliberately keeps low-sensitivity fields only:
+
+- worker identity, lifecycle status, runtime type, department ids, health
+  status, policy summary, and controlled links into approval or operations
+  consoles;
+- organization node identity, lifecycle, parent/child references, leader refs,
+  member refs, collaboration mode, read-only state, and risk badges;
+- department summary counts and policy summaries, with private memory,
+  transcript, credential, token, secret, and raw content keys removed.
+
+Single-worker departments do not expose an independent department group chat
+entry. They are shown as `private_or_parent_chat` so any later action still
+routes through the governed chat or approval flow.
