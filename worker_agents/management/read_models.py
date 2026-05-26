@@ -147,6 +147,19 @@ class OrganizationManagementNodeSummary:
 
 
 @dataclass(frozen=True)
+class OrganizationTreeViewNode:
+    """Nested organization tree node for management UI rendering."""
+
+    summary: OrganizationManagementNodeSummary
+    children: tuple["OrganizationTreeViewNode", ...] = ()
+    warnings: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "children", tuple(self.children))
+        object.__setattr__(self, "warnings", tuple(self.warnings))
+
+
+@dataclass(frozen=True)
 class DepartmentManagementSummary:
     """Low-sensitivity department state and asset summary."""
 
@@ -318,6 +331,49 @@ def sort_worker_management_list(
     }
     key = sort_key if sort_key in allowed_keys else "display_name"
     return tuple(sorted(workers, key=lambda worker: (getattr(worker, key), worker.worker_id)))
+
+
+def build_organization_tree_view(
+    nodes: Iterable[OrganizationManagementNodeSummary],
+    *,
+    root_node_id: str | None = None,
+) -> tuple[OrganizationTreeViewNode, ...]:
+    """Build nested organization tree view nodes without editing the active tree."""
+
+    node_map = {node.org_node_id: node for node in nodes}
+    children_by_parent: dict[str | None, list[OrganizationManagementNodeSummary]] = {}
+    for node in node_map.values():
+        children_by_parent.setdefault(node.parent_id, []).append(node)
+    for children in children_by_parent.values():
+        children.sort(key=lambda child: (child.name, child.org_node_id))
+
+    explicit_roots = [node_map[root_node_id]] if root_node_id in node_map else []
+    roots = explicit_roots or children_by_parent.get(None, [])
+    if not roots:
+        referenced_children = {
+            child_id for node in node_map.values() for child_id in node.child_ids
+        }
+        roots = [
+            node
+            for node in sorted(node_map.values(), key=lambda item: item.org_node_id)
+            if node.org_node_id not in referenced_children
+        ]
+    return tuple(
+        _organization_tree_node(root, children_by_parent, visiting=set())
+        for root in roots
+    )
+
+
+def organization_tree_view_node_to_dict(
+    node: OrganizationTreeViewNode,
+) -> dict[str, Any]:
+    return {
+        "summary": organization_node_summary_to_dict(node.summary),
+        "children": [
+            organization_tree_view_node_to_dict(child) for child in node.children
+        ],
+        "warnings": list(node.warnings),
+    }
 
 
 def worker_management_list_item_to_dict(
@@ -626,6 +682,31 @@ def _node_risk(code: str, label: str, node_id: str) -> ManagementRiskBadge:
         label=label,
         severity=ManagementRiskSeverity.WARNING,
         source_refs=(ManagementSourceRef("organization_node", node_id),),
+    )
+
+
+def _organization_tree_node(
+    summary: OrganizationManagementNodeSummary,
+    children_by_parent: Mapping[str | None, list[OrganizationManagementNodeSummary]],
+    *,
+    visiting: set[str],
+) -> OrganizationTreeViewNode:
+    warnings: list[str] = []
+    if summary.org_node_id in visiting:
+        warnings.append(f"organization tree cycle detected at {summary.org_node_id!r}")
+        return OrganizationTreeViewNode(summary=summary, warnings=tuple(warnings))
+    visiting.add(summary.org_node_id)
+    children = tuple(
+        _organization_tree_node(child, children_by_parent, visiting=visiting)
+        for child in children_by_parent.get(summary.org_node_id, [])
+    )
+    visiting.remove(summary.org_node_id)
+    if summary.read_only:
+        warnings.append(f"organization node {summary.org_node_id!r} is read-only")
+    return OrganizationTreeViewNode(
+        summary=summary,
+        children=children,
+        warnings=tuple(warnings),
     )
 
 
