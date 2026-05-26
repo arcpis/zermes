@@ -45,3 +45,14 @@ Main Agent review is not the same thing as user confirmation. Sensitive departme
 Restricted memories without permission references return an audit-safe placeholder instead of the stored summary. Inherited reads only return parent memories marked as inheritable summaries or organization summaries.
 
 This module does not inject memories into runtime prompts. Context selection and prompt injection belong to the later context injection policy layer.
+## Asset Review Console Projection
+
+Department asset review UI models are defined in `worker_agents.management`.
+They present proposal summaries, target departments, sensitivity, reviewer,
+conflict refs, redaction requirements, and source refs without reading private
+memory bodies or writing accepted assets directly.
+
+The detail views for memory, skill, and tool policy proposals produce controlled
+action requests for the underlying department asset services. Adoption history
+rows link accepted, rejected, partial, archived, and expired decisions back to
+proposal ids and low-sensitive source refs.
