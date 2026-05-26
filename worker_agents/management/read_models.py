@@ -50,6 +50,17 @@ class ManagementRiskSeverity(StrEnum):
     BLOCKER = "blocker"
 
 
+class ApprovalSourceKind(StrEnum):
+    """Proposal source families shown in the approval center."""
+
+    ORGANIZATION_EVOLUTION = "organization_evolution"
+    DEPARTMENT_MEMORY = "department_memory"
+    DEPARTMENT_SKILL = "department_skill"
+    DEPARTMENT_TOOL_POLICY = "department_tool_policy"
+    BUDGET = "budget"
+    EXTERNAL_AGENT = "external_agent"
+
+
 @dataclass(frozen=True)
 class ManagementSourceRef:
     """Low-sensitivity reference to the source data used by a view model."""
@@ -225,6 +236,33 @@ class BroadcastTrackingItem:
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "risk_badges", tuple(self.risk_badges))
+
+
+@dataclass(frozen=True)
+class ApprovalQueueItem:
+    """Low-sensitive approval center queue row."""
+
+    approval_id: str
+    source_kind: ApprovalSourceKind | str
+    source_id: str
+    status: str
+    requestor_id: str
+    recommended_approver_id: str | None = None
+    impact_summary: str = ""
+    risk_badges: tuple[ManagementRiskBadge, ...] = ()
+    blockers: tuple[str, ...] = ()
+    warnings: tuple[str, ...] = ()
+    deadline_at: str | None = None
+    user_confirmation_required: bool = False
+    source_refs: tuple[ManagementSourceRef, ...] = ()
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "source_kind", ApprovalSourceKind(self.source_kind))
+        object.__setattr__(self, "impact_summary", _redact_sensitive_text(self.impact_summary))
+        object.__setattr__(self, "risk_badges", tuple(self.risk_badges))
+        object.__setattr__(self, "blockers", tuple(self.blockers))
+        object.__setattr__(self, "warnings", tuple(self.warnings))
+        object.__setattr__(self, "source_refs", tuple(self.source_refs))
 
 
 @dataclass(frozen=True)
@@ -579,6 +617,96 @@ def broadcast_tracking_item_to_dict(item: BroadcastTrackingItem) -> dict[str, An
         "overdue": item.overdue,
         "risk_badges": [risk_badge_to_dict(badge) for badge in item.risk_badges],
         "source_ref": _optional_source_ref_to_dict(item.source_ref),
+    }
+
+
+def build_approval_queue_item(data: Mapping[str, Any]) -> ApprovalQueueItem:
+    """Build an approval queue row from a low-sensitive proposal summary."""
+
+    source_kind = ApprovalSourceKind(str(data.get("source_kind")))
+    source_id = str(data.get("source_id", data.get("proposal_id", "")))
+    risks = tuple(
+        _risk_badge_from_mapping(risk, source_kind.value, source_id)
+        for risk in data.get("risks", ())
+        if isinstance(risk, Mapping)
+    )
+    user_required = bool(data.get("user_confirmation_required", False)) or any(
+        badge.severity == ManagementRiskSeverity.BLOCKER
+        and badge.code in {"permission_expansion", "budget_increase", "external_agent"}
+        for badge in risks
+    )
+    return ApprovalQueueItem(
+        approval_id=str(data.get("approval_id", source_id)),
+        source_kind=source_kind,
+        source_id=source_id,
+        status=str(data.get("status", "pending")),
+        requestor_id=str(data.get("requestor_id", "")),
+        recommended_approver_id=_optional_string(data.get("recommended_approver_id")),
+        impact_summary=str(data.get("impact_summary", "")),
+        risk_badges=risks,
+        blockers=_string_tuple(data.get("blockers", ())),
+        warnings=_string_tuple(data.get("warnings", ())),
+        deadline_at=_optional_string(data.get("deadline_at")),
+        user_confirmation_required=user_required,
+        source_refs=(ManagementSourceRef(source_kind.value, source_id),),
+    )
+
+
+def filter_approval_queue_items(
+    items: Iterable[ApprovalQueueItem],
+    *,
+    status: str | None = None,
+    source_kind: ApprovalSourceKind | str | None = None,
+    high_risk: bool | None = None,
+) -> tuple[ApprovalQueueItem, ...]:
+    expected_kind = ApprovalSourceKind(source_kind) if source_kind is not None else None
+    return tuple(
+        item
+        for item in items
+        if (status is None or item.status == status)
+        and (expected_kind is None or item.source_kind == expected_kind)
+        and (
+            high_risk is None
+            or any(badge.severity == ManagementRiskSeverity.BLOCKER for badge in item.risk_badges)
+            is high_risk
+        )
+    )
+
+
+def sort_approval_queue_items(
+    items: Iterable[ApprovalQueueItem],
+) -> tuple[ApprovalQueueItem, ...]:
+    """Sort pending/high-risk approvals first while staying deterministic."""
+
+    status_rank = {"pending": 0, "expired": 1, "approved": 2, "rejected": 3}
+    return tuple(
+        sorted(
+            items,
+            key=lambda item: (
+                status_rank.get(item.status, 9),
+                not item.user_confirmation_required,
+                item.deadline_at or "",
+                item.approval_id,
+            ),
+        )
+    )
+
+
+def approval_queue_item_to_dict(item: ApprovalQueueItem) -> dict[str, Any]:
+    return {
+        "approval_id": item.approval_id,
+        "source_kind": item.source_kind.value,
+        "source_id": item.source_id,
+        "status": item.status,
+        "requestor_id": item.requestor_id,
+        "recommended_approver_id": item.recommended_approver_id,
+        "impact_summary": item.impact_summary,
+        "risk_badges": [risk_badge_to_dict(badge) for badge in item.risk_badges],
+        "blockers": list(item.blockers),
+        "warnings": list(item.warnings),
+        "deadline_at": item.deadline_at,
+        "user_confirmation_required": item.user_confirmation_required,
+        "source_refs": [source_ref_to_dict(ref) for ref in item.source_refs],
     }
 
 
@@ -1052,6 +1180,19 @@ def _delivery_risk_badges(
             )
         )
     return risks
+
+
+def _risk_badge_from_mapping(
+    data: Mapping[str, Any],
+    source_kind: str,
+    source_id: str,
+) -> ManagementRiskBadge:
+    return ManagementRiskBadge(
+        code=str(data.get("code", "risk")),
+        label=str(data.get("label", data.get("summary", "Approval risk"))),
+        severity=str(data.get("severity", ManagementRiskSeverity.WARNING.value)),
+        source_refs=(ManagementSourceRef(source_kind, source_id),),
+    )
 
 
 def _chat_thread_type_value(value: Any) -> str:
