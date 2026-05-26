@@ -92,6 +92,16 @@ class AssetReviewDecision(StrEnum):
     ARCHIVE = "archive"
 
 
+class EvolutionProposalKind(StrEnum):
+    """Organization evolution proposal kinds shown in operations console."""
+
+    CREATE_CHILD_AGENT = "create_child_agent"
+    DELETE_CHILD_AGENT = "delete_child_agent"
+    MERGE_DEPARTMENT = "merge_department"
+    ARCHIVE_NODE = "archive_node"
+    MEMORY_MERGE = "memory_merge"
+
+
 @dataclass(frozen=True)
 class ManagementSourceRef:
     """Low-sensitivity reference to the source data used by a view model."""
@@ -457,6 +467,33 @@ class AssetAdoptionHistoryItem:
         object.__setattr__(self, "source_refs", tuple(self.source_refs))
         object.__setattr__(self, "accepted_refs", tuple(self.accepted_refs))
         object.__setattr__(self, "rejected_refs", tuple(self.rejected_refs))
+
+
+@dataclass(frozen=True)
+class EvolutionProposalWorkbenchItem:
+    """Read-only operations workbench row for organization evolution."""
+
+    proposal_id: str
+    proposal_kind: EvolutionProposalKind | str
+    status: str
+    target_node_id: str | None = None
+    approval_requirement: str = ""
+    impact_summary: str = ""
+    risk_badges: tuple[ManagementRiskBadge, ...] = ()
+    blockers: tuple[str, ...] = ()
+    report_refs: tuple[str, ...] = ()
+    can_execute: bool = False
+    disabled_reason: str = ""
+    next_required_action: str = ""
+    source_refs: tuple[ManagementSourceRef, ...] = ()
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "proposal_kind", EvolutionProposalKind(self.proposal_kind))
+        object.__setattr__(self, "impact_summary", _redact_sensitive_text(self.impact_summary))
+        object.__setattr__(self, "risk_badges", tuple(self.risk_badges))
+        object.__setattr__(self, "blockers", tuple(self.blockers))
+        object.__setattr__(self, "report_refs", tuple(self.report_refs))
+        object.__setattr__(self, "source_refs", tuple(self.source_refs))
 
 
 @dataclass(frozen=True)
@@ -1201,6 +1238,87 @@ def asset_adoption_history_item_to_dict(
         "source_refs": [source_ref_to_dict(ref) for ref in item.source_refs],
         "accepted_refs": list(item.accepted_refs),
         "rejected_refs": list(item.rejected_refs),
+    }
+
+
+def build_evolution_proposal_workbench_item(
+    data: Mapping[str, Any],
+) -> EvolutionProposalWorkbenchItem:
+    """Build an operations workbench item without reading sensitive reports."""
+
+    proposal_kind = EvolutionProposalKind(str(data.get("proposal_kind")))
+    proposal_id = str(data.get("proposal_id", ""))
+    status = str(data.get("status", "draft"))
+    blockers = _string_tuple(data.get("blockers", ()))
+    risks = tuple(
+        _risk_badge_from_mapping(risk, proposal_kind.value, proposal_id)
+        for risk in data.get("risks", ())
+        if isinstance(risk, Mapping)
+    )
+    can_execute = status == "approved" and not blockers
+    disabled_reason = ""
+    if blockers:
+        disabled_reason = "; ".join(blockers)
+    elif status != "approved":
+        disabled_reason = f"proposal status is {status}"
+    return EvolutionProposalWorkbenchItem(
+        proposal_id=proposal_id,
+        proposal_kind=proposal_kind,
+        status=status,
+        target_node_id=_optional_string(data.get("target_node_id")),
+        approval_requirement=str(data.get("approval_requirement", "")),
+        impact_summary=str(data.get("impact_summary", "")),
+        risk_badges=risks,
+        blockers=blockers,
+        report_refs=_string_tuple(data.get("report_refs", ())),
+        can_execute=can_execute,
+        disabled_reason="" if can_execute else disabled_reason,
+        next_required_action="execute_approved_proposal"
+        if can_execute
+        else "resolve_blockers_or_approval",
+        source_refs=(ManagementSourceRef("evolution_proposal", proposal_id),),
+    )
+
+
+def filter_evolution_workbench_items(
+    items: Iterable[EvolutionProposalWorkbenchItem],
+    *,
+    status: str | None = None,
+    proposal_kind: EvolutionProposalKind | str | None = None,
+    risk_code: str | None = None,
+    target_node_id: str | None = None,
+) -> tuple[EvolutionProposalWorkbenchItem, ...]:
+    expected_kind = EvolutionProposalKind(proposal_kind) if proposal_kind is not None else None
+    return tuple(
+        item
+        for item in items
+        if (status is None or item.status == status)
+        and (expected_kind is None or item.proposal_kind == expected_kind)
+        and (target_node_id is None or item.target_node_id == target_node_id)
+        and (
+            risk_code is None
+            or any(badge.code == risk_code for badge in item.risk_badges)
+        )
+    )
+
+
+def evolution_proposal_workbench_item_to_dict(
+    item: EvolutionProposalWorkbenchItem,
+) -> dict[str, Any]:
+    return {
+        "proposal_id": item.proposal_id,
+        "proposal_kind": item.proposal_kind.value,
+        "status": item.status,
+        "target_node_id": item.target_node_id,
+        "approval_requirement": item.approval_requirement,
+        "impact_summary": item.impact_summary,
+        "risk_badges": [risk_badge_to_dict(badge) for badge in item.risk_badges],
+        "blockers": list(item.blockers),
+        "report_refs": list(item.report_refs),
+        "can_execute": item.can_execute,
+        "disabled_reason": item.disabled_reason,
+        "next_required_action": item.next_required_action,
+        "source_refs": [source_ref_to_dict(ref) for ref in item.source_refs],
     }
 
 
