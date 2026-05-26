@@ -77,6 +77,15 @@ from .read_models import (
     sort_approval_queue_items,
     worker_management_list_item_to_dict,
 )
+from .import_export import (
+    ExportPackageSection,
+    ExportSectionKind,
+    WorkerAgentsExportPackageManifest,
+    dump_export_manifest_json,
+    export_package_manifest_to_dict,
+    export_section_to_dict,
+    validate_export_payload,
+)
 
 __all__ = [
     "DashboardDataSources",
@@ -154,4 +163,11 @@ __all__ = [
     "organization_tree_view_node_to_dict",
     "sort_approval_queue_items",
     "worker_management_list_item_to_dict",
+    "ExportPackageSection",
+    "ExportSectionKind",
+    "WorkerAgentsExportPackageManifest",
+    "dump_export_manifest_json",
+    "export_package_manifest_to_dict",
+    "export_section_to_dict",
+    "validate_export_payload",
 ]
