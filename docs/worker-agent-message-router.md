@@ -146,3 +146,19 @@ The next organization-chat layers build on this router:
 
 See `docs/worker-agent-department-chats.md` for the department chat binding and
 hierarchical summary boundary.
+## Management Console Read Models
+
+The routing console models in `worker_agents.management` are read-only
+projections over existing router summaries. They support:
+
+- thread summaries for private, department, project, frozen, and archived
+  threads;
+- invalid-boundary badges when a thread is missing the required user or
+  main-agent management boundary;
+- `@` and broadcast tracking rows with overdue, failed, and delegated badges;
+- archive views with manifest refs, retention hints, archive actor/reason, and
+  evolution audit refs.
+
+These models only consume generated summaries and low-sensitivity status rows.
+They do not read raw transcripts, send messages, recover archived threads, or
+start a gateway.

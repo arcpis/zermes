@@ -1065,6 +1065,8 @@ def _chat_thread_type_value(value: Any) -> str:
         return "private"
     if value == "organization_group":
         return "department"
+    if value == "project_group":
+        return "project"
     return value if isinstance(value, str) and value else "private"
 
 
