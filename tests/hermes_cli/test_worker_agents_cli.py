@@ -310,3 +310,6 @@ def test_frontend_worker_agents_page_is_registered():
     assert '"/worker-agents": WorkerAgentsPage' in app
     assert "Worker Agents" in page
     assert "read-only" in page
+    assert "Organization tree is available through the API" not in page
+    assert "/api/worker-agents/organization" in page
+    assert "/direct-chat" in page
