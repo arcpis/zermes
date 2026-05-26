@@ -19,7 +19,19 @@ The preferred user-facing command is `zermes`. Hermes-compatible names and inter
 
 1. **Code-level self-evolution**
 
-   Zermes can notice when a user's request is really a feature or repository-improvement need, turn it into an approval-first implementation plan, and then complete the corresponding changes to its own code after approval. It can also run scheduled self-evolution thinking to collect improvement candidates over time. Actual code modification happens on dedicated task branches, uses explicit-file commits, records verification plans and results, and only finalizes when the required checks pass. The result is practical self-evolution: Zermes can adjust its own codebase, while keeping the risky parts visible, reviewable, and reversible.
+   Capability: Zermes can turn user feature requests, repository-improvement ideas, or scheduled self-evolution thinking candidates into approval-first implementation plans, then modify its own code on a dedicated task branch after explicit approval. Each code change is tied to explicit file lists, change records, verification plans, and verification results.
+
+   Advantage: This gives the agent a practical path to improve its own repository while keeping the risky parts visible, reviewable, verifiable, and reversible instead of allowing untracked automatic rewrites.
+
+   Best for: code-oriented AI agent projects that need continuous improvement while preserving approval, audit, and verification controls.
+
+2. **Managed worker agents**
+
+   Capability: Zermes provides the backend contract and service layer for employee-style agents. A `WorkerAgent` is a long-lived professional identity with its own profile, lifecycle state, role boundary, permissions, task records, runtime adapter, model and budget policy, private memory boundary, skill usage policy, and organization placement. Private worker chats, department chats, project chats, `@` mentions, broadcasts, and organization trees all route through governed paths.
+
+   Advantage: This turns multi-agent collaboration from temporary, invisible subagent calls into user-present, permissioned, context-minimized, low-sensitivity, proposal-first teamwork. Internal WorkerAgents and external coding, media-generation, or research agents share runtime contracts and connect through adapters, making audits, handoffs, budget control, and governance extensions easier to manage.
+
+   Best for: agent platforms that need long-lived role-based collaboration, department-level task ownership, external agent integration, organizational memory, and controlled team evolution. This capability currently covers the backend contract and service layer with focused tests under `tests/worker_agents`; a full end-user management UI is not yet shipped.
 
 ## Installation And Usage
 

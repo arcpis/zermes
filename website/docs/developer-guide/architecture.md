@@ -115,6 +115,17 @@ hermes-agent/
 │   ├── thinking.py           # Read-only candidate generation and schedule control
 │   └── token_strategy.py     # Repository-local low-token analysis context
 │
+├── worker_agents/            # Managed long-lived WorkerAgent contracts
+│   ├── profile.py            # Worker profile contract and serialization
+│   ├── registry.py           # Worker lifecycle records
+│   ├── task_state.py         # Worker task lifecycle state
+│   ├── message_router.py     # User-present worker chat routing
+│   ├── organization.py       # Organization tree contracts
+│   ├── runtime_contract.py   # Runtime request/event/result schemas
+│   ├── result_routing.py     # Runtime result classification and routing
+│   ├── management/           # Low-sensitivity management read models
+│   └── storage/              # Profile-home and install-data storage helpers
+│
 ├── gateway/                  # Messaging platform gateway
 │   ├── run.py                # GatewayRunner — message dispatch (~12,200 lines)
 │   ├── session.py            # SessionStore — conversation persistence
@@ -235,6 +246,14 @@ The `code_modification` package supports approval-first repository improvements:
 - `<install_prefix>/data/self-evolution/analysis-cache/` stores generated task summaries, documentation summaries, and context state.
 
 Final reports include documentation sync status so user-visible changes can be reflected in repository docs.
+
+### Managed Worker Agents
+
+The `worker_agents` package provides the backend contracts and services for long-lived, governed `WorkerAgent` identities. It covers worker profiles, lifecycle registry records, task state, retention policies, user-present message routing, organization trees, department chat bindings, department memory/skill/tool assets, runtime contracts, internal and external adapter boundaries, task-scoped temporary subagents, result routing, organization evolution proposals, execution audit records, and management read models.
+
+WorkerAgent storage is deliberately split: durable identity, accepted assets, organization state, proposals, history, and audit summaries live under profile home; runtime task state, transcripts, logs, external adapter output, caches, and temporary-subagent data live under install-local `data/worker_agents/`. Management modules are read models or controlled request/dry-run builders, not a frontend and not an execution bypass.
+
+→ [Managed Worker Agents](./worker-agents.md)
 
 ### Session Persistence
 

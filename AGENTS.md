@@ -33,6 +33,7 @@ zermes/
 ├── hermes_cli/           # CLI subcommands, setup wizard, plugins loader, skin engine
 ├── tools/                # Tool implementations — auto-discovered via tools/registry.py
 │   └── environments/     # Terminal backends (local, docker, ssh, modal, daytona, singularity)
+├── worker_agents/        # Managed long-lived worker agent contracts and services
 ├── gateway/              # Messaging gateway — run.py + session.py + platforms/
 │   ├── platforms/        # Adapter per platform (telegram, discord, slack, whatsapp,
 │   │                     #   homeassistant, signal, matrix, mattermost, email, sms,
@@ -152,6 +153,44 @@ Stage summary:
 - `runs/<context_run_id>/context-state.json` for selected sources, skipped sources, and budget state.
 
 Do not use sibling workspaces, parent directories, or external files as stage 7 analysis input. Prefer repository documents such as `AGENTS.md`, `README.md`, `CONTRIBUTING.md`, `SECURITY.md`, `pyproject.toml`, and recent `RELEASE_v*.md` summaries before expanding code. When implementation changes user-visible behavior, tool schemas, configuration, testing instructions, or self-evolution workflow, update the relevant repository documentation and refresh the task summary.
+
+## Managed Worker Agents
+
+The `worker_agents/` package implements the long-lived WorkerAgent backend
+contract layer. It is separate from the older `delegate_task` temporary
+subagent path and from the Kanban dispatcher. The package currently provides
+profile and registry contracts, task state, retention and cleanup planning,
+user-present message routing, organization trees, department chat bindings,
+department memory/skill/tool policy assets, runtime contracts, internal and
+external adapter boundaries, temporary-subagent policy, result routing,
+organization evolution proposals/execution records, and management read
+models.
+
+Important boundaries:
+
+- Long-term assets live under profile home via `worker_agents/storage/paths.py`;
+  runtime state, transcripts, adapter output, caches, and task-local temporary
+  subagent data live under install-local `data/worker_agents/`.
+- WorkerAgent services must not read or copy raw private memories, raw
+  transcripts, credentials, external stdout/stderr, or full profile records
+  across boundaries. Use summaries, references, hashes, and explicit proposal
+  records.
+- Organization evolution is proposal-first. Runtime results and management
+  models can create proposals and read low-sensitivity status, but must not
+  directly mutate the active organization tree unless they are an executor path
+  specifically designed for that step.
+- Management modules under `worker_agents/management/` are read models or
+  controlled request/dry-run builders. They are not a frontend, not a direct
+  executor, and not a bypass around the underlying policy services.
+- Temporary subagents created by WorkerAgents are task-scoped execution helpers;
+  they never create long-term worker registry entries, worker profiles, private
+  memories, or thread records.
+
+Focused test entry point:
+
+```bash
+venv/bin/python -m pytest tests/worker_agents -q
+```
 
 ## File Dependency Chain
 
