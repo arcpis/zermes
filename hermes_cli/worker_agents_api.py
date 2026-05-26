@@ -21,6 +21,11 @@ class ChatSendRequest(BaseModel):
     dry_run: bool = False
 
 
+class DirectWorkerChatRequest(BaseModel):
+    user_id: str = "user"
+    dry_run: bool = False
+
+
 class ApprovalActionBody(BaseModel):
     decision: str
     actor_id: str
@@ -69,6 +74,18 @@ def workers(
         runtime_type=runtime,
         risk_badge=risk,
         sort_key=sort,
+    )
+
+
+@router.post("/workers/{worker_id}/direct-chat")
+def worker_direct_chat(worker_id: str, body: DirectWorkerChatRequest | None = None) -> dict[str, Any]:
+    request = body or DirectWorkerChatRequest()
+    return _guard(
+        lambda: product.ensure_direct_worker_chat(
+            worker_id=worker_id,
+            user_id=request.user_id,
+            dry_run=request.dry_run,
+        )
     )
 
 
