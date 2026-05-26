@@ -8941,7 +8941,7 @@ _BUILTIN_SUBCOMMANDS = frozenset(
         "kanban", "login", "logout", "logs", "mcp", "memory", "model",
         "pairing", "plugins", "profile", "sessions", "setup", "skills",
         "runtime", "slack", "status", "tools", "uninstall", "update", "version",
-        "webhook", "whatsapp", "chat",
+        "webhook", "whatsapp", "worker-agents", "chat",
         # Help-ish invocations — plugin commands not being listed in
         # top-level --help is an acceptable trade-off for skipping an
         # expensive eager import of every bundled plugin module.
@@ -9089,6 +9089,13 @@ def main():
         help="Disable TLS verification for Nous login (testing only)",
     )
     model_parser.set_defaults(func=cmd_model)
+
+    # =========================================================================
+    # worker-agents command
+    # =========================================================================
+    from hermes_cli.worker_agents_cmd import add_worker_agents_parser
+
+    add_worker_agents_parser(subparsers)
 
     # =========================================================================
     # fallback command — manage the fallback provider chain
