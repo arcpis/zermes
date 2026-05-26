@@ -394,6 +394,47 @@ class AssetReviewActionRequest:
 
 
 @dataclass(frozen=True)
+class AssetMemoryReviewDetail:
+    proposal_id: str
+    classification: str
+    redaction_required: bool
+    conflict_refs: tuple[str, ...] = ()
+    summary: str = ""
+    action_request: AssetReviewActionRequest | None = None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "conflict_refs", tuple(self.conflict_refs))
+        object.__setattr__(self, "summary", _redact_sensitive_text(self.summary))
+
+
+@dataclass(frozen=True)
+class AssetSkillReviewDetail:
+    proposal_id: str
+    skill_id: str
+    skill_available: bool
+    applicability_summary: str
+    tool_dependency_warnings: tuple[str, ...] = ()
+    action_request: AssetReviewActionRequest | None = None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "tool_dependency_warnings",
+            tuple(self.tool_dependency_warnings),
+        )
+
+
+@dataclass(frozen=True)
+class AssetToolPolicyReviewDetail:
+    proposal_id: str
+    permission_impact: str
+    approval_requirement: str
+    profile_cross_check_summary: str
+    high_risk: bool = False
+    action_request: AssetReviewActionRequest | None = None
+
+
+@dataclass(frozen=True)
 class AssetAdoptionHistoryItem:
     """Low-sensitive history row linking accepted/rejected assets to proposals."""
 
@@ -1037,6 +1078,75 @@ def asset_review_item_to_dict(item: AssetReviewItem) -> dict[str, Any]:
     }
 
 
+def build_memory_review_detail(data: Mapping[str, Any]) -> AssetMemoryReviewDetail:
+    return AssetMemoryReviewDetail(
+        proposal_id=str(data.get("proposal_id", "")),
+        classification=str(data.get("classification", "low")),
+        redaction_required=bool(data.get("redaction_required", False))
+        or str(data.get("classification", "")).lower() in {"sensitive", "private"},
+        conflict_refs=_string_tuple(data.get("conflict_refs", ())),
+        summary=str(data.get("summary", "")),
+        action_request=_asset_action_request(data.get("action_request")),
+    )
+
+
+def build_skill_review_detail(data: Mapping[str, Any]) -> AssetSkillReviewDetail:
+    return AssetSkillReviewDetail(
+        proposal_id=str(data.get("proposal_id", "")),
+        skill_id=str(data.get("skill_id", "")),
+        skill_available=bool(data.get("skill_available", False)),
+        applicability_summary=str(data.get("applicability_summary", "")),
+        tool_dependency_warnings=_string_tuple(data.get("tool_dependency_warnings", ())),
+        action_request=_asset_action_request(data.get("action_request")),
+    )
+
+
+def build_tool_policy_review_detail(data: Mapping[str, Any]) -> AssetToolPolicyReviewDetail:
+    return AssetToolPolicyReviewDetail(
+        proposal_id=str(data.get("proposal_id", "")),
+        permission_impact=str(data.get("permission_impact", "")),
+        approval_requirement=str(data.get("approval_requirement", "")),
+        profile_cross_check_summary=str(data.get("profile_cross_check_summary", "")),
+        high_risk=bool(data.get("high_risk", False)),
+        action_request=_asset_action_request(data.get("action_request")),
+    )
+
+
+def memory_review_detail_to_dict(detail: AssetMemoryReviewDetail) -> dict[str, Any]:
+    return {
+        "proposal_id": detail.proposal_id,
+        "classification": detail.classification,
+        "redaction_required": detail.redaction_required,
+        "conflict_refs": list(detail.conflict_refs),
+        "summary": detail.summary,
+        "action_request": _optional_asset_action_request_to_dict(detail.action_request),
+    }
+
+
+def skill_review_detail_to_dict(detail: AssetSkillReviewDetail) -> dict[str, Any]:
+    return {
+        "proposal_id": detail.proposal_id,
+        "skill_id": detail.skill_id,
+        "skill_available": detail.skill_available,
+        "applicability_summary": detail.applicability_summary,
+        "tool_dependency_warnings": list(detail.tool_dependency_warnings),
+        "action_request": _optional_asset_action_request_to_dict(detail.action_request),
+    }
+
+
+def tool_policy_review_detail_to_dict(
+    detail: AssetToolPolicyReviewDetail,
+) -> dict[str, Any]:
+    return {
+        "proposal_id": detail.proposal_id,
+        "permission_impact": detail.permission_impact,
+        "approval_requirement": detail.approval_requirement,
+        "profile_cross_check_summary": detail.profile_cross_check_summary,
+        "high_risk": detail.high_risk,
+        "action_request": _optional_asset_action_request_to_dict(detail.action_request),
+    }
+
+
 def build_thread_archive_summary_view(
     data: Mapping[str, Any],
 ) -> ThreadArchiveSummaryView:
@@ -1520,6 +1630,34 @@ def _risk_badge_from_mapping(
         severity=str(data.get("severity", ManagementRiskSeverity.WARNING.value)),
         source_refs=(ManagementSourceRef(source_kind, source_id),),
     )
+
+
+def _asset_action_request(data: Any) -> AssetReviewActionRequest | None:
+    if not isinstance(data, Mapping):
+        return None
+    return AssetReviewActionRequest(
+        proposal_id=str(data.get("proposal_id", "")),
+        decision=str(data.get("decision", "reject")),
+        actor_id=str(data.get("actor_id", "")),
+        reason=str(data.get("reason", "")),
+        accepted_refs=_string_tuple(data.get("accepted_refs", ())),
+        rejected_refs=_string_tuple(data.get("rejected_refs", ())),
+    )
+
+
+def _optional_asset_action_request_to_dict(
+    request: AssetReviewActionRequest | None,
+) -> dict[str, Any] | None:
+    if request is None:
+        return None
+    return {
+        "proposal_id": request.proposal_id,
+        "decision": request.decision.value,
+        "actor_id": request.actor_id,
+        "reason": request.reason,
+        "accepted_refs": list(request.accepted_refs),
+        "rejected_refs": list(request.rejected_refs),
+    }
 
 
 def _chat_thread_type_value(value: Any) -> str:
