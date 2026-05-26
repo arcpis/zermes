@@ -497,6 +497,47 @@ class EvolutionProposalWorkbenchItem:
 
 
 @dataclass(frozen=True)
+class EvolutionWizardInput:
+    """Console wizard input for drafting an evolution proposal."""
+
+    proposal_kind: EvolutionProposalKind | str
+    actor_id: str
+    target_node_id: str
+    requested_worker_id: str | None = None
+    destination_node_id: str | None = None
+    asset_disposition_ref: str | None = None
+    rollback_plan_ref: str | None = None
+    active_task_refs: tuple[str, ...] = ()
+    reason: str = ""
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "proposal_kind", EvolutionProposalKind(self.proposal_kind))
+        object.__setattr__(self, "active_task_refs", tuple(self.active_task_refs))
+        object.__setattr__(self, "reason", _redact_sensitive_text(self.reason))
+
+
+@dataclass(frozen=True)
+class EvolutionProposalDraft:
+    """Validation result from an evolution wizard, before store writes."""
+
+    proposal_kind: EvolutionProposalKind | str
+    actor_id: str
+    target_node_id: str
+    proposal_type: str
+    blockers: tuple[str, ...] = ()
+    risk_badges: tuple[ManagementRiskBadge, ...] = ()
+    approval_requirement: str = "main_agent_review"
+    user_approval_required: bool = False
+    source_refs: tuple[ManagementSourceRef, ...] = ()
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "proposal_kind", EvolutionProposalKind(self.proposal_kind))
+        object.__setattr__(self, "blockers", tuple(self.blockers))
+        object.__setattr__(self, "risk_badges", tuple(self.risk_badges))
+        object.__setattr__(self, "source_refs", tuple(self.source_refs))
+
+
+@dataclass(frozen=True)
 class ThreadArchiveSummaryView:
     """Read-only thread summary, retention, and archive state view."""
 
@@ -1322,6 +1363,62 @@ def evolution_proposal_workbench_item_to_dict(
     }
 
 
+def build_evolution_proposal_draft(
+    wizard_input: EvolutionWizardInput,
+) -> EvolutionProposalDraft:
+    """Validate wizard input and return a draft proposal without store writes."""
+
+    blockers: list[str] = []
+    risks: list[ManagementRiskBadge] = []
+    kind = wizard_input.proposal_kind
+    user_approval_required = False
+    if kind == EvolutionProposalKind.DELETE_CHILD_AGENT:
+        if not wizard_input.asset_disposition_ref:
+            blockers.append("asset disposition plan is required before deleting a child agent")
+        risks.append(_evolution_risk("destructive_change", "Child agent deletion is destructive", wizard_input.target_node_id))
+        user_approval_required = True
+    elif kind == EvolutionProposalKind.MERGE_DEPARTMENT:
+        if not wizard_input.destination_node_id:
+            blockers.append("destination node is required for department merge")
+        if not wizard_input.rollback_plan_ref:
+            blockers.append("rollback plan is required for department merge")
+        risks.append(_evolution_risk("department_merge", "Department merge changes ownership boundaries", wizard_input.target_node_id))
+        user_approval_required = True
+    elif kind == EvolutionProposalKind.ARCHIVE_NODE:
+        if wizard_input.active_task_refs:
+            blockers.append("active tasks must finish before archiving a node")
+    elif kind == EvolutionProposalKind.CREATE_CHILD_AGENT:
+        if not wizard_input.requested_worker_id:
+            blockers.append("requested worker id is required for child agent creation")
+    return EvolutionProposalDraft(
+        proposal_kind=kind,
+        actor_id=wizard_input.actor_id,
+        target_node_id=wizard_input.target_node_id,
+        proposal_type=kind.value,
+        blockers=tuple(blockers),
+        risk_badges=tuple(risks),
+        approval_requirement="user_confirmation"
+        if user_approval_required
+        else "main_agent_review",
+        user_approval_required=user_approval_required,
+        source_refs=(ManagementSourceRef("evolution_wizard", wizard_input.target_node_id),),
+    )
+
+
+def evolution_proposal_draft_to_dict(draft: EvolutionProposalDraft) -> dict[str, Any]:
+    return {
+        "proposal_kind": draft.proposal_kind.value,
+        "actor_id": draft.actor_id,
+        "target_node_id": draft.target_node_id,
+        "proposal_type": draft.proposal_type,
+        "blockers": list(draft.blockers),
+        "risk_badges": [risk_badge_to_dict(badge) for badge in draft.risk_badges],
+        "approval_requirement": draft.approval_requirement,
+        "user_approval_required": draft.user_approval_required,
+        "source_refs": [source_ref_to_dict(ref) for ref in draft.source_refs],
+    }
+
+
 def build_thread_archive_summary_view(
     data: Mapping[str, Any],
 ) -> ThreadArchiveSummaryView:
@@ -1817,6 +1914,15 @@ def _asset_action_request(data: Any) -> AssetReviewActionRequest | None:
         reason=str(data.get("reason", "")),
         accepted_refs=_string_tuple(data.get("accepted_refs", ())),
         rejected_refs=_string_tuple(data.get("rejected_refs", ())),
+    )
+
+
+def _evolution_risk(code: str, label: str, target_node_id: str) -> ManagementRiskBadge:
+    return ManagementRiskBadge(
+        code=code,
+        label=label,
+        severity=ManagementRiskSeverity.BLOCKER,
+        source_refs=(ManagementSourceRef("organization_node", target_node_id),),
     )
 
 
