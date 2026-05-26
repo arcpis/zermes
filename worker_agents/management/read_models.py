@@ -97,6 +97,31 @@ class WorkerManagementSummary:
 
 
 @dataclass(frozen=True)
+class WorkerManagementListItem:
+    """Operational worker list row with only controlled action targets."""
+
+    worker_id: str
+    display_name: str
+    role: str
+    runtime_type: str
+    status: str
+    department_ids: tuple[str, ...]
+    health_status: str
+    policy_summary: str
+    risk_badges: tuple[ManagementRiskBadge, ...]
+    action_links: Mapping[str, str] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "department_ids", tuple(self.department_ids))
+        object.__setattr__(self, "risk_badges", tuple(self.risk_badges))
+        object.__setattr__(
+            self,
+            "action_links",
+            _controlled_worker_action_links(self.worker_id, self.action_links),
+        )
+
+
+@dataclass(frozen=True)
 class OrganizationManagementNodeSummary:
     """Low-sensitivity organization node summary for the dashboard snapshot."""
 
@@ -240,6 +265,78 @@ def dashboard_snapshot_to_dict(snapshot: DashboardSnapshot) -> dict[str, Any]:
     }
 
 
+def build_worker_management_list(
+    snapshot: DashboardSnapshot,
+) -> tuple[WorkerManagementListItem, ...]:
+    """Return list-view rows derived from the dashboard snapshot."""
+
+    return tuple(_worker_list_item(worker) for worker in snapshot.workers)
+
+
+def filter_worker_management_list(
+    workers: Iterable[WorkerManagementListItem],
+    *,
+    status: str | None = None,
+    department_id: str | None = None,
+    runtime_type: str | None = None,
+    risk_badge: str | None = None,
+    include_archived: bool = True,
+) -> tuple[WorkerManagementListItem, ...]:
+    """Filter worker list rows without hiding archived workers by default."""
+
+    result = []
+    for worker in workers:
+        if not include_archived and worker.status == WorkerLifecycleStatus.ARCHIVED.value:
+            continue
+        if status is not None and worker.status != status:
+            continue
+        if department_id is not None and department_id not in worker.department_ids:
+            continue
+        if runtime_type is not None and worker.runtime_type != runtime_type:
+            continue
+        if risk_badge is not None and all(
+            badge.code != risk_badge for badge in worker.risk_badges
+        ):
+            continue
+        result.append(worker)
+    return tuple(result)
+
+
+def sort_worker_management_list(
+    workers: Iterable[WorkerManagementListItem],
+    *,
+    sort_key: str = "display_name",
+) -> tuple[WorkerManagementListItem, ...]:
+    """Sort worker list rows by a stable public field."""
+
+    allowed_keys = {
+        "display_name",
+        "health_status",
+        "runtime_type",
+        "status",
+        "worker_id",
+    }
+    key = sort_key if sort_key in allowed_keys else "display_name"
+    return tuple(sorted(workers, key=lambda worker: (getattr(worker, key), worker.worker_id)))
+
+
+def worker_management_list_item_to_dict(
+    item: WorkerManagementListItem,
+) -> dict[str, Any]:
+    return {
+        "worker_id": item.worker_id,
+        "display_name": item.display_name,
+        "role": item.role,
+        "runtime_type": item.runtime_type,
+        "status": item.status,
+        "department_ids": list(item.department_ids),
+        "health_status": item.health_status,
+        "policy_summary": item.policy_summary,
+        "risk_badges": [risk_badge_to_dict(badge) for badge in item.risk_badges],
+        "action_links": dict(item.action_links),
+    }
+
+
 def worker_summary_to_dict(summary: WorkerManagementSummary) -> dict[str, Any]:
     return {
         "worker_id": summary.worker_id,
@@ -354,6 +451,36 @@ def _build_worker_summary(
         ),
         public_metadata=_mapping_from_record(record, "metadata"),
     )
+
+
+def _worker_list_item(summary: WorkerManagementSummary) -> WorkerManagementListItem:
+    return WorkerManagementListItem(
+        worker_id=summary.worker_id,
+        display_name=summary.display_name,
+        role=summary.role,
+        runtime_type=summary.runtime_type,
+        status=summary.status,
+        department_ids=summary.department_ids,
+        health_status=summary.health_status,
+        policy_summary=summary.policy_summary,
+        risk_badges=summary.risk_badges,
+        action_links=_controlled_worker_action_links(summary.worker_id, {}),
+    )
+
+
+def _controlled_worker_action_links(
+    worker_id: str,
+    requested_links: Mapping[str, str],
+) -> dict[str, str]:
+    safe_links = {
+        "view_approvals": f"approval-center?worker_id={worker_id}",
+        "view_operations": f"operations-console?worker_id={worker_id}",
+        "view_assets": f"asset-review?worker_id={worker_id}",
+    }
+    for name, target in requested_links.items():
+        if name in safe_links and isinstance(target, str):
+            safe_links[name] = target
+    return safe_links
 
 
 def _build_organization_summaries(
