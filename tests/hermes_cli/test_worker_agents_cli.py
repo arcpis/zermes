@@ -240,6 +240,21 @@ def test_chat_history_paginates_controlled_message_envelopes(monkeypatch, capsys
     assert "raw_transcript" not in json.dumps(data)
 
 
+def test_direct_chat_command_creates_worker_thread(monkeypatch, capsys, cli_home):
+    out = _run_cli(
+        monkeypatch,
+        capsys,
+        "worker-agents",
+        "direct-chat",
+        "worker-a",
+        "--json",
+    ).out
+    data = json.loads(out)
+
+    assert data["updated_status"] == "created"
+    assert data["thread"]["thread_id"] == "direct-user-worker-a"
+
+
 def test_chat_send_rejects_read_only_thread(monkeypatch, capsys, cli_home):
     from hermes_cli.main import main
 
