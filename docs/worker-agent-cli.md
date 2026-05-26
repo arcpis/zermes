@@ -34,10 +34,15 @@ Chat sends are validated through the managed message router before any envelope
 is appended.
 
 ```bash
+hermes worker-agents direct-chat worker-a --json
 hermes worker-agents send thread-1 --sender user --text "Status update" --json
 hermes worker-agents mention thread-1 --sender user --target worker-a --text "@worker-a review this" --json
 hermes worker-agents broadcast thread-1 --sender user --text "Team update" --json
 ```
+
+`direct-chat` creates or reuses the user-present direct thread for an enabled
+worker. It writes only the low-sensitivity management chat summary; message
+history still lives under the returned `thread_id`.
 
 Approval and asset commands create action request/audit summaries. High-risk
 approvals require `--confirm-high-risk`.

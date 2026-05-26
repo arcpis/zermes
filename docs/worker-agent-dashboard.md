@@ -26,6 +26,7 @@ Read endpoints:
 
 Action endpoints:
 
+- `POST /api/worker-agents/workers/{worker_id}/direct-chat`
 - `POST /api/worker-agents/chats/{thread_id}/send`
 - `POST /api/worker-agents/approvals/{approval_id}/action`
 - `POST /api/worker-agents/assets/{proposal_id}/action`
@@ -44,10 +45,25 @@ Organization, Chats, Approvals, Assets, Evolution, Import/Export, and
 Retention. It prioritizes operational state: risks, blockers, read-only chat
 threads, delivery status, and audit refs.
 
+The Organization tab renders the managed organization tree returned by the API.
+Nodes show lifecycle, leader, members, collaboration mode, read-only state, and
+warnings. Multi-worker departments can open their default department chat.
+Single-worker departments show the `private_or_parent_chat` mode instead of a
+redundant group thread.
+
+The Workers tab can open a user-present direct chat for an enabled worker. The
+API reuses an existing direct thread when one exists; otherwise it creates a
+low-sensitivity thread summary in the management snapshot. Archived, deleted,
+or missing workers return a disabled reason instead of creating a chat.
+
 The Chats tab reads controlled message envelopes by `thread_id`. Sending a
 normal message, mention, or broadcast calls the API, which validates the route
 through the Message Router before appending a managed envelope. Archived,
 frozen, or invalid-boundary threads disable the composer.
+
+Department chats and direct worker chats have separate `thread_id` values and
+separate `worker_agents/threads/<thread_id>/messages.jsonl` histories. The
+dashboard never merges a department conversation into a direct worker chat.
 
 The page does not read runtime raw transcripts or external adapter raw output.
 

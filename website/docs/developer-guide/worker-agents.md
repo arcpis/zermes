@@ -100,6 +100,17 @@ CLI registration lives in `hermes_cli/worker_agents_cmd.py` and is exposed as `h
 
 The dashboard page is `web/src/pages/WorkerAgentsPage.tsx`, routed at `/worker-agents`.
 
+Department chat visibility is materialized in the product adapter from the
+low-sensitivity organization tree and worker management records. Active
+departments or teams with at least two enabled workers get a managed department
+thread summary. Single-worker departments remain in `private_or_parent_chat`
+mode and should offer a direct worker chat or parent chat path instead.
+
+Direct worker chats are opened through `ensure_direct_worker_chat` and
+`POST /api/worker-agents/workers/{worker_id}/direct-chat`. That path validates
+the worker status and creates or reuses a direct thread summary; it does not
+change worker profiles, registry state, organization structure, or permissions.
+
 These entrypoints must stay thin:
 
 - Use management DTO serializers such as `dashboard_snapshot_to_dict`, `worker_management_list_item_to_dict`, and related action request serializers.
