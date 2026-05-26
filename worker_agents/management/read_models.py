@@ -228,6 +228,32 @@ class BroadcastTrackingItem:
 
 
 @dataclass(frozen=True)
+class ThreadArchiveSummaryView:
+    """Read-only thread summary, retention, and archive state view."""
+
+    thread_id: str
+    status: str
+    summary: str
+    manifest_refs: tuple[str, ...] = ()
+    retention_hint: str = ""
+    archive_actor: str | None = None
+    archive_reason: str = ""
+    evolution_audit_refs: tuple[str, ...] = ()
+    new_task_entry_enabled: bool = True
+    read_only: bool = False
+    source_ref: ManagementSourceRef | None = None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "summary", _redact_sensitive_text(self.summary))
+        object.__setattr__(self, "manifest_refs", tuple(self.manifest_refs))
+        object.__setattr__(
+            self,
+            "evolution_audit_refs",
+            tuple(self.evolution_audit_refs),
+        )
+
+
+@dataclass(frozen=True)
 class DepartmentManagementSummary:
     """Low-sensitivity department state and asset summary."""
 
@@ -553,6 +579,46 @@ def broadcast_tracking_item_to_dict(item: BroadcastTrackingItem) -> dict[str, An
         "overdue": item.overdue,
         "risk_badges": [risk_badge_to_dict(badge) for badge in item.risk_badges],
         "source_ref": _optional_source_ref_to_dict(item.source_ref),
+    }
+
+
+def build_thread_archive_summary_view(
+    data: Mapping[str, Any],
+) -> ThreadArchiveSummaryView:
+    """Build a thread archive/summary view without exposing raw transcript."""
+
+    status = str(data.get("status", "active")).lower().replace(" ", "_")
+    thread_id = str(data.get("thread_id", ""))
+    return ThreadArchiveSummaryView(
+        thread_id=thread_id,
+        status=status,
+        summary=str(data.get("summary", data.get("last_summary", ""))),
+        manifest_refs=_string_tuple(data.get("manifest_refs", ())),
+        retention_hint=str(data.get("retention_hint", "")),
+        archive_actor=_optional_string(data.get("archive_actor")),
+        archive_reason=str(data.get("archive_reason", "")),
+        evolution_audit_refs=_string_tuple(data.get("evolution_audit_refs", ())),
+        new_task_entry_enabled=status not in {"frozen", "archived"},
+        read_only=status == "archived",
+        source_ref=ManagementSourceRef("chat_thread_archive", thread_id),
+    )
+
+
+def thread_archive_summary_view_to_dict(
+    view: ThreadArchiveSummaryView,
+) -> dict[str, Any]:
+    return {
+        "thread_id": view.thread_id,
+        "status": view.status,
+        "summary": view.summary,
+        "manifest_refs": list(view.manifest_refs),
+        "retention_hint": view.retention_hint,
+        "archive_actor": view.archive_actor,
+        "archive_reason": view.archive_reason,
+        "evolution_audit_refs": list(view.evolution_audit_refs),
+        "new_task_entry_enabled": view.new_task_entry_enabled,
+        "read_only": view.read_only,
+        "source_ref": _optional_source_ref_to_dict(view.source_ref),
     }
 
 
