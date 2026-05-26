@@ -189,6 +189,45 @@ class ManagedChatThreadSummary:
 
 
 @dataclass(frozen=True)
+class AtMessageTrackingItem:
+    """Read-only tracking row for one @ mention handling record."""
+
+    tracking_id: str
+    thread_id: str
+    message_id: str
+    status: str
+    target_id: str
+    delegated_to: str | None = None
+    overdue: bool = False
+    risk_badges: tuple[ManagementRiskBadge, ...] = ()
+    source_ref: ManagementSourceRef | None = None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "risk_badges", tuple(self.risk_badges))
+
+
+@dataclass(frozen=True)
+class BroadcastTrackingItem:
+    """Read-only tracking row for broadcast delivery status."""
+
+    tracking_id: str
+    thread_id: str
+    message_id: str
+    status: str
+    target_scope: str
+    recipient_count: int = 0
+    acknowledged_count: int = 0
+    requires_all_acknowledgement: bool = False
+    failed_count: int = 0
+    overdue: bool = False
+    risk_badges: tuple[ManagementRiskBadge, ...] = ()
+    source_ref: ManagementSourceRef | None = None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "risk_badges", tuple(self.risk_badges))
+
+
+@dataclass(frozen=True)
 class DepartmentManagementSummary:
     """Low-sensitivity department state and asset summary."""
 
@@ -383,6 +422,137 @@ def managed_chat_thread_summary_to_dict(
         "last_summary": summary.last_summary,
         "risk_badges": [risk_badge_to_dict(badge) for badge in summary.risk_badges],
         "source_ref": _optional_source_ref_to_dict(summary.source_ref),
+    }
+
+
+def build_at_message_tracking_item(
+    record: Mapping[str, Any],
+) -> AtMessageTrackingItem:
+    """Build a read-only @ tracking row from a router status summary."""
+
+    status = str(record.get("status", "pending"))
+    tracking_id = str(record.get("tracking_id", record.get("delivery_id", "")))
+    thread_id = str(record.get("thread_id", ""))
+    risks = _delivery_risk_badges(
+        status=status,
+        thread_id=thread_id,
+        overdue=bool(record.get("overdue", False)),
+        delegated_to=_optional_string(record.get("delegated_to")),
+    )
+    return AtMessageTrackingItem(
+        tracking_id=tracking_id,
+        thread_id=thread_id,
+        message_id=str(record.get("message_id", "")),
+        status=status,
+        target_id=str(record.get("target_id", record.get("worker_id", ""))),
+        delegated_to=_optional_string(record.get("delegated_to")),
+        overdue=bool(record.get("overdue", False)),
+        risk_badges=tuple(risks),
+        source_ref=ManagementSourceRef("mention_tracking", tracking_id),
+    )
+
+
+def build_broadcast_tracking_item(
+    record: Mapping[str, Any],
+) -> BroadcastTrackingItem:
+    """Build a read-only broadcast tracking row from delivery summaries."""
+
+    status = str(record.get("status", "pending"))
+    tracking_id = str(record.get("tracking_id", record.get("delivery_id", "")))
+    thread_id = str(record.get("thread_id", ""))
+    failed_count = _int_value(record.get("failed_count", 0))
+    risks = _delivery_risk_badges(
+        status=status,
+        thread_id=thread_id,
+        overdue=bool(record.get("overdue", False)),
+    )
+    if failed_count:
+        risks.append(
+            ManagementRiskBadge(
+                code="broadcast_failed",
+                label="Broadcast has failed deliveries",
+                severity=ManagementRiskSeverity.WARNING,
+                source_refs=(ManagementSourceRef("broadcast_tracking", tracking_id),),
+            )
+        )
+    return BroadcastTrackingItem(
+        tracking_id=tracking_id,
+        thread_id=thread_id,
+        message_id=str(record.get("message_id", "")),
+        status=status,
+        target_scope=str(record.get("target_scope", "")),
+        recipient_count=_int_value(record.get("recipient_count", 0)),
+        acknowledged_count=_int_value(record.get("acknowledged_count", 0)),
+        requires_all_acknowledgement=bool(
+            record.get("requires_all_acknowledgement", False)
+        ),
+        failed_count=failed_count,
+        overdue=bool(record.get("overdue", False)),
+        risk_badges=tuple(risks),
+        source_ref=ManagementSourceRef("broadcast_tracking", tracking_id),
+    )
+
+
+def filter_at_message_tracking_items(
+    items: Iterable[AtMessageTrackingItem],
+    *,
+    status: str | None = None,
+    target_id: str | None = None,
+    thread_id: str | None = None,
+) -> tuple[AtMessageTrackingItem, ...]:
+    return tuple(
+        item
+        for item in items
+        if (status is None or item.status == status)
+        and (target_id is None or item.target_id == target_id)
+        and (thread_id is None or item.thread_id == thread_id)
+    )
+
+
+def filter_broadcast_tracking_items(
+    items: Iterable[BroadcastTrackingItem],
+    *,
+    status: str | None = None,
+    target_scope: str | None = None,
+    thread_id: str | None = None,
+) -> tuple[BroadcastTrackingItem, ...]:
+    return tuple(
+        item
+        for item in items
+        if (status is None or item.status == status)
+        and (target_scope is None or item.target_scope == target_scope)
+        and (thread_id is None or item.thread_id == thread_id)
+    )
+
+
+def at_message_tracking_item_to_dict(item: AtMessageTrackingItem) -> dict[str, Any]:
+    return {
+        "tracking_id": item.tracking_id,
+        "thread_id": item.thread_id,
+        "message_id": item.message_id,
+        "status": item.status,
+        "target_id": item.target_id,
+        "delegated_to": item.delegated_to,
+        "overdue": item.overdue,
+        "risk_badges": [risk_badge_to_dict(badge) for badge in item.risk_badges],
+        "source_ref": _optional_source_ref_to_dict(item.source_ref),
+    }
+
+
+def broadcast_tracking_item_to_dict(item: BroadcastTrackingItem) -> dict[str, Any]:
+    return {
+        "tracking_id": item.tracking_id,
+        "thread_id": item.thread_id,
+        "message_id": item.message_id,
+        "status": item.status,
+        "target_scope": item.target_scope,
+        "recipient_count": item.recipient_count,
+        "acknowledged_count": item.acknowledged_count,
+        "requires_all_acknowledgement": item.requires_all_acknowledgement,
+        "failed_count": item.failed_count,
+        "overdue": item.overdue,
+        "risk_badges": [risk_badge_to_dict(badge) for badge in item.risk_badges],
+        "source_ref": _optional_source_ref_to_dict(item.source_ref),
     }
 
 
@@ -776,6 +946,46 @@ def _redact_sensitive_text(value: str) -> str:
     if any(marker in lowered for marker in SENSITIVE_FIELD_MARKERS):
         return "[redacted summary]"
     return value
+
+
+def _delivery_risk_badges(
+    *,
+    status: str,
+    thread_id: str,
+    overdue: bool,
+    delegated_to: str | None = None,
+) -> list[ManagementRiskBadge]:
+    risks: list[ManagementRiskBadge] = []
+    source = (ManagementSourceRef("chat_thread", thread_id),)
+    normalized_status = status.lower().replace(" ", "_")
+    if overdue or normalized_status in {"timed_out", "timeout"}:
+        risks.append(
+            ManagementRiskBadge(
+                code="delivery_overdue",
+                label="Delivery handling is overdue",
+                severity=ManagementRiskSeverity.WARNING,
+                source_refs=source,
+            )
+        )
+    if normalized_status in {"failed", "declined"}:
+        risks.append(
+            ManagementRiskBadge(
+                code="delivery_failed",
+                label="Delivery handling failed or was declined",
+                severity=ManagementRiskSeverity.WARNING,
+                source_refs=source,
+            )
+        )
+    if delegated_to:
+        risks.append(
+            ManagementRiskBadge(
+                code="delivery_delegated",
+                label="Delivery was delegated",
+                severity=ManagementRiskSeverity.INFO,
+                source_refs=source,
+            )
+        )
+    return risks
 
 
 def _chat_thread_type_value(value: Any) -> str:
