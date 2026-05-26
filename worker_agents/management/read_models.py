@@ -19,6 +19,11 @@ from worker_agents.organization import (
     OrgTree,
 )
 from worker_agents.registry import WorkerLifecycleStatus, WorkerRegistryRecord
+from worker_agents.message_router import (
+    ChatParticipantKind,
+    ChatThreadType,
+    WorkerChatThread,
+)
 
 
 SENSITIVE_FIELD_MARKERS = (
@@ -160,6 +165,30 @@ class OrganizationTreeViewNode:
 
 
 @dataclass(frozen=True)
+class ManagedChatThreadSummary:
+    """Low-sensitive chat thread row for routing operations."""
+
+    thread_id: str
+    thread_type: str
+    status: str
+    title: str = ""
+    participant_count: int = 0
+    worker_count: int = 0
+    organization_node_count: int = 0
+    user_present: bool = False
+    main_agent_visible: bool = False
+    valid_management_boundary: bool = False
+    read_only: bool = False
+    last_summary: str = ""
+    risk_badges: tuple[ManagementRiskBadge, ...] = ()
+    source_ref: ManagementSourceRef | None = None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "risk_badges", tuple(self.risk_badges))
+        object.__setattr__(self, "last_summary", _redact_sensitive_text(self.last_summary))
+
+
+@dataclass(frozen=True)
 class DepartmentManagementSummary:
     """Low-sensitivity department state and asset summary."""
 
@@ -284,6 +313,77 @@ def build_worker_management_list(
     """Return list-view rows derived from the dashboard snapshot."""
 
     return tuple(_worker_list_item(worker) for worker in snapshot.workers)
+
+
+def build_managed_chat_thread_summary(
+    thread: WorkerChatThread | Mapping[str, Any],
+    *,
+    status: str = "active",
+    last_summary: str = "",
+    source_revision: str = "",
+) -> ManagedChatThreadSummary:
+    """Build a chat thread management summary without reading transcript content."""
+
+    thread_id = _string_from_record(thread, "thread_id", "")
+    thread_type = _chat_thread_type_value(_value_from_record(thread, "thread_type"))
+    participants = _participants_from_thread(thread)
+    user_present = _participant_kind_count(participants, ChatParticipantKind.USER.value) > 0
+    main_agent_visible = bool(_value_from_record(thread, "main_agent_visible"))
+    has_main_agent = (
+        _participant_kind_count(participants, ChatParticipantKind.MAIN_AGENT.value) > 0
+        or main_agent_visible
+    )
+    risks: list[ManagementRiskBadge] = []
+    if not user_present or not has_main_agent:
+        risks.append(
+            ManagementRiskBadge(
+                code="invalid_management_boundary",
+                label="Thread is missing the required user or main-agent boundary",
+                severity=ManagementRiskSeverity.BLOCKER,
+                source_refs=(ManagementSourceRef("chat_thread", thread_id),),
+            )
+        )
+    normalized_status = status.lower().replace(" ", "_")
+    return ManagedChatThreadSummary(
+        thread_id=thread_id,
+        thread_type=thread_type,
+        status=normalized_status,
+        title=_string_from_record(thread, "title", ""),
+        participant_count=len(participants),
+        worker_count=_participant_kind_count(participants, ChatParticipantKind.WORKER.value),
+        organization_node_count=_participant_kind_count(
+            participants,
+            ChatParticipantKind.ORGANIZATION_NODE.value,
+        ),
+        user_present=user_present,
+        main_agent_visible=main_agent_visible,
+        valid_management_boundary=user_present and has_main_agent,
+        read_only=normalized_status == "archived",
+        last_summary=last_summary or _string_from_record(thread, "audit_summary", ""),
+        risk_badges=tuple(risks),
+        source_ref=ManagementSourceRef("chat_thread", thread_id, source_revision),
+    )
+
+
+def managed_chat_thread_summary_to_dict(
+    summary: ManagedChatThreadSummary,
+) -> dict[str, Any]:
+    return {
+        "thread_id": summary.thread_id,
+        "thread_type": summary.thread_type,
+        "status": summary.status,
+        "title": summary.title,
+        "participant_count": summary.participant_count,
+        "worker_count": summary.worker_count,
+        "organization_node_count": summary.organization_node_count,
+        "user_present": summary.user_present,
+        "main_agent_visible": summary.main_agent_visible,
+        "valid_management_boundary": summary.valid_management_boundary,
+        "read_only": summary.read_only,
+        "last_summary": summary.last_summary,
+        "risk_badges": [risk_badge_to_dict(badge) for badge in summary.risk_badges],
+        "source_ref": _optional_source_ref_to_dict(summary.source_ref),
+    }
 
 
 def filter_worker_management_list(
@@ -669,6 +769,47 @@ def _redact_sensitive_mapping(data: Mapping[str, Any]) -> dict[str, Any]:
         else:
             result[key_text] = value
     return result
+
+
+def _redact_sensitive_text(value: str) -> str:
+    lowered = value.lower()
+    if any(marker in lowered for marker in SENSITIVE_FIELD_MARKERS):
+        return "[redacted summary]"
+    return value
+
+
+def _chat_thread_type_value(value: Any) -> str:
+    if isinstance(value, ChatThreadType):
+        if value == ChatThreadType.DIRECT:
+            return "private"
+        if value == ChatThreadType.ORGANIZATION_GROUP:
+            return "department"
+        return "project"
+    if value == "direct":
+        return "private"
+    if value == "organization_group":
+        return "department"
+    return value if isinstance(value, str) and value else "private"
+
+
+def _participants_from_thread(thread: WorkerChatThread | Mapping[str, Any]) -> tuple[Mapping[str, Any], ...]:
+    participants = _value_from_record(thread, "participants") or ()
+    result = []
+    for participant in participants:
+        if isinstance(participant, Mapping):
+            result.append(participant)
+        else:
+            result.append(
+                {
+                    "kind": _enum_value(getattr(participant, "kind", ""), ""),
+                    "participant_id": getattr(participant, "participant_id", ""),
+                }
+            )
+    return tuple(result)
+
+
+def _participant_kind_count(participants: Iterable[Mapping[str, Any]], kind: str) -> int:
+    return sum(1 for participant in participants if participant.get("kind") == kind)
 
 
 def _is_sensitive_key(key: str) -> bool:
