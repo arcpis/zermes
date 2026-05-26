@@ -1,0 +1,4 @@
+interface:
+  display_name: "Worker Agent Organization Planner"
+  short_description: "Plan WorkerAgent staffing and organization changes safely."
+  default_prompt: "Use worker-agent-organization-planner to convert my WorkerAgent staffing or organization change request into proposal-first CLI commands, approval steps, and verification checks."
