@@ -30,6 +30,7 @@ Action endpoints:
 - `POST /api/worker-agents/approvals/{approval_id}/action`
 - `POST /api/worker-agents/assets/{proposal_id}/action`
 - `POST /api/worker-agents/evolution/draft`
+- `POST /api/worker-agents/evolution/apply-draft`
 - `POST /api/worker-agents/import-dry-run`
 
 Responses are sanitized DTOs. Forbidden raw fields such as `raw_transcript`,
@@ -49,3 +50,8 @@ through the Message Router before appending a managed envelope. Archived,
 frozen, or invalid-boundary threads disable the composer.
 
 The page does not read runtime raw transcripts or external adapter raw output.
+
+`/evolution/draft` validates wizard input without writes. `/evolution/apply-draft`
+accepts the same body for no-blocker `create_child_agent` drafts and updates the
+low-sensitivity management snapshot used by Overview, Workers, and Organization.
+It is not the controlled executor for active organization state.

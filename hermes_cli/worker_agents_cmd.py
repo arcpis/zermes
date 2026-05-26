@@ -88,6 +88,17 @@ def add_worker_agents_parser(subparsers: argparse._SubParsersAction) -> None:
     draft.add_argument("--active-task-ref", action="append", default=[])
     draft.add_argument("--reason", default="")
 
+    apply_draft = _action_command(commands, "evolution-apply-draft", _evolution_apply_draft)
+    apply_draft.add_argument("--proposal-kind", required=True)
+    apply_draft.add_argument("--actor", required=True)
+    apply_draft.add_argument("--target-node", required=True)
+    apply_draft.add_argument("--requested-worker")
+    apply_draft.add_argument("--destination-node")
+    apply_draft.add_argument("--asset-disposition-ref")
+    apply_draft.add_argument("--rollback-plan-ref")
+    apply_draft.add_argument("--active-task-ref", action="append", default=[])
+    apply_draft.add_argument("--reason", default="")
+
 
 def cmd_worker_agents(args: argparse.Namespace) -> None:
     if not getattr(args, "worker_agents_command", None):
@@ -221,6 +232,21 @@ def _evolution_draft(args: argparse.Namespace) -> Any:
         rollback_plan_ref=args.rollback_plan_ref,
         active_task_refs=tuple(args.active_task_ref),
         reason=args.reason,
+    )
+
+
+def _evolution_apply_draft(args: argparse.Namespace) -> Any:
+    return product.apply_evolution_draft(
+        proposal_kind=args.proposal_kind,
+        actor_id=args.actor,
+        target_node_id=args.target_node,
+        requested_worker_id=args.requested_worker,
+        destination_node_id=args.destination_node,
+        asset_disposition_ref=args.asset_disposition_ref,
+        rollback_plan_ref=args.rollback_plan_ref,
+        active_task_refs=tuple(args.active_task_ref),
+        reason=args.reason,
+        dry_run=args.dry_run,
     )
 
 

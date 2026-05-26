@@ -47,6 +47,7 @@ class EvolutionDraftBody(BaseModel):
     rollback_plan_ref: str | None = None
     active_task_refs: list[str] = Field(default_factory=list)
     reason: str = ""
+    dry_run: bool = False
 
 
 @router.get("/overview")
@@ -196,6 +197,24 @@ def evolution_draft(body: EvolutionDraftBody) -> dict[str, Any]:
             rollback_plan_ref=body.rollback_plan_ref,
             active_task_refs=tuple(body.active_task_refs),
             reason=body.reason,
+        )
+    )
+
+
+@router.post("/evolution/apply-draft")
+def evolution_apply_draft(body: EvolutionDraftBody) -> dict[str, Any]:
+    return _guard(
+        lambda: product.apply_evolution_draft(
+            proposal_kind=body.proposal_kind,
+            actor_id=body.actor_id,
+            target_node_id=body.target_node_id,
+            requested_worker_id=body.requested_worker_id,
+            destination_node_id=body.destination_node_id,
+            asset_disposition_ref=body.asset_disposition_ref,
+            rollback_plan_ref=body.rollback_plan_ref,
+            active_task_refs=tuple(body.active_task_refs),
+            reason=body.reason,
+            dry_run=body.dry_run,
         )
     )
 

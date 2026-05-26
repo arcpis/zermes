@@ -149,6 +149,31 @@ def test_worker_agents_chat_send_and_history_share_managed_store(client):
     assert history.json()["messages"][0]["body_preview"] == "hello from dashboard"
 
 
+def test_worker_agents_evolution_apply_draft_updates_overview(client):
+    response = client.post(
+        "/api/worker-agents/evolution/apply-draft",
+        json={
+            "proposal_kind": "create_child_agent",
+            "actor_id": "user",
+            "target_node_id": "root",
+            "requested_worker_id": "platform-implementation",
+            "reason": "Platform implementation",
+        },
+    )
+    overview = client.get("/api/worker-agents/overview")
+
+    assert response.status_code == 200
+    assert response.json()["updated_status"] == "created"
+    assert any(
+        worker["worker_id"] == "platform-implementation"
+        for worker in overview.json()["workers"]
+    )
+    assert any(
+        node["org_node_id"] == "platform-implementation"
+        for node in overview.json()["organization_nodes"]
+    )
+
+
 def test_worker_agents_action_endpoints_return_audit_contract(client):
     approval = client.post(
         "/api/worker-agents/approvals/approval-1/action",

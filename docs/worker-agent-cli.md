@@ -47,8 +47,15 @@ hermes worker-agents approval approve approval-1 --actor lead --reason "Reviewed
 hermes worker-agents approval reject approval-1 --actor lead --reason "Blocked" --json
 hermes worker-agents asset reject asset-1 --actor lead --reason "Needs redaction" --json
 hermes worker-agents evolution-draft --proposal-kind archive_node --actor lead --target-node engineering --json
+hermes worker-agents evolution-apply-draft --proposal-kind create_child_agent --actor lead --target-node root --requested-worker frontend --json
 ```
 
 These commands do not directly edit the active organization tree, registry,
 department assets, tool policies, or retention data. Mutating services remain
 responsible for final state changes.
+
+`evolution-draft` is validation-only and never writes state. Use
+`evolution-apply-draft` only for no-blocker `create_child_agent` drafts when
+you need to materialize the current dashboard management snapshot; it updates
+the low-sensitivity `worker_agents/management/dashboard_state.json` view, not
+the executor-owned active organization tree or private worker profile store.

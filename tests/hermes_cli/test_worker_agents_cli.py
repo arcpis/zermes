@@ -136,6 +136,80 @@ def test_workers_json_filters_and_redacts_sensitive_fields(monkeypatch, capsys, 
     assert "hidden" not in rendered
 
 
+def test_evolution_apply_draft_creates_management_worker_and_node(monkeypatch, capsys, cli_home):
+    first = _run_cli(
+        monkeypatch,
+        capsys,
+        "worker-agents",
+        "evolution-apply-draft",
+        "--proposal-kind",
+        "create_child_agent",
+        "--actor",
+        "user",
+        "--target-node",
+        "root",
+        "--requested-worker",
+        "code-implementation",
+        "--reason",
+        "Code implementation department",
+        "--json",
+    ).out
+    first_data = json.loads(first)
+    assert first_data["updated_status"] == "created"
+
+    _run_cli(
+        monkeypatch,
+        capsys,
+        "worker-agents",
+        "evolution-apply-draft",
+        "--proposal-kind",
+        "create_child_agent",
+        "--actor",
+        "user",
+        "--target-node",
+        "code-implementation",
+        "--requested-worker",
+        "frontend-implementation",
+        "--reason",
+        "Frontend implementation",
+        "--json",
+    )
+
+    overview = json.loads(
+        _run_cli(monkeypatch, capsys, "worker-agents", "overview", "--json").out
+    )
+    worker_ids = {worker["worker_id"] for worker in overview["workers"]}
+    node_ids = {node["org_node_id"] for node in overview["organization_nodes"]}
+
+    assert {"code-implementation", "frontend-implementation"} <= worker_ids
+    assert {"root", "code-implementation", "frontend-implementation"} <= node_ids
+
+
+def test_evolution_apply_draft_dry_run_does_not_write(monkeypatch, capsys, cli_home):
+    _run_cli(
+        monkeypatch,
+        capsys,
+        "worker-agents",
+        "evolution-apply-draft",
+        "--proposal-kind",
+        "create_child_agent",
+        "--actor",
+        "user",
+        "--target-node",
+        "root",
+        "--requested-worker",
+        "dry-run-worker",
+        "--dry-run",
+        "--json",
+    )
+
+    overview = json.loads(
+        _run_cli(monkeypatch, capsys, "worker-agents", "overview", "--json").out
+    )
+
+    assert "dry-run-worker" not in {worker["worker_id"] for worker in overview["workers"]}
+
+
 def test_chat_history_paginates_controlled_message_envelopes(monkeypatch, capsys, cli_home):
     _run_cli(
         monkeypatch,

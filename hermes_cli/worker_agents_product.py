@@ -126,6 +126,12 @@ def write_management_state_for_tests(data: Mapping[str, Any], home: Path | None 
     return state_path
 
 
+def write_management_state(data: Mapping[str, Any], home: Path | None = None) -> Path:
+    """Write sanitized Worker Agents management state for product entrypoints."""
+
+    return write_management_state_for_tests(data, home)
+
+
 def get_overview() -> dict[str, Any]:
     state = load_management_state()
     sources = DashboardDataSources(
@@ -360,6 +366,132 @@ def apply_asset_action(
 def draft_evolution_proposal(**kwargs: Any) -> dict[str, Any]:
     draft = build_evolution_proposal_draft(EvolutionWizardInput(**kwargs))
     return _sanitize_mapping(evolution_proposal_draft_to_dict(draft))
+
+
+def apply_evolution_draft(**kwargs: Any) -> dict[str, Any]:
+    """Apply a safe no-blocker create-child draft to the management snapshot.
+
+    This is intentionally scoped to the low-sensitivity management state used by
+    the current dashboard product surface. It does not mutate active organization
+    executor state, private worker profiles, or runtime task stores.
+    """
+
+    dry_run = bool(kwargs.pop("dry_run", False))
+    draft = build_evolution_proposal_draft(EvolutionWizardInput(**kwargs))
+    draft_data = evolution_proposal_draft_to_dict(draft)
+    if draft.blockers:
+        raise ValueError("evolution draft has blockers: " + "; ".join(draft.blockers))
+    if draft.proposal_kind.value != "create_child_agent":
+        raise ValueError("only create_child_agent drafts can be applied to management state")
+
+    requested_worker_id = kwargs.get("requested_worker_id")
+    if not isinstance(requested_worker_id, str) or not requested_worker_id:
+        raise ValueError("requested_worker_id is required")
+    validate_single_path_segment(requested_worker_id, "requested_worker_id")
+    target_node_id = str(kwargs.get("target_node_id", ""))
+    validate_single_path_segment(target_node_id, "target_node_id")
+
+    state = load_management_state()
+    worker_records = dict(_mapping(state.get("worker_records")))
+    if requested_worker_id in worker_records:
+        raise ValueError(f"worker already exists in management state: {requested_worker_id!r}")
+
+    now = _now_iso()
+    organization_tree = _ensure_management_organization_tree(state, target_node_id, now)
+    nodes = dict(_mapping(organization_tree.get("nodes")))
+    target_node = _optional_mapping(nodes.get(target_node_id))
+    if target_node is None:
+        raise ValueError(f"target organization node does not exist: {target_node_id!r}")
+    if requested_worker_id in nodes:
+        raise ValueError(f"organization node already exists: {requested_worker_id!r}")
+
+    reason = str(kwargs.get("reason", "") or "")
+    display_name = _display_name_from_id(requested_worker_id)
+    child_node = {
+        "org_node_id": requested_worker_id,
+        "name": display_name,
+        "node_type": "department",
+        "description": reason,
+        "responsibilities": [reason] if reason else [],
+        "parent_id": target_node_id,
+        "child_ids": [],
+        "leader": {"kind": "worker", "worker_id": requested_worker_id},
+        "member_worker_ids": [requested_worker_id],
+        "chat_policy": {
+            "default_thread_policy": "parent_group_chat",
+            "allow_default_group_chat": False,
+        },
+        "lifecycle": "active",
+        "schema_version": 1,
+    }
+    nodes[requested_worker_id] = child_node
+    target_children = list(_list_value(target_node.get("child_ids")))
+    if requested_worker_id not in target_children:
+        target_children.append(requested_worker_id)
+    nodes[target_node_id] = {**target_node, "child_ids": target_children}
+
+    revision = _int_value(organization_tree.get("revision", 0)) + 1
+    state["organization_tree"] = {
+        **organization_tree,
+        "revision": revision,
+        "updated_at": now,
+        "nodes": nodes,
+    }
+    worker_records[requested_worker_id] = {
+        "worker_id": requested_worker_id,
+        "display_name": display_name,
+        "role": "managed_worker",
+        "runtime_type": "internal",
+        "status": "enabled",
+        "created_at": now,
+        "updated_at": now,
+        "created_by": str(kwargs.get("actor_id", "")),
+        "updated_by": str(kwargs.get("actor_id", "")),
+        "metadata": {
+            "department_ids": [requested_worker_id],
+            "parent_node_id": target_node_id,
+            "source": "worker_agents_evolution_apply_draft",
+            "summary": reason,
+        },
+    }
+    state["worker_records"] = worker_records
+    state["department_summaries"] = _upsert_department_summary(
+        _sequence(state.get("department_summaries")),
+        department_id=requested_worker_id,
+        display_name=display_name,
+        owner_worker_id=requested_worker_id,
+        reason=reason,
+    )
+    state["source_revision"] = str(revision)
+    state["source_updated_at"] = now
+    if not dry_run:
+        write_management_state(state)
+    return _sanitize_mapping(
+        {
+            "action": "evolution_apply_draft",
+            "target_id": requested_worker_id,
+            "updated_status": "validated" if dry_run else "created",
+            "summary": "Validated create_child_agent draft for Worker Agents management state."
+            if dry_run
+            else "Applied create_child_agent draft to Worker Agents management state.",
+            "draft": draft_data,
+            "overview": _sanitize_mapping(
+                dashboard_snapshot_to_dict(
+                    build_dashboard_snapshot(
+                        DashboardDataSources(
+                            worker_records=_mapping(state.get("worker_records")),
+                            organization_tree=_optional_mapping(state.get("organization_tree")),
+                            department_summaries=_sequence(state.get("department_summaries")),
+                            health_summaries=_mapping(state.get("health_summaries")),
+                            policy_summaries=_string_mapping(state.get("policy_summaries")),
+                            source_revision=str(state.get("source_revision", "")),
+                            source_updated_at=_optional_str(state.get("source_updated_at")),
+                        )
+                    )
+                )
+            ),
+        }
+    )
 
 
 def get_evolution_execution(proposal_id: str) -> dict[str, Any]:
@@ -634,3 +766,78 @@ def _now_iso() -> str:
 
 def _now_compact() -> str:
     return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+
+
+def _ensure_management_organization_tree(
+    state: Mapping[str, Any],
+    target_node_id: str,
+    now: str,
+) -> dict[str, Any]:
+    existing = _optional_mapping(state.get("organization_tree"))
+    if existing is not None:
+        return dict(existing)
+    if target_node_id != "root":
+        raise ValueError("management organization tree is missing; create under 'root' first")
+    return {
+        "schema_version": 1,
+        "tree_id": "active",
+        "root_node_id": "root",
+        "revision": 0,
+        "created_at": now,
+        "updated_at": now,
+        "nodes": {
+            "root": {
+                "schema_version": 1,
+                "org_node_id": "root",
+                "name": "Root",
+                "node_type": "root",
+                "description": "Worker Agents root organization",
+                "responsibilities": [],
+                "parent_id": None,
+                "child_ids": [],
+                "leader": {"kind": "main_agent"},
+                "member_worker_ids": [],
+                "chat_policy": {
+                    "default_thread_policy": "none",
+                    "allow_default_group_chat": False,
+                },
+                "lifecycle": "active",
+            }
+        },
+    }
+
+
+def _display_name_from_id(value: str) -> str:
+    return " ".join(part.capitalize() for part in value.replace("_", "-").split("-") if part) or value
+
+
+def _list_value(value: Any) -> list[Any]:
+    return list(value) if isinstance(value, list) else []
+
+
+def _int_value(value: Any) -> int:
+    if isinstance(value, bool) or not isinstance(value, int):
+        return 0
+    return value
+
+
+def _upsert_department_summary(
+    summaries: list[Mapping[str, Any]],
+    *,
+    department_id: str,
+    display_name: str,
+    owner_worker_id: str,
+    reason: str,
+) -> list[dict[str, Any]]:
+    row = {
+        "department_id": department_id,
+        "display_name": display_name,
+        "owner_worker_id": owner_worker_id,
+        "member_count": 1,
+        "default_chat_available": False,
+        "collaboration_mode": "private_or_parent_chat",
+        "public_metadata": {"summary": reason} if reason else {},
+    }
+    result = [dict(item) for item in summaries if item.get("department_id") != department_id]
+    result.append(row)
+    return sorted(result, key=lambda item: str(item.get("department_id", "")))
