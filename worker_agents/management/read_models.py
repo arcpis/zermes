@@ -538,6 +538,32 @@ class EvolutionProposalDraft:
 
 
 @dataclass(frozen=True)
+class EvolutionExecutionView:
+    """Read-only executor state and report view."""
+
+    execution_id: str
+    proposal_id: str
+    proposal_status: str
+    execution_status: str
+    locks: tuple[str, ...] = ()
+    steps: tuple[str, ...] = ()
+    current_step: str | None = None
+    failed_step: str | None = None
+    manual_recovery_hint: str = ""
+    report_refs: tuple[str, ...] = ()
+    audit_refs: tuple[str, ...] = ()
+    action_availability: Mapping[str, bool] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "locks", tuple(self.locks))
+        object.__setattr__(self, "steps", tuple(self.steps))
+        object.__setattr__(self, "manual_recovery_hint", _redact_sensitive_text(self.manual_recovery_hint))
+        object.__setattr__(self, "report_refs", tuple(self.report_refs))
+        object.__setattr__(self, "audit_refs", tuple(self.audit_refs))
+        object.__setattr__(self, "action_availability", dict(self.action_availability))
+
+
+@dataclass(frozen=True)
 class ThreadArchiveSummaryView:
     """Read-only thread summary, retention, and archive state view."""
 
@@ -1416,6 +1442,54 @@ def evolution_proposal_draft_to_dict(draft: EvolutionProposalDraft) -> dict[str,
         "approval_requirement": draft.approval_requirement,
         "user_approval_required": draft.user_approval_required,
         "source_refs": [source_ref_to_dict(ref) for ref in draft.source_refs],
+    }
+
+
+def build_evolution_execution_view(data: Mapping[str, Any]) -> EvolutionExecutionView:
+    """Build a read-only executor state view and controlled action availability."""
+
+    proposal_status = str(data.get("proposal_status", "draft"))
+    execution_status = str(data.get("execution_status", "not_started"))
+    failed_step = _optional_string(data.get("failed_step"))
+    safe_retry = bool(data.get("safe_retry", False))
+    actions = {
+        "execute": proposal_status == "approved"
+        and execution_status in {"not_started", "ready"}
+        and not data.get("blockers"),
+        "retry_safe_step": execution_status == "failed" and failed_step is not None and safe_retry,
+        "mark_manual_recovery": execution_status == "failed",
+        "view_audit": True,
+    }
+    return EvolutionExecutionView(
+        execution_id=str(data.get("execution_id", "")),
+        proposal_id=str(data.get("proposal_id", "")),
+        proposal_status=proposal_status,
+        execution_status=execution_status,
+        locks=_string_tuple(data.get("locks", ())),
+        steps=_string_tuple(data.get("steps", ())),
+        current_step=_optional_string(data.get("current_step")),
+        failed_step=failed_step,
+        manual_recovery_hint=str(data.get("manual_recovery_hint", "")),
+        report_refs=_string_tuple(data.get("report_refs", ())),
+        audit_refs=_string_tuple(data.get("audit_refs", ())),
+        action_availability=actions,
+    )
+
+
+def evolution_execution_view_to_dict(view: EvolutionExecutionView) -> dict[str, Any]:
+    return {
+        "execution_id": view.execution_id,
+        "proposal_id": view.proposal_id,
+        "proposal_status": view.proposal_status,
+        "execution_status": view.execution_status,
+        "locks": list(view.locks),
+        "steps": list(view.steps),
+        "current_step": view.current_step,
+        "failed_step": view.failed_step,
+        "manual_recovery_hint": view.manual_recovery_hint,
+        "report_refs": list(view.report_refs),
+        "audit_refs": list(view.audit_refs),
+        "action_availability": dict(view.action_availability),
     }
 
 
