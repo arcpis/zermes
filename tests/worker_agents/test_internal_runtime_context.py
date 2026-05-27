@@ -111,6 +111,10 @@ def test_context_builder_returns_minimal_runtime_inputs(tmp_path):
         "read_file: allowed by worker tool policy",
         "web_search: allowed by worker tool policy",
     )
+    assert context.request_context.worker_prompt_summary["worker_id"] == "researcher"
+    assert context.request_context.worker_prompt_summary["delegation"][
+        "delegation_allowed"
+    ] is False
     assert context.profile_summary.memory_summary_refs == (
         "workers/researcher/memory/summary.md",
     )
@@ -177,5 +181,26 @@ def test_context_builder_omits_full_transcript_and_private_memory_text(tmp_path)
     context_data = runtime_request_context_to_dict(context.request_context)
     assert "raw_transcript" not in context_data
     assert "private_memory" not in context_data
+    assert "worker_prompt_summary" in context_data
     assert context.session_context.includes_full_transcript is False
     assert context.session_context.includes_private_memory_text is False
+
+
+def test_context_builder_recomputes_current_reply_thread_prompt_summary(tmp_path):
+    service = _task_service(tmp_path)
+    _register_worker(service)
+    _create_task(service)
+
+    context = build_internal_worker_runtime_context(
+        service,
+        InternalWorkerRuntimeContextRequest(
+            worker_id="researcher",
+            task_id="task-1",
+            current_thread_id="direct-user-researcher",
+            current_thread_summary="Current direct chat summary.",
+        ),
+    )
+
+    prompt_summary = context.request_context.worker_prompt_summary
+    assert prompt_summary["default_reply_thread_id"] == "direct-user-researcher"
+    assert prompt_summary["current_thread_summary"] == "Current direct chat summary."

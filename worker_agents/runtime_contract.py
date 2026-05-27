@@ -326,6 +326,7 @@ class RuntimeRequestContext:
     """Minimal task context allowed to cross the adapter boundary."""
 
     input_message: str
+    worker_prompt_summary: Mapping[str, Any] | None = None
     source_thread_id: str | None = None
     source_message_refs: tuple[str, ...] = ()
     source_sender_ref: str | None = None
@@ -340,6 +341,12 @@ class RuntimeRequestContext:
 
     def __post_init__(self) -> None:
         _require_string(self.input_message, "input_message")
+        if self.worker_prompt_summary is not None:
+            prompt_summary = dict(_require_mapping(
+                self.worker_prompt_summary, "worker_prompt_summary"
+            ))
+            _reject_sensitive_fields(prompt_summary, "worker_prompt_summary")
+            object.__setattr__(self, "worker_prompt_summary", prompt_summary)
         for field_name in (
             "source_message_refs",
             "thread_summary_refs",
@@ -687,6 +694,7 @@ def runtime_request_context_to_dict(
 ) -> dict[str, Any]:
     return {
         "input_message": context.input_message,
+        "worker_prompt_summary": context.worker_prompt_summary,
         "source_thread_id": context.source_thread_id,
         "source_message_refs": list(context.source_message_refs),
         "source_sender_ref": context.source_sender_ref,
@@ -709,6 +717,7 @@ def runtime_request_context_from_dict(
         data,
         {
             "input_message",
+            "worker_prompt_summary",
             "source_thread_id",
             "source_message_refs",
             "source_sender_ref",
@@ -726,6 +735,11 @@ def runtime_request_context_from_dict(
     _reject_sensitive_fields(data, "context")
     return RuntimeRequestContext(
         input_message=_require_string(data.get("input_message"), "input_message"),
+        worker_prompt_summary=dict(
+            _require_mapping(data.get("worker_prompt_summary"), "worker_prompt_summary")
+        )
+        if data.get("worker_prompt_summary") is not None
+        else None,
         source_thread_id=_optional_string(
             data.get("source_thread_id"), "source_thread_id"
         ),

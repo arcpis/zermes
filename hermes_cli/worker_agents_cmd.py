@@ -29,6 +29,8 @@ def add_worker_agents_parser(subparsers: argparse._SubParsersAction) -> None:
     workers.add_argument("--runtime", dest="runtime_type")
     workers.add_argument("--risk", dest="risk_badge")
     workers.add_argument("--sort", default="display_name")
+    prompt_summary = _read_command(commands, "prompt-summary", _prompt_summary)
+    prompt_summary.add_argument("worker_id")
     _read_command(commands, "organization", lambda _args: product.get_organization_tree())
     _read_command(commands, "chats", lambda _args: product.list_chats())
     history = _read_command(commands, "chat-history", _chat_history)
@@ -165,6 +167,10 @@ def _workers(args: argparse.Namespace) -> Any:
         risk_badge=args.risk_badge,
         sort_key=args.sort,
     )
+
+
+def _prompt_summary(args: argparse.Namespace) -> Any:
+    return product.get_worker_prompt_summary(args.worker_id)
 
 
 def _chat_history(args: argparse.Namespace) -> Any:

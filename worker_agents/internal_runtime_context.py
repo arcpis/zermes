@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from .profile import WorkerAgentProfile
+from .department_chats import DepartmentChatBinding, DepartmentChatSummary, DepartmentProjectChat
+from .organization import OrgTree
 from .registry import WorkerLifecycleStatus, WorkerRegistryRecord
 from .runtime_boundary import (
     AgentRuntimeLifecycle,
@@ -19,6 +21,10 @@ from .runtime_boundary import (
 from .runtime_contract import RuntimeExecutionBudget, RuntimeRequestContext
 from .task_service import WorkerTaskService
 from .task_state import WorkerTaskState, validate_task_id
+from .worker_prompt_summary import (
+    build_worker_prompt_summary,
+    worker_prompt_summary_to_dict,
+)
 
 
 class InternalWorkerRuntimeContextError(ValueError):
@@ -36,6 +42,13 @@ class InternalWorkerRuntimeContextRequest:
     organization_summary_refs: tuple[str, ...] = ()
     artifact_manifest_refs: tuple[str, ...] = ()
     relevant_excerpts: tuple[str, ...] = ()
+    current_thread_id: str | None = None
+    current_thread_summary: str | None = None
+    organization_tree: OrgTree | None = None
+    department_chat_bindings: tuple[DepartmentChatBinding, ...] = ()
+    project_chats: tuple[DepartmentProjectChat, ...] = ()
+    department_context_summaries: tuple[DepartmentChatSummary, ...] = ()
+    private_thread_ids: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -89,11 +102,25 @@ def build_internal_worker_runtime_context(
     _ensure_string_tuple(request.organization_summary_refs, "organization_summary_refs")
     _ensure_string_tuple(request.artifact_manifest_refs, "artifact_manifest_refs")
     _ensure_string_tuple(request.relevant_excerpts, "relevant_excerpts")
+    _optional_non_empty_string(request.current_thread_id, "current_thread_id")
+    _optional_non_empty_string(request.current_thread_summary, "current_thread_summary")
+    _ensure_string_tuple(request.private_thread_ids, "private_thread_ids")
 
     input_message = task.input_summary or task.objective
     task_summary = _task_summary(task)
+    prompt_summary = build_worker_prompt_summary(
+        profile=profile,
+        organization_tree=request.organization_tree,
+        department_chat_bindings=request.department_chat_bindings,
+        project_chats=request.project_chats,
+        department_context_summaries=request.department_context_summaries,
+        private_thread_ids=request.private_thread_ids,
+        current_thread_id=request.current_thread_id,
+        current_thread_summary=request.current_thread_summary,
+    )
     request_context = RuntimeRequestContext(
         input_message=input_message,
+        worker_prompt_summary=worker_prompt_summary_to_dict(prompt_summary),
         thread_summary_refs=request.thread_summary_refs,
         organization_summary_refs=request.organization_summary_refs,
         artifact_manifest_refs=request.artifact_manifest_refs,
@@ -261,3 +288,9 @@ def _non_empty_string(value: str, field_name: str) -> str:
             f"{field_name} must be a non-empty string"
         )
     return value
+
+
+def _optional_non_empty_string(value: str | None, field_name: str) -> str | None:
+    if value is None:
+        return None
+    return _non_empty_string(value, field_name)

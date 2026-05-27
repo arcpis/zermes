@@ -15,6 +15,10 @@ def _state():
                 "worker_id": "worker-a",
                 "display_name": "Worker A",
                 "role": "developer",
+                "responsibilities": ["Implement scoped changes"],
+                "allow_delegation": True,
+                "allowed_child_tools": ["read_file"],
+                "max_child_task_tokens": 500,
                 "runtime_type": "internal",
                 "status": "enabled",
                 "metadata": {
@@ -31,6 +35,28 @@ def _state():
             },
         },
         "health_summaries": {"worker-b": {"status": "unhealthy"}},
+        "organization_tree": {
+            "revision": "1",
+            "nodes": {
+                "root": {
+                    "org_node_id": "root",
+                    "name": "Root",
+                    "node_type": "root",
+                    "lifecycle": "active",
+                    "child_ids": ["engineering"],
+                    "leader": {"kind": "main_agent"},
+                },
+                "engineering": {
+                    "org_node_id": "engineering",
+                    "name": "Engineering",
+                    "node_type": "department",
+                    "lifecycle": "active",
+                    "parent_id": "root",
+                    "leader": {"kind": "worker", "worker_id": "worker-a"},
+                    "member_worker_ids": ["worker-a"],
+                },
+            },
+        },
         "threads": [
             {
                 "thread_id": "thread-1",
@@ -134,6 +160,24 @@ def test_workers_json_filters_and_redacts_sensitive_fields(monkeypatch, capsys, 
     rendered = json.dumps(data)
     assert "api_key" not in rendered
     assert "hidden" not in rendered
+
+
+def test_prompt_summary_json_exposes_identity_and_delegation(monkeypatch, capsys, cli_home):
+    out = _run_cli(
+        monkeypatch,
+        capsys,
+        "worker-agents",
+        "prompt-summary",
+        "worker-a",
+        "--json",
+    ).out
+    data = json.loads(out)
+
+    assert data["worker_id"] == "worker-a"
+    assert data["default_reply_thread_id"] == "thread-1"
+    assert data["department_chat_threads"][0]["thread_id"] == "thread-1"
+    assert data["delegation"]["delegation_allowed"] is False
+    assert "api_key" not in json.dumps(data)
 
 
 def test_evolution_apply_draft_creates_management_worker_and_node(monkeypatch, capsys, cli_home):

@@ -71,6 +71,15 @@ from worker_agents.message_mentions import (
     resolve_mention_targets,
 )
 from worker_agents.organization import MAIN_AGENT_ID, org_tree_from_dict
+from worker_agents.profile import (
+    WorkerAgentProfile,
+    WorkerBudgetPolicy,
+    WorkerCommunicationPolicy,
+    WorkerDelegationPolicy,
+    WorkerExecutionLimits,
+    WorkerToolPolicy,
+    WorkerWorkspacePolicy,
+)
 from worker_agents.message_router import (
     ChatMessageType,
     ChatParticipantKind,
@@ -95,6 +104,10 @@ from worker_agents.runtime_reply_channel import (
     target_worker_ids_for_chat_message,
 )
 from worker_agents.storage.safe_paths import validate_single_path_segment
+from worker_agents.worker_prompt_summary import (
+    build_worker_prompt_summary,
+    worker_prompt_summary_to_dict,
+)
 
 
 MANAGEMENT_STATE_RELATIVE_PATH = Path("worker_agents") / "management" / "dashboard_state.json"
@@ -187,6 +200,23 @@ def list_workers(
         sort_key=sort_key,
     )
     return _sanitize_sequence(worker_management_list_item_to_dict(row) for row in rows)
+
+
+def get_worker_prompt_summary(worker_id: str) -> dict[str, Any]:
+    """Return the low-sensitive runtime prompt summary for one worker."""
+
+    validate_single_path_segment(worker_id, "worker_id")
+    state = _state_with_materialized_department_chats(load_management_state())
+    worker = _optional_mapping(_mapping(state.get("worker_records")).get(worker_id))
+    if worker is None:
+        raise ValueError(f"worker does not exist: {worker_id!r}")
+    summary = build_worker_prompt_summary(
+        profile=_worker_profile_from_management_record(worker),
+        organization_tree=_organization_tree_from_state(state),
+        department_chat_bindings=_department_chat_bindings_from_state(state),
+        private_thread_ids=_private_thread_ids_for_worker(state, worker_id),
+    )
+    return _sanitize_mapping(worker_prompt_summary_to_dict(summary))
 
 
 def get_organization_tree() -> list[dict[str, Any]]:
@@ -780,6 +810,149 @@ def _organization_tree_from_state(state: Mapping[str, Any]):
     if isinstance(data.get("revision"), str) and str(data["revision"]).isdigit():
         data["revision"] = int(str(data["revision"]))
     return org_tree_from_dict(data)
+
+
+def _worker_profile_from_management_record(record: Mapping[str, Any]) -> WorkerAgentProfile:
+    worker_id = str(record.get("worker_id", ""))
+    return WorkerAgentProfile(
+        worker_id=worker_id,
+        display_name=str(record.get("display_name") or _display_name_from_id(worker_id)),
+        description=str(record.get("description") or record.get("role") or worker_id),
+        role=str(record.get("role") or "worker"),
+        responsibilities=tuple(
+            str(item) for item in _list_value(record.get("responsibilities")) if item
+        ),
+        tools=WorkerToolPolicy(
+            allowed_tools=tuple(
+                str(item) for item in _list_value(record.get("allowed_tools")) if item
+            ),
+            approval_required_tools=tuple(
+                str(item)
+                for item in _list_value(record.get("approval_required_tools"))
+                if item
+            ),
+        ),
+        workspace=WorkerWorkspacePolicy(
+            read_roots=tuple(
+                str(item) for item in _list_value(record.get("workspace_read_roots")) if item
+            ),
+            write_roots=tuple(
+                str(item) for item in _list_value(record.get("workspace_write_roots")) if item
+            ),
+        ),
+        communication=WorkerCommunicationPolicy(
+            allow_direct_user_chat=True,
+            allow_group_chat=True,
+        ),
+        budgets=WorkerBudgetPolicy(
+            max_task_tokens=_int_value(record.get("max_task_tokens")),
+            max_turn_tokens=_int_value(record.get("max_turn_tokens")),
+            max_task_cost_usd=_optional_float(record.get("max_task_cost_usd")),
+        ),
+        limits=WorkerExecutionLimits(
+            max_concurrent_tasks=max(1, _int_value(record.get("max_concurrent_tasks"))),
+            timeout_seconds=_positive_int_or_none(record.get("timeout_seconds")),
+        ),
+        delegation=WorkerDelegationPolicy(
+            allow_temporary_child_agents=bool(record.get("allow_delegation", False)),
+            allowed_child_models=tuple(
+                str(item) for item in _list_value(record.get("allowed_child_models")) if item
+            ),
+            allowed_child_tools=tuple(
+                str(item) for item in _list_value(record.get("allowed_child_tools")) if item
+            ),
+            max_child_task_tokens=_int_value(record.get("max_child_task_tokens")),
+        ),
+    )
+
+
+def _department_chat_bindings_from_state(state: Mapping[str, Any]):
+    from worker_agents.department_chats import (
+        DepartmentChatBinding,
+        DepartmentChatBindingType,
+    )
+
+    bindings = []
+    organization_tree = _optional_mapping(state.get("organization_tree"))
+    nodes = _mapping(organization_tree.get("nodes")) if organization_tree else {}
+    for thread in _sequence(state.get("threads")):
+        if str(thread.get("thread_type", "")) != "organization_group":
+            continue
+        thread_id = str(thread.get("thread_id", ""))
+        worker_ids = tuple(
+            str(participant.get("participant_id"))
+            for participant in _sequence(thread.get("participants"))
+            if participant.get("kind") == "worker" and participant.get("participant_id")
+        )
+        org_node_id = _org_node_id_from_department_thread_id(
+            thread_id
+        ) or _infer_thread_org_node_id(worker_ids, nodes)
+        if not org_node_id:
+            continue
+        if not worker_ids:
+            continue
+        bindings.append(
+            DepartmentChatBinding(
+                binding_id=f"{org_node_id}-default",
+                org_node_id=org_node_id,
+                thread_id=thread_id,
+                binding_type=DepartmentChatBindingType.DEPARTMENT_DEFAULT,
+                owner_worker_id=worker_ids[0],
+                member_worker_ids=worker_ids,
+                required_participants=tuple(
+                    ChatParticipantRef(
+                        str(participant.get("kind")),
+                        str(participant.get("participant_id")),
+                    )
+                    for participant in _sequence(thread.get("participants"))
+                    if participant.get("kind") in {"user", "main_agent"}
+                    and participant.get("participant_id")
+                ),
+                audit_summary=str(thread.get("audit_summary", "")),
+            )
+        )
+    return tuple(bindings)
+
+
+def _private_thread_ids_for_worker(
+    state: Mapping[str, Any],
+    worker_id: str,
+) -> tuple[str, ...]:
+    thread_ids = []
+    for thread in _sequence(state.get("threads")):
+        if str(thread.get("thread_type", "")) != "direct":
+            continue
+        worker_ids = [
+            str(participant.get("participant_id"))
+            for participant in _sequence(thread.get("participants"))
+            if participant.get("kind") == "worker"
+        ]
+        if worker_id in worker_ids:
+            thread_ids.append(str(thread.get("thread_id", "")))
+    return tuple(thread_id for thread_id in thread_ids if thread_id)
+
+
+def _org_node_id_from_department_thread_id(thread_id: str) -> str | None:
+    if thread_id.startswith("dept-") and len(thread_id) > len("dept-"):
+        return thread_id[len("dept-"):]
+    return None
+
+
+def _infer_thread_org_node_id(
+    worker_ids: tuple[str, ...],
+    nodes: Mapping[str, Any],
+) -> str | None:
+    thread_workers = set(worker_ids)
+    if not thread_workers:
+        return None
+    for node_id, node in sorted(nodes.items()):
+        node_data = _optional_mapping(node)
+        if node_data is None or not _node_supports_department_chat(node_data):
+            continue
+        node_workers = set(_department_worker_ids(node_data, nodes))
+        if thread_workers and thread_workers.issubset(node_workers):
+            return str(node_id)
+    return None
 
 
 def _infer_root_node_id(nodes: Mapping[str, Any]) -> str:
@@ -1409,6 +1582,20 @@ def _int_value(value: Any) -> int:
     if isinstance(value, bool) or not isinstance(value, int):
         return 0
     return value
+
+
+def _positive_int_or_none(value: Any) -> int | None:
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        return None
+    return value
+
+
+def _optional_float(value: Any) -> float | None:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    if value < 0:
+        return None
+    return float(value)
 
 
 def _upsert_department_summary(

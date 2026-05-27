@@ -10,11 +10,12 @@ def _state():
     return {
         "worker_records": {
             "worker-a": {
-                "worker_id": "worker-a",
-                "display_name": "Worker A",
-                "role": "developer",
-                "runtime_type": "internal",
-                "status": "enabled",
+            "worker_id": "worker-a",
+            "display_name": "Worker A",
+            "role": "developer",
+            "responsibilities": ["Implement scoped changes"],
+            "runtime_type": "internal",
+            "status": "enabled",
                 "metadata": {"secret_token": "hidden", "department_ids": ["engineering"]},
             },
             "worker-b": {
@@ -133,6 +134,18 @@ def test_worker_agents_read_endpoints_filter_sensitive_fields(client):
     assert "secret_token" not in rendered
     assert "hidden" not in rendered
     assert "raw transcript must redact" not in rendered
+
+
+def test_worker_agents_prompt_summary_endpoint(client):
+    response = client.get("/api/worker-agents/workers/worker-a/prompt-summary")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["worker_id"] == "worker-a"
+    assert data["department_ids"] == ["engineering"]
+    assert data["default_reply_thread_id"] == "thread-1"
+    assert data["delegation"]["delegation_allowed"] is False
+    assert "secret_token" not in json.dumps(data)
 
 
 def test_worker_agents_chat_send_and_history_share_managed_store(client):

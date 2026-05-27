@@ -97,6 +97,11 @@ def worker_direct_chat(worker_id: str, body: DirectWorkerChatRequest | None = No
     )
 
 
+@router.get("/workers/{worker_id}/prompt-summary")
+def worker_prompt_summary(worker_id: str) -> dict[str, Any]:
+    return _guard(lambda: product.get_worker_prompt_summary(worker_id))
+
+
 @router.get("/organization")
 def organization() -> list[dict[str, Any]]:
     return product.get_organization_tree()
