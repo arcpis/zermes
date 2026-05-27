@@ -61,8 +61,18 @@ def _dashboard_gap_state():
                     "node_type": "department",
                     "lifecycle": "active",
                     "parent_id": "root",
+                    "child_ids": ["platform"],
                     "leader": {"kind": "worker", "worker_id": "worker-a"},
                     "member_worker_ids": ["worker-a", "worker-b"],
+                },
+                "platform": {
+                    "org_node_id": "platform",
+                    "name": "Platform",
+                    "node_type": "team",
+                    "lifecycle": "active",
+                    "parent_id": "engineering",
+                    "leader": {"kind": "worker", "worker_id": "worker-b"},
+                    "member_worker_ids": ["worker-b"],
                 },
                 "writing": {
                     "org_node_id": "writing",
@@ -162,6 +172,68 @@ def test_department_and_direct_chat_histories_are_isolated(client):
     assert [msg["body_preview"] for msg in direct_history.json()["messages"]] == [
         "private note"
     ]
+
+
+def test_product_mention_creates_delivery_tracking(client):
+    send = client.post(
+        "/api/worker-agents/chats/dept-engineering/send",
+        json={
+            "sender_id": "user",
+            "text": "@engineering please review",
+            "message_type": "mention",
+            "target_kind": "department",
+            "target_id": "engineering",
+        },
+    )
+    mentions = client.get("/api/worker-agents/mentions")
+
+    assert send.status_code == 200
+    assert send.json()["audit"]["delivery_records"][0]["resolved_recipient"] == {
+        "kind": "worker",
+        "participant_id": "worker-a",
+    }
+    assert mentions.status_code == 200
+    assert mentions.json()[0]["mentioned_target"]["matched_kind"] == "department"
+
+
+def test_product_broadcast_creates_delivery_tracking(client):
+    send = client.post(
+        "/api/worker-agents/chats/dept-engineering/send",
+        json={
+            "sender_id": "user",
+            "text": "platform decision summary",
+            "message_type": "broadcast",
+            "target_kind": "team",
+            "target_id": "platform",
+            "importance": "important",
+        },
+    )
+    broadcasts = client.get("/api/worker-agents/broadcasts")
+
+    assert send.status_code == 200
+    assert send.json()["audit"]["delivery_records"][0]["recipient"] == {
+        "kind": "worker",
+        "participant_id": "worker-b",
+    }
+    assert broadcasts.status_code == 200
+    assert broadcasts.json()[0]["target"]["target_kind"] == "team"
+    assert broadcasts.json()[0]["importance"] == "important"
+
+
+def test_product_broadcast_rejects_explicit_worker_outside_thread(client):
+    response = client.post(
+        "/api/worker-agents/chats/dept-engineering/send",
+        json={
+            "sender_id": "user",
+            "text": "private routing should fail",
+            "message_type": "broadcast",
+            "target_kind": "explicit_workers",
+            "target_ids": ["writer"],
+        },
+    )
+
+    assert response.status_code == 400
+    assert "thread participant" in response.json()["detail"]
 
 
 def test_gap_closure_outputs_no_sensitive_fields(client):

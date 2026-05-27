@@ -54,8 +54,14 @@ def add_worker_agents_parser(subparsers: argparse._SubParsersAction) -> None:
     mention = _action_command(commands, "mention", _mention)
     _add_chat_args(mention)
     mention.add_argument("--target", action="append", default=[])
+    mention.add_argument("--target-kind")
+    mention.add_argument("--target-id")
     broadcast = _action_command(commands, "broadcast", _broadcast)
     _add_chat_args(broadcast)
+    broadcast.add_argument("--target-kind", default="thread")
+    broadcast.add_argument("--target-id")
+    broadcast.add_argument("--target", action="append", default=[])
+    broadcast.add_argument("--importance", default="informational")
     direct_chat = _action_command(commands, "direct-chat", _direct_chat)
     direct_chat.add_argument("worker_id")
     direct_chat.add_argument("--user", default="user")
@@ -191,6 +197,8 @@ def _mention(args: argparse.Namespace) -> Any:
         text=args.text,
         message_type="mention",
         target_ids=args.target,
+        target_kind=args.target_kind,
+        target_id=args.target_id,
         dry_run=args.dry_run,
     )
 
@@ -201,6 +209,10 @@ def _broadcast(args: argparse.Namespace) -> Any:
         sender_id=args.sender,
         text=args.text,
         message_type="broadcast",
+        target_ids=args.target,
+        target_kind=args.target_kind,
+        target_id=args.target_id,
+        importance=args.importance,
         dry_run=args.dry_run,
     )
 

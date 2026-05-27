@@ -58,7 +58,19 @@ from worker_agents.management import (
 from worker_agents.management.import_export import (
     export_package_manifest_to_dict,
 )
-from worker_agents.organization import MAIN_AGENT_ID
+from worker_agents.message_broadcasts import (
+    BroadcastImportance,
+    BroadcastTarget,
+    BroadcastTargetKind,
+    broadcast_delivery_record_to_dict,
+)
+from worker_agents.message_mentions import (
+    MentionTarget,
+    MentionTargetKind,
+    mention_delivery_record_to_dict,
+    resolve_mention_targets,
+)
+from worker_agents.organization import MAIN_AGENT_ID, org_tree_from_dict
 from worker_agents.message_router import (
     ChatMessageType,
     ChatParticipantKind,
@@ -360,24 +372,52 @@ def send_chat_message(
     text: str,
     message_type: str = "normal",
     target_ids: Iterable[str] = (),
+    target_kind: str | None = None,
+    target_id: str | None = None,
+    importance: str = "informational",
     dry_run: bool = False,
 ) -> dict[str, Any]:
-    thread = _require_thread(thread_id)
+    state = load_management_state()
+    routing_state = _state_with_materialized_department_chats(state)
+    thread = _require_thread_from_state(routing_state, thread_id)
     _require_writable_thread(thread)
     message = _build_outbound_message(
         thread_id=thread_id,
         sender_id=sender_id,
         text=text,
         message_type=message_type,
-        target_ids=tuple(target_ids),
+        target_ids=tuple(target_ids) if message_type == "normal" else (),
     )
     router = MessageRouter()
     router.add_thread(chat_thread_from_dict(_thread_contract_dict(thread)))
     for existing in _read_thread_messages(thread_id):
         router.append_message(existing)
+    delivery_records: tuple[Mapping[str, Any], ...] = ()
     if not dry_run:
-        router.append_message(message)
+        delivery_records = _append_routed_message(
+            router=router,
+            state=routing_state,
+            message=message,
+            target_ids=tuple(target_ids),
+            target_kind=target_kind,
+            target_id=target_id,
+            importance=importance,
+        )
         _append_thread_message(message)
+        if delivery_records:
+            _append_delivery_records(state, message.message_type, delivery_records)
+            state["source_updated_at"] = _now_iso()
+            write_management_state(state)
+    else:
+        delivery_records = _append_routed_message(
+            router=router,
+            state=routing_state,
+            message=message,
+            target_ids=tuple(target_ids),
+            target_kind=target_kind,
+            target_id=target_id,
+            importance=importance,
+        )
     return _action_response(
         action=f"chat_{message_type}",
         target_id=thread_id,
@@ -386,6 +426,7 @@ def send_chat_message(
         if not dry_run
         else "Message route validated; no message was written.",
         updated_status="validated" if dry_run else "created",
+        audit={"delivery_records": list(delivery_records)} if delivery_records else None,
     )
 
 
@@ -626,10 +667,121 @@ def _dashboard_snapshot_from_state(state: Mapping[str, Any]):
 def _require_thread(thread_id: str) -> dict[str, Any]:
     validate_single_path_segment(thread_id, "thread_id")
     state = _state_with_materialized_department_chats(load_management_state())
+    return _require_thread_from_state(state, thread_id)
+
+
+def _require_thread_from_state(
+    state: Mapping[str, Any], thread_id: str
+) -> dict[str, Any]:
+    validate_single_path_segment(thread_id, "thread_id")
     for thread in _sequence(state.get("threads")):
         if thread.get("thread_id") == thread_id:
             return dict(thread)
     raise ValueError(f"chat thread does not exist: {thread_id!r}")
+
+
+def _append_routed_message(
+    *,
+    router: MessageRouter,
+    state: Mapping[str, Any],
+    message: WorkerMessageEnvelope,
+    target_ids: tuple[str, ...],
+    target_kind: str | None,
+    target_id: str | None,
+    importance: str,
+) -> tuple[Mapping[str, Any], ...]:
+    if message.message_type == ChatMessageType.NORMAL:
+        if target_kind or target_id:
+            raise ValueError("normal messages do not accept target_kind or target_id")
+        router.append_message(message)
+        return ()
+    if message.message_type == ChatMessageType.MENTION:
+        targets = _mention_targets(target_ids, target_kind=target_kind, target_id=target_id)
+        records = router.append_mention_message(
+            message=message,
+            resolved_targets=resolve_mention_targets(
+                targets,
+                organization_tree=_organization_tree_from_state(state),
+                worker_lookup=_mapping(state.get("worker_records")),
+            ),
+        )
+        return tuple(mention_delivery_record_to_dict(record) for record in records)
+    if message.message_type == ChatMessageType.BROADCAST:
+        target = _broadcast_target(
+            thread_id=message.thread_id,
+            target_kind=target_kind,
+            target_id=target_id,
+        )
+        explicit_worker_ids = target_ids if target.target_kind == BroadcastTargetKind.EXPLICIT_WORKERS else ()
+        records = router.append_broadcast_message(
+            message=message,
+            target=target,
+            importance=BroadcastImportance(importance),
+            organization_tree=_organization_tree_from_state(state),
+            explicit_worker_ids=explicit_worker_ids,
+        )
+        return tuple(broadcast_delivery_record_to_dict(record) for record in records)
+    raise ValueError(f"unsupported product chat message_type: {message.message_type.value!r}")
+
+
+def _mention_targets(
+    target_ids: tuple[str, ...], *, target_kind: str | None, target_id: str | None
+) -> tuple[MentionTarget, ...]:
+    raw_targets = tuple(
+        item for item in (*target_ids, *((target_id,) if target_id else ())) if item
+    )
+    if not raw_targets:
+        raise ValueError("mention messages require at least one target")
+    kind = MentionTargetKind(target_kind) if target_kind else None
+    return tuple(MentionTarget(raw_target=raw_target, target_kind=kind) for raw_target in raw_targets)
+
+
+def _broadcast_target(
+    *, thread_id: str, target_kind: str | None, target_id: str | None
+) -> BroadcastTarget:
+    kind = BroadcastTargetKind(target_kind or BroadcastTargetKind.THREAD.value)
+    if kind == BroadcastTargetKind.THREAD:
+        return BroadcastTarget(kind, target_id or thread_id)
+    if kind == BroadcastTargetKind.EXPLICIT_WORKERS:
+        return BroadcastTarget(kind, target_id or "explicit_workers")
+    if not target_id:
+        raise ValueError(f"{kind.value} broadcasts require target_id")
+    return BroadcastTarget(kind, target_id)
+
+
+def _organization_tree_from_state(state: Mapping[str, Any]):
+    tree = _optional_mapping(state.get("organization_tree"))
+    if tree is None:
+        return None
+    data = dict(tree)
+    nodes = _mapping(data.get("nodes"))
+    data.setdefault("tree_id", "management")
+    data.setdefault("root_node_id", _infer_root_node_id(nodes))
+    if isinstance(data.get("revision"), str) and str(data["revision"]).isdigit():
+        data["revision"] = int(str(data["revision"]))
+    return org_tree_from_dict(data)
+
+
+def _infer_root_node_id(nodes: Mapping[str, Any]) -> str:
+    for node_id, node in nodes.items():
+        node_data = _optional_mapping(node)
+        if node_data is not None and str(node_data.get("node_type", "")).lower() == "root":
+            return str(node_id)
+    raise ValueError("organization tree root node is missing")
+
+
+def _append_delivery_records(
+    state: dict[str, Any],
+    message_type: ChatMessageType,
+    records: tuple[Mapping[str, Any], ...],
+) -> None:
+    if not records:
+        return
+    if message_type == ChatMessageType.MENTION:
+        state["mentions"] = [*_sequence(state.get("mentions")), *records]
+        return
+    if message_type == ChatMessageType.BROADCAST:
+        state["broadcasts"] = [*_sequence(state.get("broadcasts")), *records]
 
 
 def _thread_contract_dict(thread: Mapping[str, Any]) -> dict[str, Any]:

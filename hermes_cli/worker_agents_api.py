@@ -18,6 +18,9 @@ class ChatSendRequest(BaseModel):
     text: str
     message_type: str = Field(default="normal", pattern="^(normal|mention|broadcast)$")
     target_ids: list[str] = Field(default_factory=list)
+    target_kind: str | None = None
+    target_id: str | None = None
+    importance: str = "informational"
     dry_run: bool = False
 
 
@@ -153,6 +156,9 @@ def chat_send(thread_id: str, body: ChatSendRequest) -> dict[str, Any]:
             text=body.text,
             message_type=body.message_type,
             target_ids=body.target_ids,
+            target_kind=body.target_kind,
+            target_id=body.target_id,
+            importance=body.importance,
             dry_run=body.dry_run,
         )
     )

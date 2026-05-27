@@ -240,6 +240,60 @@ def test_chat_history_paginates_controlled_message_envelopes(monkeypatch, capsys
     assert "raw_transcript" not in json.dumps(data)
 
 
+def test_mention_command_records_delivery_tracking(monkeypatch, capsys, cli_home):
+    out = _run_cli(
+        monkeypatch,
+        capsys,
+        "worker-agents",
+        "mention",
+        "thread-1",
+        "--sender",
+        "user",
+        "--text",
+        "@worker-a please check",
+        "--target-kind",
+        "worker",
+        "--target-id",
+        "worker-a",
+        "--json",
+    ).out
+    data = json.loads(out)
+    mentions = json.loads(
+        _run_cli(monkeypatch, capsys, "worker-agents", "mentions", "--json").out
+    )
+
+    assert data["updated_status"] == "created"
+    assert data["audit"]["delivery_records"][0]["resolved_recipient"]["participant_id"] == "worker-a"
+    assert mentions[0]["mentioned_target"]["requested_kind"] == "worker"
+
+
+def test_broadcast_command_records_importance(monkeypatch, capsys, cli_home):
+    out = _run_cli(
+        monkeypatch,
+        capsys,
+        "worker-agents",
+        "broadcast",
+        "thread-1",
+        "--sender",
+        "user",
+        "--text",
+        "decision summary",
+        "--target-kind",
+        "thread",
+        "--importance",
+        "important",
+        "--json",
+    ).out
+    data = json.loads(out)
+    broadcasts = json.loads(
+        _run_cli(monkeypatch, capsys, "worker-agents", "broadcasts", "--json").out
+    )
+
+    assert data["updated_status"] == "created"
+    assert data["audit"]["delivery_records"][0]["importance"] == "important"
+    assert broadcasts[0]["target"]["target_kind"] == "thread"
+
+
 def test_direct_chat_command_creates_worker_thread(monkeypatch, capsys, cli_home):
     out = _run_cli(
         monkeypatch,
