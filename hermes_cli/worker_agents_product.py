@@ -194,6 +194,29 @@ def list_chats() -> list[dict[str, Any]]:
     )
 
 
+def ensure_department_chat(
+    *,
+    org_node_id: str,
+    user_id: str = "user",
+    dry_run: bool = False,
+) -> dict[str, Any]:
+    """Create or return the default user-present chat for one active department."""
+
+    validate_single_path_segment(org_node_id, "org_node_id")
+    validate_single_path_segment(user_id, "user_id")
+    state = load_management_state()
+    response = _ensure_department_chat_in_state(
+        state,
+        org_node_id=org_node_id,
+        user_id=user_id,
+        dry_run=dry_run,
+    )
+    if response.get("updated_status") == "created" and not dry_run:
+        state["source_updated_at"] = _now_iso()
+        write_management_state(state)
+    return _sanitize_mapping(response)
+
+
 def ensure_direct_worker_chat(
     *,
     worker_id: str,
@@ -528,6 +551,12 @@ def apply_evolution_draft(**kwargs: Any) -> dict[str, Any]:
     )
     state["source_revision"] = str(revision)
     state["source_updated_at"] = now
+    department_chat = _ensure_department_chat_in_state(
+        state,
+        org_node_id=target_node_id,
+        user_id="user",
+        dry_run=dry_run,
+    )
     if not dry_run:
         write_management_state(state)
     return _sanitize_mapping(
@@ -539,6 +568,7 @@ def apply_evolution_draft(**kwargs: Any) -> dict[str, Any]:
             if dry_run
             else "Applied create_child_agent draft to Worker Agents management state.",
             "draft": draft_data,
+            "department_chat": department_chat,
             "overview": _sanitize_mapping(
                 dashboard_snapshot_to_dict(
                     build_dashboard_snapshot(
@@ -644,7 +674,7 @@ def _materialized_department_threads(state: Mapping[str, Any]) -> list[dict[str,
         node = _optional_mapping(nodes.get(node_id))
         if node is None or not _node_supports_department_chat(node):
             continue
-        worker_ids = _department_worker_ids(node)
+        worker_ids = _department_worker_ids(node, nodes)
         enabled_workers = [
             worker_id
             for worker_id in worker_ids
@@ -652,7 +682,7 @@ def _materialized_department_threads(state: Mapping[str, Any]) -> list[dict[str,
         ]
         if len(enabled_workers) < 2:
             continue
-        threads.append(_build_department_thread(node, enabled_workers))
+        threads.append(_build_department_thread(node, enabled_workers, user_id="user"))
     return threads
 
 
@@ -663,7 +693,10 @@ def _node_supports_department_chat(node: Mapping[str, Any]) -> bool:
     )
 
 
-def _department_worker_ids(node: Mapping[str, Any]) -> list[str]:
+def _department_worker_ids(
+    node: Mapping[str, Any],
+    nodes: Mapping[str, Any],
+) -> list[str]:
     result: list[str] = []
     leader = _optional_mapping(node.get("leader"))
     if leader is not None and leader.get("kind") == "worker":
@@ -673,7 +706,29 @@ def _department_worker_ids(node: Mapping[str, Any]) -> list[str]:
     for worker_id in _list_value(node.get("member_worker_ids")):
         if isinstance(worker_id, str) and worker_id:
             result.append(worker_id)
+    # Direct child leads are department members; their own members stay scoped
+    # to the child department chat.
+    for child_id in _list_value(node.get("child_ids")):
+        if not isinstance(child_id, str):
+            continue
+        child = _optional_mapping(nodes.get(child_id))
+        if child is None:
+            continue
+        child_worker_id = _direct_child_worker_id(child)
+        if child_worker_id:
+            result.append(child_worker_id)
     return list(dict.fromkeys(result))
+
+
+def _direct_child_worker_id(node: Mapping[str, Any]) -> str | None:
+    if str(node.get("node_type", "")).lower() == "individual":
+        worker_id = node.get("individual_worker_id")
+        return worker_id if isinstance(worker_id, str) and worker_id else None
+    leader = _optional_mapping(node.get("leader"))
+    if leader is None or leader.get("kind") != "worker":
+        return None
+    worker_id = leader.get("worker_id")
+    return worker_id if isinstance(worker_id, str) and worker_id else None
 
 
 def _worker_is_enabled(worker: Any) -> bool:
@@ -681,14 +736,97 @@ def _worker_is_enabled(worker: Any) -> bool:
     return record is not None and str(record.get("status", "")).lower() == "enabled"
 
 
-def _build_department_thread(node: Mapping[str, Any], worker_ids: list[str]) -> dict[str, Any]:
+def _ensure_department_chat_in_state(
+    state: dict[str, Any],
+    *,
+    org_node_id: str,
+    user_id: str,
+    dry_run: bool,
+) -> dict[str, Any]:
+    organization_tree = _optional_mapping(state.get("organization_tree"))
+    if organization_tree is None:
+        raise ValueError("organization tree is missing")
+    nodes = _mapping(organization_tree.get("nodes"))
+    node = _optional_mapping(nodes.get(org_node_id))
+    if node is None:
+        raise ValueError(f"organization node does not exist: {org_node_id!r}")
+    thread_id = _department_thread_id(org_node_id)
+    existing = _find_thread_by_id(state, thread_id)
+    if existing is not None:
+        return {
+            "action": "ensure_department_chat",
+            "target_id": org_node_id,
+            "updated_status": "existing",
+            "thread": _thread_response(existing),
+            "audit_ref": f"worker_agents/threads/{thread_id}",
+            "next_required_action": "open_chat_thread",
+        }
+    if not _node_supports_department_chat(node):
+        return _department_chat_skipped_response(
+            org_node_id,
+            "node is not an active department or team",
+        )
+
+    worker_records = _mapping(state.get("worker_records"))
+    worker_ids = _department_worker_ids(node, nodes)
+    enabled_workers = [
+        worker_id
+        for worker_id in worker_ids
+        if _worker_is_enabled(worker_records.get(worker_id))
+    ]
+    if len(enabled_workers) < 2:
+        return _department_chat_skipped_response(
+            org_node_id,
+            "department needs an enabled owner and at least one enabled direct member",
+        )
+
+    thread = _build_department_thread(node, enabled_workers, user_id=user_id)
+    if not dry_run:
+        state["threads"] = [*_sequence(state.get("threads")), thread]
+    return {
+        "action": "ensure_department_chat",
+        "target_id": org_node_id,
+        "updated_status": "validated" if dry_run else "created",
+        "thread": _thread_response(thread),
+        "audit_ref": f"worker_agents/threads/{thread_id}",
+        "next_required_action": "open_chat_thread",
+    }
+
+
+def _department_chat_skipped_response(org_node_id: str, reason: str) -> dict[str, Any]:
+    return {
+        "action": "ensure_department_chat",
+        "target_id": org_node_id,
+        "updated_status": "skipped",
+        "disabled_reason": reason,
+        "next_required_action": "add_direct_department_member_before_chat",
+    }
+
+
+def _find_thread_by_id(state: Mapping[str, Any], thread_id: str) -> dict[str, Any] | None:
+    for thread in _sequence(state.get("threads")):
+        if thread.get("thread_id") == thread_id:
+            return dict(thread)
+    return None
+
+
+def _department_thread_id(org_node_id: str) -> str:
+    return f"dept-{org_node_id}"
+
+
+def _build_department_thread(
+    node: Mapping[str, Any],
+    worker_ids: list[str],
+    *,
+    user_id: str,
+) -> dict[str, Any]:
     node_id = str(node.get("org_node_id", ""))
     title = str(node.get("name", node_id))
     thread = WorkerChatThread(
-        thread_id=f"dept-{node_id}",
+        thread_id=_department_thread_id(node_id),
         thread_type=ChatThreadType.ORGANIZATION_GROUP,
         participants=(
-            ChatParticipantRef(ChatParticipantKind.USER, "user"),
+            ChatParticipantRef(ChatParticipantKind.USER, user_id),
             ChatParticipantRef(ChatParticipantKind.MAIN_AGENT, MAIN_AGENT_ID),
             *(
                 ChatParticipantRef(ChatParticipantKind.WORKER, worker_id)
@@ -699,7 +837,7 @@ def _build_department_thread(node: Mapping[str, Any], worker_ids: list[str]) -> 
         title=title,
         created_at=_now_iso(),
         updated_at=_now_iso(),
-        audit_summary=f"Default department chat for {node_id}.",
+        audit_summary=_department_thread_summary(node, worker_ids, user_id),
     )
     data = chat_thread_to_dict(thread)
     data.update(
@@ -707,10 +845,36 @@ def _build_department_thread(node: Mapping[str, Any], worker_ids: list[str]) -> 
             "status": "active",
             "org_node_id": node_id,
             "binding_id": f"{node_id}-default",
-            "last_summary": f"Default department chat for {title}.",
+            "last_summary": _department_thread_summary(node, worker_ids, user_id),
         }
     )
     return data
+
+
+def _department_thread_summary(
+    node: Mapping[str, Any],
+    worker_ids: list[str],
+    user_id: str,
+) -> str:
+    node_id = str(node.get("org_node_id", ""))
+    title = str(node.get("name", node_id))
+    owner_worker_id = _owner_worker_id(node)
+    direct_members = [worker_id for worker_id in worker_ids if worker_id != owner_worker_id]
+    member_text = ", ".join(direct_members) if direct_members else "none"
+    owner_text = owner_worker_id or "none"
+    return (
+        f"Default department chat for {title}. "
+        f"User: {user_id}. Department owner: {owner_text}. "
+        f"Direct members: {member_text}."
+    )
+
+
+def _owner_worker_id(node: Mapping[str, Any]) -> str | None:
+    leader = _optional_mapping(node.get("leader"))
+    if leader is None or leader.get("kind") != "worker":
+        return None
+    worker_id = leader.get("worker_id")
+    return worker_id if isinstance(worker_id, str) and worker_id else None
 
 
 def _find_direct_thread(

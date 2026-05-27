@@ -59,6 +59,9 @@ def add_worker_agents_parser(subparsers: argparse._SubParsersAction) -> None:
     direct_chat = _action_command(commands, "direct-chat", _direct_chat)
     direct_chat.add_argument("worker_id")
     direct_chat.add_argument("--user", default="user")
+    department_chat = _action_command(commands, "department-chat", _department_chat)
+    department_chat.add_argument("org_node_id")
+    department_chat.add_argument("--user", default="user")
 
     approval = commands.add_parser("approval", help="Submit an approval action request")
     approval.add_argument("--json", action="store_true", help=argparse.SUPPRESS)
@@ -205,6 +208,14 @@ def _broadcast(args: argparse.Namespace) -> Any:
 def _direct_chat(args: argparse.Namespace) -> Any:
     return product.ensure_direct_worker_chat(
         worker_id=args.worker_id,
+        user_id=args.user,
+        dry_run=args.dry_run,
+    )
+
+
+def _department_chat(args: argparse.Namespace) -> Any:
+    return product.ensure_department_chat(
+        org_node_id=args.org_node_id,
         user_id=args.user,
         dry_run=args.dry_run,
     )

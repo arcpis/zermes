@@ -26,6 +26,11 @@ class DirectWorkerChatRequest(BaseModel):
     dry_run: bool = False
 
 
+class DepartmentChatRequest(BaseModel):
+    user_id: str = "user"
+    dry_run: bool = False
+
+
 class ApprovalActionBody(BaseModel):
     decision: str
     actor_id: str
@@ -92,6 +97,21 @@ def worker_direct_chat(worker_id: str, body: DirectWorkerChatRequest | None = No
 @router.get("/organization")
 def organization() -> list[dict[str, Any]]:
     return product.get_organization_tree()
+
+
+@router.post("/organization/{org_node_id}/department-chat")
+def organization_department_chat(
+    org_node_id: str,
+    body: DepartmentChatRequest | None = None,
+) -> dict[str, Any]:
+    request = body or DepartmentChatRequest()
+    return _guard(
+        lambda: product.ensure_department_chat(
+            org_node_id=org_node_id,
+            user_id=request.user_id,
+            dry_run=request.dry_run,
+        )
+    )
 
 
 @router.get("/chats")
