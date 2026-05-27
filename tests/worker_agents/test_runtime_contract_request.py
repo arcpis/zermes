@@ -29,6 +29,10 @@ def _budget():
 def _context():
     return RuntimeRequestContext(
         input_message="Implement the focused runtime contract change.",
+        source_thread_id="thread-123",
+        source_message_refs=("worker_agents/threads/thread-123/messages/msg-1",),
+        source_sender_ref="user:user-123",
+        target_context_summary="Reply as frontend in thread-123.",
         thread_summary_refs=("threads/task-123/summary.md",),
         organization_summary_refs=("org/frontend/summary.md",),
         artifact_manifest_refs=("manifests/design-brief.json",),
@@ -57,6 +61,10 @@ def test_runtime_request_json_round_trip():
     assert loaded == request
     assert loaded.contract_version == RUNTIME_CONTRACT_VERSION
     assert loaded.runtime_type == RuntimeType.INTERNAL_WORKER
+    assert loaded.context.source_thread_id == "thread-123"
+    assert loaded.context.source_message_refs == (
+        "worker_agents/threads/thread-123/messages/msg-1",
+    )
 
 
 def test_runtime_request_rejects_missing_required_fields():

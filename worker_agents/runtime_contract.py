@@ -326,6 +326,10 @@ class RuntimeRequestContext:
     """Minimal task context allowed to cross the adapter boundary."""
 
     input_message: str
+    source_thread_id: str | None = None
+    source_message_refs: tuple[str, ...] = ()
+    source_sender_ref: str | None = None
+    target_context_summary: str | None = None
     thread_summary_refs: tuple[str, ...] = ()
     organization_summary_refs: tuple[str, ...] = ()
     artifact_manifest_refs: tuple[str, ...] = ()
@@ -337,6 +341,7 @@ class RuntimeRequestContext:
     def __post_init__(self) -> None:
         _require_string(self.input_message, "input_message")
         for field_name in (
+            "source_message_refs",
             "thread_summary_refs",
             "organization_summary_refs",
             "artifact_manifest_refs",
@@ -344,6 +349,9 @@ class RuntimeRequestContext:
             "relevant_excerpts",
         ):
             _string_tuple(getattr(self, field_name), field_name)
+        _optional_string(self.source_thread_id, "source_thread_id")
+        _optional_string(self.source_sender_ref, "source_sender_ref")
+        _optional_string(self.target_context_summary, "target_context_summary")
         _optional_string(self.workspace_policy_ref, "workspace_policy_ref")
         _optional_string(self.redaction_policy_ref, "redaction_policy_ref")
         _reject_sensitive_fields(runtime_request_context_to_dict(self), "context")
@@ -679,6 +687,10 @@ def runtime_request_context_to_dict(
 ) -> dict[str, Any]:
     return {
         "input_message": context.input_message,
+        "source_thread_id": context.source_thread_id,
+        "source_message_refs": list(context.source_message_refs),
+        "source_sender_ref": context.source_sender_ref,
+        "target_context_summary": context.target_context_summary,
         "thread_summary_refs": list(context.thread_summary_refs),
         "organization_summary_refs": list(context.organization_summary_refs),
         "artifact_manifest_refs": list(context.artifact_manifest_refs),
@@ -697,6 +709,10 @@ def runtime_request_context_from_dict(
         data,
         {
             "input_message",
+            "source_thread_id",
+            "source_message_refs",
+            "source_sender_ref",
+            "target_context_summary",
             "thread_summary_refs",
             "organization_summary_refs",
             "artifact_manifest_refs",
@@ -710,6 +726,18 @@ def runtime_request_context_from_dict(
     _reject_sensitive_fields(data, "context")
     return RuntimeRequestContext(
         input_message=_require_string(data.get("input_message"), "input_message"),
+        source_thread_id=_optional_string(
+            data.get("source_thread_id"), "source_thread_id"
+        ),
+        source_message_refs=_string_tuple(
+            data.get("source_message_refs", ()), "source_message_refs"
+        ),
+        source_sender_ref=_optional_string(
+            data.get("source_sender_ref"), "source_sender_ref"
+        ),
+        target_context_summary=_optional_string(
+            data.get("target_context_summary"), "target_context_summary"
+        ),
         thread_summary_refs=_string_tuple(
             data.get("thread_summary_refs", ()), "thread_summary_refs"
         ),

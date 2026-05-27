@@ -88,6 +88,12 @@ from worker_agents.message_router import (
     message_envelope_from_dict,
     message_envelope_to_dict,
 )
+from worker_agents.runtime_reply_channel import (
+    RuntimeReplyHandler,
+    dispatch_chat_message_to_worker_runtime,
+    runtime_reply_dispatch_to_dict,
+    target_worker_ids_for_chat_message,
+)
 from worker_agents.storage.safe_paths import validate_single_path_segment
 
 
@@ -376,6 +382,7 @@ def send_chat_message(
     target_id: str | None = None,
     importance: str = "informational",
     dry_run: bool = False,
+    runtime_reply_handler: RuntimeReplyHandler | None = None,
 ) -> dict[str, Any]:
     state = load_management_state()
     routing_state = _state_with_materialized_department_chats(state)
@@ -393,6 +400,7 @@ def send_chat_message(
     for existing in _read_thread_messages(thread_id):
         router.append_message(existing)
     delivery_records: tuple[Mapping[str, Any], ...] = ()
+    runtime_dispatches: list[Mapping[str, Any]] = []
     if not dry_run:
         delivery_records = _append_routed_message(
             router=router,
@@ -404,6 +412,13 @@ def send_chat_message(
             importance=importance,
         )
         _append_thread_message(message)
+        if runtime_reply_handler is not None:
+            runtime_dispatches = _dispatch_runtime_replies_for_message(
+                router=router,
+                thread=chat_thread_from_dict(_thread_contract_dict(thread)),
+                message=message,
+                runtime_reply_handler=runtime_reply_handler,
+            )
         if delivery_records:
             _append_delivery_records(state, message.message_type, delivery_records)
             state["source_updated_at"] = _now_iso()
@@ -418,6 +433,11 @@ def send_chat_message(
             target_id=target_id,
             importance=importance,
         )
+    audit: dict[str, Any] = {}
+    if delivery_records:
+        audit["delivery_records"] = list(delivery_records)
+    if runtime_dispatches:
+        audit["runtime_dispatches"] = runtime_dispatches
     return _action_response(
         action=f"chat_{message_type}",
         target_id=thread_id,
@@ -426,7 +446,7 @@ def send_chat_message(
         if not dry_run
         else "Message route validated; no message was written.",
         updated_status="validated" if dry_run else "created",
-        audit={"delivery_records": list(delivery_records)} if delivery_records else None,
+        audit=audit or None,
     )
 
 
@@ -782,6 +802,32 @@ def _append_delivery_records(
         return
     if message_type == ChatMessageType.BROADCAST:
         state["broadcasts"] = [*_sequence(state.get("broadcasts")), *records]
+
+
+def _dispatch_runtime_replies_for_message(
+    *,
+    router: MessageRouter,
+    thread: WorkerChatThread,
+    message: WorkerMessageEnvelope,
+    runtime_reply_handler: RuntimeReplyHandler,
+) -> list[Mapping[str, Any]]:
+    """Persist public runtime replies through the same thread message store."""
+
+    if message.message_type != ChatMessageType.NORMAL:
+        return []
+    dispatches = []
+    for worker_id in target_worker_ids_for_chat_message(thread, message):
+        dispatch = dispatch_chat_message_to_worker_runtime(
+            router=router,
+            thread=thread,
+            source_message=message,
+            target_worker_id=worker_id,
+            reply_handler=runtime_reply_handler,
+        )
+        for delivered in dispatch.delivered_messages:
+            _append_thread_message(delivered)
+        dispatches.append(runtime_reply_dispatch_to_dict(dispatch))
+    return dispatches
 
 
 def _thread_contract_dict(thread: Mapping[str, Any]) -> dict[str, Any]:
