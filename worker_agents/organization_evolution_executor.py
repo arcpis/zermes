@@ -578,6 +578,13 @@ def apply_approved_evolution_plan(
         chat_statuses = execution_store.load_chat_binding_statuses()
         chat_statuses.update(plan.chat_binding_updates)
         execution_store.save_chat_binding_statuses(chat_statuses)
+        _materialize_changed_department_chats(
+            plan,
+            before_tree=tree,
+            updated_tree=updated_tree,
+            records=records,
+            registry_store=registry_store,
+        )
         updated_state = _complete_and_save(
             updated_state,
             EvolutionExecutionStep.CHAT_BINDING_UPDATE,
@@ -1093,6 +1100,59 @@ def _write_node_to_tree(node: OrgNode, nodes: dict[str, OrgNode]) -> None:
                     if child_id != node.org_node_id
                 ),
             )
+
+
+def _materialize_changed_department_chats(
+    plan: ControlledEvolutionPlan,
+    *,
+    before_tree: OrgTree,
+    updated_tree: OrgTree,
+    records: Mapping[str, WorkerRegistryRecord],
+    registry_store: WorkerRegistryStore,
+) -> None:
+    node_ids = _chat_sync_node_ids(plan, before_tree=before_tree, updated_tree=updated_tree)
+    if not node_ids:
+        return
+    from hermes_cli.worker_agents_product import materialize_and_persist_threads
+
+    materialize_and_persist_threads(
+        org_node_ids=node_ids,
+        organization_tree=updated_tree,
+        worker_records=records,
+        home=registry_store.root.parent,
+    )
+
+
+def _chat_sync_node_ids(
+    plan: ControlledEvolutionPlan,
+    *,
+    before_tree: OrgTree,
+    updated_tree: OrgTree,
+) -> tuple[str, ...]:
+    node_ids: list[str] = []
+    node_ids.extend(plan.chat_binding_updates)
+    node_ids.extend(plan.proposal.target_node_ids)
+    for node in plan.org_nodes_to_write:
+        node_ids.append(node.org_node_id)
+        # New or moved child workers change their parent department chat even
+        # when the explicit chat binding marker points at the child node.
+        if node.parent_id is not None:
+            node_ids.append(node.parent_id)
+    for node_id in plan.org_node_ids_to_remove:
+        node_ids.append(node_id)
+        previous = before_tree.nodes.get(node_id)
+        # Removed nodes are absent from the updated tree, so keep the previous
+        # parent to archive or refresh the now-stale department chat.
+        if previous is not None and previous.parent_id is not None:
+            node_ids.append(previous.parent_id)
+    node_ids.extend(plan.merge_source_node_ids)
+    if plan.merge_target_node_id is not None:
+        node_ids.append(plan.merge_target_node_id)
+    for node_id in tuple(node_ids):
+        node = updated_tree.nodes.get(node_id)
+        if node is not None and node.parent_id is not None:
+            node_ids.append(node.parent_id)
+    return tuple(dict.fromkeys(validate_org_node_id(node_id) for node_id in node_ids))
 
 
 def _complete_and_save(

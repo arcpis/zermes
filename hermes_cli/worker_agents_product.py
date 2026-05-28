@@ -70,7 +70,7 @@ from worker_agents.message_mentions import (
     mention_delivery_record_to_dict,
     resolve_mention_targets,
 )
-from worker_agents.organization import MAIN_AGENT_ID, org_tree_from_dict
+from worker_agents.organization import MAIN_AGENT_ID, org_tree_from_dict, org_tree_to_dict
 from worker_agents.profile import (
     WorkerAgentProfile,
     WorkerBudgetPolicy,
@@ -80,7 +80,7 @@ from worker_agents.profile import (
     WorkerToolPolicy,
     WorkerWorkspacePolicy,
 )
-from worker_agents.registry import WorkerRegistryError
+from worker_agents.registry import WorkerRegistryError, worker_registry_record_to_dict
 from worker_agents.message_router import (
     ChatMessageType,
     ChatParticipantKind,
@@ -171,6 +171,55 @@ def write_management_state(data: Mapping[str, Any], home: Path | None = None) ->
     """Write sanitized Worker Agents management state for product entrypoints."""
 
     return write_management_state_for_tests(data, home)
+
+
+def materialize_and_persist_threads(
+    *,
+    org_node_ids: Iterable[str],
+    organization_tree: Any,
+    worker_records: Mapping[str, Any],
+    home: Path | None = None,
+    user_id: str = "user",
+) -> list[dict[str, Any]]:
+    """Materialize affected department chats into durable product state.
+
+    Evolution execution owns the registry and tree writes. This function is the
+    narrow product-state bridge that makes those writes visible to chat routing
+    immediately, instead of waiting for a later lazy list operation.
+    """
+
+    target_node_ids = tuple(
+        dict.fromkeys(
+            validate_single_path_segment(str(node_id), "org_node_id")
+            for node_id in org_node_ids
+            if str(node_id)
+        )
+    )
+    if not target_node_ids:
+        return []
+    validate_single_path_segment(user_id, "user_id")
+
+    state = load_management_state(home)
+    state["organization_tree"] = _organization_tree_payload(organization_tree)
+    state["worker_records"] = _worker_records_payload(worker_records)
+
+    changed_threads = _sync_department_threads_in_state(
+        state,
+        org_node_ids=target_node_ids,
+        user_id=user_id,
+    )
+    if not changed_threads:
+        return []
+
+    state["source_updated_at"] = _now_iso()
+    state["source_revision"] = str(
+        _mapping(state.get("organization_tree")).get("revision", "")
+    )
+    write_management_state(state, home)
+    for thread in changed_threads:
+        _persist_thread_metadata(thread, home=home)
+    _persist_thread_index(_sequence(state.get("threads")), home=home)
+    return _sanitize_sequence(changed_threads)
 
 
 def get_overview() -> dict[str, Any]:
@@ -1180,27 +1229,91 @@ def _state_with_materialized_department_chats(state: Mapping[str, Any]) -> dict[
     return result
 
 
+def _sync_department_threads_in_state(
+    state: dict[str, Any],
+    *,
+    org_node_ids: Iterable[str],
+    user_id: str,
+) -> list[dict[str, Any]]:
+    organization_tree = _optional_mapping(state.get("organization_tree"))
+    if organization_tree is None:
+        return []
+    nodes = _mapping(organization_tree.get("nodes"))
+    existing_threads = [dict(thread) for thread in _sequence(state.get("threads"))]
+    thread_order = [str(thread.get("thread_id", "")) for thread in existing_threads]
+    threads_by_id = {
+        str(thread.get("thread_id", "")): thread
+        for thread in existing_threads
+        if str(thread.get("thread_id", ""))
+    }
+    changed_threads: list[dict[str, Any]] = []
+
+    for node_id in org_node_ids:
+        thread_id = _department_thread_id(node_id)
+        node = _optional_mapping(nodes.get(node_id))
+        thread = _department_thread_for_node(state, node_id=node_id, user_id=user_id)
+        if thread is None:
+            existing = threads_by_id.get(thread_id)
+            if existing is None:
+                continue
+            thread = _archived_department_thread(existing, node=node, node_id=node_id)
+        else:
+            existing = threads_by_id.get(thread_id)
+            if existing is not None:
+                thread["created_at"] = existing.get("created_at", thread["created_at"])
+
+        threads_by_id[thread_id] = thread
+        if thread_id not in thread_order:
+            thread_order.append(thread_id)
+        changed_threads.append(thread)
+
+    state["threads"] = [
+        threads_by_id[thread_id]
+        for thread_id in thread_order
+        if thread_id in threads_by_id
+    ]
+    return changed_threads
+
+
 def _materialized_department_threads(state: Mapping[str, Any]) -> list[dict[str, Any]]:
     organization_tree = _optional_mapping(state.get("organization_tree"))
     if organization_tree is None:
         return []
     nodes = _mapping(organization_tree.get("nodes"))
-    worker_records = _mapping(state.get("worker_records"))
     threads: list[dict[str, Any]] = []
     for node_id in sorted(nodes):
         node = _optional_mapping(nodes.get(node_id))
         if node is None or not _node_supports_department_chat(node):
             continue
-        worker_ids = _department_worker_ids(node, nodes)
-        enabled_workers = [
-            worker_id
-            for worker_id in worker_ids
-            if _worker_is_enabled(worker_records.get(worker_id))
-        ]
-        if len(enabled_workers) < 2:
-            continue
-        threads.append(_build_department_thread(node, enabled_workers, user_id="user"))
+        thread = _department_thread_for_node(state, node_id=node_id, user_id="user")
+        if thread is not None:
+            threads.append(thread)
     return threads
+
+
+def _department_thread_for_node(
+    state: Mapping[str, Any],
+    *,
+    node_id: str,
+    user_id: str,
+) -> dict[str, Any] | None:
+    organization_tree = _optional_mapping(state.get("organization_tree"))
+    if organization_tree is None:
+        return None
+    nodes = _mapping(organization_tree.get("nodes"))
+    node = _optional_mapping(nodes.get(node_id))
+    if node is None or not _node_supports_department_chat(node):
+        return None
+    worker_records = _mapping(state.get("worker_records"))
+    worker_ids = _department_worker_ids(node, nodes)
+    enabled_workers = [
+        worker_id
+        for worker_id in worker_ids
+        if _worker_is_enabled(worker_records.get(worker_id))
+    ]
+    if len(enabled_workers) < 2:
+        return None
+    return _build_department_thread(node, enabled_workers, user_id=user_id)
 
 
 def _node_supports_department_chat(node: Mapping[str, Any]) -> bool:
@@ -1368,6 +1481,26 @@ def _build_department_thread(
     return data
 
 
+def _archived_department_thread(
+    existing: Mapping[str, Any],
+    *,
+    node: Mapping[str, Any] | None,
+    node_id: str,
+) -> dict[str, Any]:
+    title = str((node or {}).get("name", existing.get("title", node_id)))
+    summary = f"Default department chat for {title} is inactive after organization sync."
+    return {
+        **existing,
+        "thread_id": _department_thread_id(node_id),
+        "status": "archived",
+        "org_node_id": node_id,
+        "updated_at": _now_iso(),
+        "read_only": True,
+        "last_summary": summary,
+        "audit_summary": summary,
+    }
+
+
 def _department_thread_summary(
     node: Mapping[str, Any],
     worker_ids: list[str],
@@ -1519,6 +1652,65 @@ def _append_thread_message(message: WorkerMessageEnvelope) -> None:
 def _thread_messages_path(thread_id: str) -> Path:
     validate_single_path_segment(thread_id, "thread_id")
     return get_hermes_home() / "worker_agents" / "threads" / thread_id / "messages.jsonl"
+
+
+def _organization_tree_payload(organization_tree: Any) -> dict[str, Any]:
+    if isinstance(organization_tree, Mapping):
+        return dict(organization_tree)
+    return org_tree_to_dict(organization_tree)
+
+
+def _worker_records_payload(worker_records: Mapping[str, Any]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for worker_id, record in worker_records.items():
+        safe_worker_id = validate_single_path_segment(str(worker_id), "worker_id")
+        if isinstance(record, Mapping):
+            result[safe_worker_id] = dict(record)
+        else:
+            result[safe_worker_id] = worker_registry_record_to_dict(record)
+    return result
+
+
+def _persist_thread_metadata(thread: Mapping[str, Any], *, home: Path | None) -> None:
+    path = _thread_metadata_path(str(thread.get("thread_id", "")), home=home)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(_sanitize_mapping(thread), indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
+
+
+def _persist_thread_index(threads: Iterable[Mapping[str, Any]], *, home: Path | None) -> None:
+    path = _thread_index_path(home=home)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    rows = []
+    for thread in threads:
+        thread_id = str(thread.get("thread_id", ""))
+        if not thread_id:
+            continue
+        rows.append(
+            {
+                "thread_id": thread_id,
+                "thread_type": str(thread.get("thread_type", "")),
+                "status": str(thread.get("status", "active")),
+                "org_node_id": thread.get("org_node_id"),
+                "worker_id": thread.get("worker_id"),
+                "updated_at": thread.get("updated_at"),
+            }
+        )
+    path.write_text(
+        json.dumps({"schema_version": 1, "threads": rows}, indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
+
+
+def _thread_metadata_path(thread_id: str, *, home: Path | None) -> Path:
+    validate_single_path_segment(thread_id, "thread_id")
+    return (home or get_hermes_home()) / "worker_agents" / "threads" / thread_id / "thread.json"
+
+
+def _thread_index_path(*, home: Path | None) -> Path:
+    return (home or get_hermes_home()) / "worker_agents" / "threads" / "_index.json"
 
 
 def _management_state_path(home: Path | None) -> Path:

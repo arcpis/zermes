@@ -1,3 +1,5 @@
+import json
+
 import pytest
 
 from worker_agents.organization_evolution import (
@@ -357,7 +359,7 @@ def test_create_child_agent_updates_registry_tree_chat_and_asset_markers(tmp_pat
     organization_store = _organization_store(tmp_path)
     organization_store.save_active_organization(_tree(revision=1))
     registry_store = _registry_store(tmp_path)
-    registry_store.save_records({})
+    registry_store.save_records({"legacy_worker": _worker("legacy_worker")})
     execution_store = _store(tmp_path)
     proposal = _proposal(
         target_node_ids=["platform_child"],
@@ -403,6 +405,22 @@ def test_create_child_agent_updates_registry_tree_chat_and_asset_markers(tmp_pat
     assert tree.nodes["platform_child"].individual_worker_id == "platform_worker"
     assert "platform_child" in tree.nodes["platform"].child_ids
     assert execution_store.load_chat_binding_statuses()["platform_child"] == "active"
+    management_state_path = (
+        tmp_path / "worker_agents" / "management" / "dashboard_state.json"
+    )
+    management_state = json.loads(management_state_path.read_text(encoding="utf-8"))
+    assert [thread["thread_id"] for thread in management_state["threads"]] == [
+        "dept-platform"
+    ]
+    worker_participants = [
+        participant["participant_id"]
+        for participant in management_state["threads"][0]["participants"]
+        if participant["kind"] == "worker"
+    ]
+    assert worker_participants == ["legacy_worker", "platform_worker"]
+    assert (
+        tmp_path / "worker_agents" / "threads" / "dept-platform" / "thread.json"
+    ).exists()
     assert execution_store.load_asset_disposition_markers()["platform_child"] == "adopted"
 
 

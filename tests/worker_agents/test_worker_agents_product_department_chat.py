@@ -1,3 +1,5 @@
+import json
+
 from hermes_cli import worker_agents_product as product
 
 
@@ -194,3 +196,90 @@ def test_apply_evolution_draft_creates_parent_department_chat_side_effect():
     assert result["department_chat"]["updated_status"] == "created"
     threads = product.load_management_state()["threads"]
     assert [thread["thread_id"] for thread in threads] == ["dept-engineering"]
+
+
+def test_materialize_and_persist_threads_writes_thread_metadata(tmp_path):
+    state = _state(
+        nodes={
+            "engineering": _department_node(
+                "engineering",
+                leader_worker_id="engineering-lead",
+                member_worker_ids=["engineering-lead", "backend"],
+            )
+        },
+        workers={
+            "engineering-lead": _worker("engineering-lead"),
+            "backend": _worker("backend"),
+        },
+    )
+    product.write_management_state_for_tests(state, home=tmp_path)
+
+    changed = product.materialize_and_persist_threads(
+        org_node_ids=["engineering"],
+        organization_tree=state["organization_tree"],
+        worker_records=state["worker_records"],
+        home=tmp_path,
+    )
+
+    assert [thread["thread_id"] for thread in changed] == ["dept-engineering"]
+    persisted_state = product.load_management_state(home=tmp_path)
+    assert [thread["thread_id"] for thread in persisted_state["threads"]] == [
+        "dept-engineering"
+    ]
+    thread_path = tmp_path / "worker_agents" / "threads" / "dept-engineering" / "thread.json"
+    index_path = tmp_path / "worker_agents" / "threads" / "_index.json"
+    assert json.loads(thread_path.read_text(encoding="utf-8"))["status"] == "active"
+    assert json.loads(index_path.read_text(encoding="utf-8"))["threads"] == [
+        {
+            "org_node_id": "engineering",
+            "status": "active",
+            "thread_id": "dept-engineering",
+            "thread_type": "organization_group",
+            "updated_at": changed[0]["updated_at"],
+            "worker_id": None,
+        }
+    ]
+
+
+def test_materialize_and_persist_threads_archives_stale_department_chat(tmp_path):
+    existing_thread = {
+        "thread_id": "dept-engineering",
+        "thread_type": "organization_group",
+        "participants": [
+            {"kind": "user", "participant_id": "user"},
+            {"kind": "main_agent", "participant_id": "zermes_main_agent"},
+            {"kind": "worker", "participant_id": "engineering-lead"},
+            {"kind": "worker", "participant_id": "backend"},
+        ],
+        "title": "Engineering",
+        "status": "active",
+        "last_summary": "historical summary",
+    }
+    state = _state(
+        nodes={
+            "engineering": _department_node(
+                "engineering",
+                leader_worker_id="engineering-lead",
+                member_worker_ids=["engineering-lead", "backend"],
+            )
+        },
+        workers={
+            "engineering-lead": _worker("engineering-lead"),
+            "backend": _worker("backend", status="archived"),
+        },
+        threads=[existing_thread],
+    )
+    product.write_management_state_for_tests(state, home=tmp_path)
+
+    changed = product.materialize_and_persist_threads(
+        org_node_ids=["engineering"],
+        organization_tree=state["organization_tree"],
+        worker_records=state["worker_records"],
+        home=tmp_path,
+    )
+
+    assert changed[0]["status"] == "archived"
+    assert changed[0]["read_only"] is True
+    persisted = product.load_management_state(home=tmp_path)["threads"][0]
+    assert persisted["status"] == "archived"
+    assert persisted["read_only"] is True
