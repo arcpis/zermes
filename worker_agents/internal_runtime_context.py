@@ -299,8 +299,10 @@ def _task_context_excerpts(
 
 
 def _allowed_tool_descriptions(profile: WorkerAgentProfile) -> tuple[str, ...]:
+    from model_tools import get_tool_description
+
     return tuple(
-        f"{tool_name}: allowed by worker tool policy"
+        f"{tool_name}: {get_tool_description(tool_name)}"
         for tool_name in profile.tools.allowed_tools
     )
 

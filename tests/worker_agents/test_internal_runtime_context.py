@@ -109,9 +109,17 @@ def test_context_builder_returns_minimal_runtime_inputs(tmp_path):
     assert context.request_context.thread_summary_refs == (
         "threads/task-1/summary.md",
     )
-    assert context.request_context.allowed_tool_descriptions == (
-        "read_file: allowed by worker tool policy",
-        "web_search: allowed by worker tool policy",
+    assert len(context.request_context.allowed_tool_descriptions) == 2
+    read_file_description, web_search_description = (
+        context.request_context.allowed_tool_descriptions
+    )
+    assert read_file_description.startswith("read_file: Read a text file")
+    assert "path(string, required)" in read_file_description
+    assert web_search_description.startswith("web_search: Search the web")
+    assert "query(string, required)" in web_search_description
+    assert all(
+        "allowed by worker tool policy" not in item
+        for item in context.request_context.allowed_tool_descriptions
     )
     assert context.request_context.worker_prompt_summary["worker_id"] == "researcher"
     assert context.request_context.worker_prompt_summary["delegation"][

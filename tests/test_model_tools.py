@@ -8,6 +8,7 @@ import pytest
 from model_tools import (
     handle_function_call,
     get_all_tool_names,
+    get_tool_description,
     get_toolset_for_tool,
     _AGENT_LOOP_TOOLS,
     _LEGACY_TOOLSET_MAP,
@@ -332,6 +333,21 @@ class TestBackwardCompat:
     def test_get_toolset_for_unknown_tool(self):
         result = get_toolset_for_tool("totally_nonexistent_tool")
         assert result is None
+
+    def test_get_tool_description_includes_real_schema_summary(self):
+        description = get_tool_description("read_file")
+
+        assert description.startswith("Read a text file")
+        assert "Args:" in description
+        assert "path(string, required)" in description
+        assert "offset(integer)" in description
+        assert "limit(integer)" in description
+        assert "allowed by worker tool policy" not in description
+
+    def test_get_tool_description_returns_clear_unknown_tool_fallback(self):
+        assert get_tool_description("totally_nonexistent_tool") == (
+            "No registered schema found for this tool."
+        )
 
     def test_tool_to_toolset_map(self):
         assert isinstance(TOOL_TO_TOOLSET_MAP, dict)

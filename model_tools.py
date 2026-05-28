@@ -14,6 +14,7 @@ Public API (signatures preserved from the original 2,400-line version):
     TOOL_TO_TOOLSET_MAP: dict          (for batch_runner.py)
     TOOLSET_REQUIREMENTS: dict         (for cli.py, doctor.py)
     get_all_tool_names() -> list
+    get_tool_description(tool_name) -> str
     get_toolset_for_tool(name) -> str
     get_available_toolsets() -> dict
     check_toolset_requirements() -> dict
@@ -825,6 +826,78 @@ def handle_function_call(
 def get_all_tool_names() -> List[str]:
     """Return all registered tool names."""
     return registry.get_all_tool_names()
+
+
+def get_tool_description(tool_name: str) -> str:
+    """Return a compact, human-readable description for one registered tool.
+
+    Worker-agent prompts need real tool affordances, but injecting full JSON
+    schemas would waste context. This keeps the top-level description and a
+    concise argument list derived from the same registry schema used for model
+    tool calls.
+    """
+    if not isinstance(tool_name, str) or not tool_name:
+        return "No registered schema found for this tool."
+
+    entry = registry.get_entry(tool_name)
+    if entry is None:
+        return "No registered schema found for this tool."
+
+    schema = entry.schema if isinstance(entry.schema, dict) else {}
+    description = _single_line_text(
+        entry.description or schema.get("description") or "No description provided."
+    )
+    args_description = _tool_args_description(schema)
+    return f"{description} Args: {args_description}"
+
+
+def _tool_args_description(schema: dict) -> str:
+    parameters = schema.get("parameters")
+    if not isinstance(parameters, dict):
+        return "none"
+    properties = parameters.get("properties")
+    if not isinstance(properties, dict) or not properties:
+        return "none"
+
+    required = parameters.get("required")
+    required_names = set(required) if isinstance(required, list) else set()
+    arg_parts = []
+    for name, property_schema in properties.items():
+        if not isinstance(name, str) or not name:
+            continue
+        type_name = _schema_type_name(property_schema)
+        required_suffix = ", required" if name in required_names else ""
+        arg_parts.append(f"{name}({type_name}{required_suffix})")
+    return ", ".join(arg_parts) if arg_parts else "none"
+
+
+def _schema_type_name(schema: Any) -> str:
+    if not isinstance(schema, dict):
+        return "unknown"
+
+    schema_type = schema.get("type")
+    if isinstance(schema_type, str):
+        if schema_type == "array":
+            item_type = _schema_type_name(schema.get("items"))
+            return f"array[{item_type}]"
+        return schema_type
+    if isinstance(schema_type, list):
+        return "|".join(str(item) for item in schema_type)
+
+    for union_key in ("anyOf", "oneOf"):
+        variants = schema.get(union_key)
+        if isinstance(variants, list) and variants:
+            return "|".join(_schema_type_name(variant) for variant in variants)
+
+    if "enum" in schema:
+        return "enum"
+    if "$ref" in schema:
+        return "object"
+    return "unknown"
+
+
+def _single_line_text(value: Any) -> str:
+    return " ".join(str(value).split())
 
 
 def get_toolset_for_tool(tool_name: str) -> Optional[str]:
