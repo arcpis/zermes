@@ -165,6 +165,9 @@ def chat_send(thread_id: str, body: ChatSendRequest) -> dict[str, Any]:
             target_id=body.target_id,
             importance=body.importance,
             dry_run=body.dry_run,
+            runtime_reply_handler=None
+            if body.dry_run
+            else product.build_worker_runtime_reply_handler(),
         )
     )
 

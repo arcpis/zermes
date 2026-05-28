@@ -154,12 +154,14 @@ def test_worker_agents_chat_send_and_history_share_managed_store(client):
         json={"sender_id": "user", "text": "hello from dashboard"},
     )
 
-    history = client.get("/api/worker-agents/chats/thread-1/history?limit=1")
+    history = client.get("/api/worker-agents/chats/thread-1/history?limit=2")
 
     assert send.status_code == 200
     assert send.json()["audit_ref"].startswith("worker_agents/threads/thread-1/")
+    assert send.json()["audit"]["runtime_dispatches"][0]["target_worker_id"] == "worker-a"
     assert history.status_code == 200
     assert history.json()["messages"][0]["body_preview"] == "hello from dashboard"
+    assert history.json()["messages"][1]["sender"]["kind"] == "worker"
 
 
 def test_worker_agents_evolution_apply_draft_updates_overview(client):

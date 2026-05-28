@@ -111,6 +111,24 @@ def test_runner_run_uses_shared_facade_run(tmp_path):
     assert facade.run_config is not None
 
 
+def test_runner_runtime_request_returns_routable_result_and_finalizes_task(tmp_path):
+    service = _task_service(tmp_path)
+    facade = RecordingFacade()
+    runner = InternalWorkerRuntimeRunner(task_service=service, facade=facade)
+    prepared = runner.prepare_run(
+        InternalWorkerRuntimeContextRequest(worker_id="researcher", task_id="task-1"),
+        request_id="runtime-request-1",
+    )
+
+    result = runner.run_runtime_request(prepared.runtime_request)
+
+    assert result.request_id == "runtime-request-1"
+    assert result.worker_id == "researcher"
+    assert result.public_message
+    assert service.get_task("task-1").status.value == "succeeded"
+    assert facade.run_config is not None
+
+
 def test_convenience_entrypoints(tmp_path):
     service = _task_service(tmp_path)
     facade = RecordingFacade()

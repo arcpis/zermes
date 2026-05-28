@@ -80,6 +80,7 @@ from worker_agents.profile import (
     WorkerToolPolicy,
     WorkerWorkspacePolicy,
 )
+from worker_agents.registry import WorkerRegistryError
 from worker_agents.message_router import (
     ChatMessageType,
     ChatParticipantKind,
@@ -103,11 +104,17 @@ from worker_agents.runtime_reply_channel import (
     runtime_reply_dispatch_to_dict,
     target_worker_ids_for_chat_message,
 )
+from worker_agents.internal_runtime_runner import InternalWorkerRuntimeRunner
+from worker_agents.registry_service import WorkerRegistryService
+from worker_agents.storage import WorkerAgentProfileStore, WorkerAgentRuntimeDataStore
+from worker_agents.task_service import WorkerTaskService
+from worker_agents.task_state import WorkerTaskError
 from worker_agents.storage.safe_paths import validate_single_path_segment
 from worker_agents.worker_prompt_summary import (
     build_worker_prompt_summary,
     worker_prompt_summary_to_dict,
 )
+from worker_agents.runtime_contract import RuntimeRequest
 
 
 MANAGEMENT_STATE_RELATIVE_PATH = Path("worker_agents") / "management" / "dashboard_state.json"
@@ -447,6 +454,7 @@ def send_chat_message(
                 router=router,
                 thread=chat_thread_from_dict(_thread_contract_dict(thread)),
                 message=message,
+                delivery_records=delivery_records,
                 runtime_reply_handler=runtime_reply_handler,
             )
         if delivery_records:
@@ -477,6 +485,114 @@ def send_chat_message(
         else "Message route validated; no message was written.",
         updated_status="validated" if dry_run else "created",
         audit=audit or None,
+    )
+
+
+def build_worker_runtime_reply_handler() -> RuntimeReplyHandler:
+    """Build the default handler used by CLI and dashboard chat sends."""
+
+    return _build_worker_runtime_handler()
+
+
+def _build_worker_runtime_handler() -> RuntimeReplyHandler:
+    """Return the concrete RuntimeReplyHandler used by product chat sends."""
+
+    def _handle_runtime_reply(request: RuntimeRequest):
+        state = _state_with_materialized_department_chats(load_management_state())
+        task_service = _build_worker_task_service_from_profile_home()
+        _ensure_runtime_worker_profile(
+            task_service,
+            worker_id=request.worker_id,
+            state=state,
+        )
+        _ensure_chat_runtime_task(task_service, request)
+        return InternalWorkerRuntimeRunner(task_service=task_service).run_runtime_request(
+            request
+        )
+
+    return _handle_runtime_reply
+
+
+def _build_worker_task_service_from_profile_home() -> WorkerTaskService:
+    registry = WorkerRegistryService(WorkerAgentProfileStore())
+    return WorkerTaskService.from_registry_service(
+        registry,
+        runtime_store=WorkerAgentRuntimeDataStore(),
+    )
+
+
+def _ensure_runtime_worker_profile(
+    task_service: WorkerTaskService,
+    *,
+    worker_id: str,
+    state: Mapping[str, Any],
+) -> None:
+    worker = _optional_mapping(_mapping(state.get("worker_records")).get(worker_id))
+    if worker is None:
+        raise ValueError(f"worker does not exist: {worker_id!r}")
+    status = str(worker.get("status", "")).lower()
+    if status != "enabled":
+        raise ValueError(f"worker is not enabled: {worker_id!r}")
+    try:
+        task_service.registry_service.get_worker(worker_id)
+    except WorkerRegistryError:
+        task_service.registry_service.register_worker(
+            profile=_runtime_worker_profile_from_management_record(worker),
+            created_by="worker_chat_runtime",
+        )
+    task_service.registry_service.enable_worker(
+        worker_id,
+        updated_by="worker_chat_runtime",
+    )
+
+
+def _ensure_chat_runtime_task(
+    task_service: WorkerTaskService,
+    request: RuntimeRequest,
+) -> None:
+    try:
+        task_service.get_task(request.task_id)
+        return
+    except WorkerTaskError:
+        pass
+    task_service.create_task(
+        task_id=request.task_id,
+        worker_id=request.worker_id,
+        title=f"Reply to chat message {request.context.source_thread_id or request.task_id}",
+        objective=request.context.input_message,
+        created_by=request.requested_by,
+        input_summary=request.context.input_message,
+        queue=True,
+        tags=("chat_runtime_reply",),
+        workspace={
+            "source_thread_id": request.context.source_thread_id,
+            "source_message_refs": list(request.context.source_message_refs),
+        },
+    )
+
+
+def _runtime_worker_profile_from_management_record(
+    record: Mapping[str, Any],
+) -> WorkerAgentProfile:
+    profile = _worker_profile_from_management_record(record)
+    # Management records may predate durable worker profiles and omit runtime
+    # budgets. The internal context contract still needs at least one concrete
+    # execution limit to build a RuntimeExecutionBudget safely.
+    return WorkerAgentProfile(
+        **{
+            **profile.__dict__,
+            "budgets": WorkerBudgetPolicy(
+                max_task_tokens=profile.budgets.max_task_tokens or 4000,
+                max_turn_tokens=profile.budgets.max_turn_tokens or 1000,
+                max_task_cost_usd=profile.budgets.max_task_cost_usd,
+            ),
+            "limits": WorkerExecutionLimits(
+                max_concurrent_tasks=profile.limits.max_concurrent_tasks,
+                timeout_seconds=profile.limits.timeout_seconds or 120,
+                max_retries=profile.limits.max_retries,
+                queue_policy=profile.limits.queue_policy,
+            ),
+        }
     )
 
 
@@ -983,13 +1099,14 @@ def _dispatch_runtime_replies_for_message(
     thread: WorkerChatThread,
     message: WorkerMessageEnvelope,
     runtime_reply_handler: RuntimeReplyHandler,
+    delivery_records: tuple[Mapping[str, Any], ...] = (),
 ) -> list[Mapping[str, Any]]:
     """Persist public runtime replies through the same thread message store."""
 
-    if message.message_type != ChatMessageType.NORMAL:
+    if message.message_type not in {ChatMessageType.NORMAL, ChatMessageType.MENTION}:
         return []
     dispatches = []
-    for worker_id in target_worker_ids_for_chat_message(thread, message):
+    for worker_id in _runtime_target_worker_ids(thread, message, delivery_records):
         dispatch = dispatch_chat_message_to_worker_runtime(
             router=router,
             thread=thread,
@@ -1001,6 +1118,33 @@ def _dispatch_runtime_replies_for_message(
             _append_thread_message(delivered)
         dispatches.append(runtime_reply_dispatch_to_dict(dispatch))
     return dispatches
+
+
+def _runtime_target_worker_ids(
+    thread: WorkerChatThread,
+    message: WorkerMessageEnvelope,
+    delivery_records: tuple[Mapping[str, Any], ...],
+) -> tuple[str, ...]:
+    """Return runtime targets for normal sends and resolved mentions.
+
+    Normal messages use the existing recipient-scope rules. Mention messages
+    additionally use resolved delivery recipients so an @department mention can
+    trigger the department leader instead of remaining only a tracking record.
+    """
+
+    worker_ids = list(target_worker_ids_for_chat_message(thread, message))
+    if message.message_type == ChatMessageType.MENTION:
+        for record in delivery_records:
+            recipient = _optional_mapping(record.get("resolved_recipient"))
+            if (
+                recipient is None
+                or recipient.get("kind") != ChatParticipantKind.WORKER.value
+            ):
+                continue
+            worker_id = recipient.get("participant_id")
+            if isinstance(worker_id, str) and worker_id:
+                worker_ids.append(worker_id)
+    return tuple(dict.fromkeys(worker_ids))
 
 
 def _thread_contract_dict(thread: Mapping[str, Any]) -> dict[str, Any]:

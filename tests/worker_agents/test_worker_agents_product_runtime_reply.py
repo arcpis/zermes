@@ -82,6 +82,30 @@ def test_targeted_group_message_routes_runtime_reply_to_same_thread():
     assert "raw runtime transcript" not in json.dumps(history)
 
 
+def test_mention_message_routes_runtime_reply_to_resolved_worker():
+    product.write_management_state_for_tests(_state())
+
+    result = product.send_chat_message(
+        thread_id="dept-engineering",
+        sender_id="user",
+        text="@worker-a please check the build.",
+        message_type="mention",
+        target_kind="worker",
+        target_id="worker-a",
+        runtime_reply_handler=_runtime_reply,
+    )
+
+    history = product.get_thread_history(
+        product.ChatHistoryQuery(thread_id="dept-engineering")
+    )
+    assert result["audit"]["delivery_records"][0]["status"] == "pending"
+    assert result["audit"]["runtime_dispatches"][0]["target_worker_id"] == "worker-a"
+    assert [message["body_preview"] for message in history["messages"]] == [
+        "@worker-a please check the build.",
+        "worker-a received it.",
+    ]
+
+
 def test_direct_chat_runtime_reply_stays_out_of_department_thread():
     product.write_management_state_for_tests(_state())
     product.ensure_direct_worker_chat(worker_id="worker-a")

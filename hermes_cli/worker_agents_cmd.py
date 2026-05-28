@@ -193,6 +193,9 @@ def _send(args: argparse.Namespace) -> Any:
         sender_id=args.sender,
         text=args.text,
         dry_run=args.dry_run,
+        runtime_reply_handler=None
+        if args.dry_run
+        else product.build_worker_runtime_reply_handler(),
     )
 
 
@@ -206,6 +209,9 @@ def _mention(args: argparse.Namespace) -> Any:
         target_kind=args.target_kind,
         target_id=args.target_id,
         dry_run=args.dry_run,
+        runtime_reply_handler=None
+        if args.dry_run
+        else product.build_worker_runtime_reply_handler(),
     )
 
 
