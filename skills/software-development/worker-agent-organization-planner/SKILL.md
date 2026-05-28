@@ -1,133 +1,79 @@
 ---
 name: worker-agent-organization-planner
-description: "Use when a user asks Zermes to create WorkerAgent employees, sub-agents, departments, teams, reporting structures, or to adjust WorkerAgent organization topology from natural language. Guides the main agent to parse staffing intent, normalize ids, split multi-node changes into proposal-first command flows, submit drafts, explain approval/execution checkpoints, and verify results without directly editing active organization or registry state."
+description: "Execute WorkerAgent organization changes end-to-end. Use when users ask to create, delete, merge, archive, or restructure workers, departments, teams, or reporting relationships; query current state, draft proposals, auto-approve safe changes, apply them, verify results, and only stop for user confirmation on high-risk operations."
 license: MIT
 metadata:
   hermes:
-    tags: [worker-agents, organization, staffing, evolution, proposal, approval, cli, dashboard]
-    related_skills: [self-evolution, writing-plans, test-driven-development]
+    tags: [worker-agents, organization, evolution, execution]
+    related_skills: [self-evolution]
 ---
 
-# WorkerAgent Organization Planner
+# WorkerAgent Organization Executor
 
-Use this skill to turn natural-language organization requests into a safe WorkerAgent evolution workflow. The main agent should guide the user and produce concrete command flows. Do not directly modify active organization trees, worker registries, department assets, tool policies, memory stores, or retention state.
+Use this skill to execute organization changes, not to hand users command templates. Run the product CLI yourself, keep every change proposal-first, and report the final verified state.
 
-## Operating Order
+## Execution Flow
 
-Do not start by reading source code. First use the product interface and documented commands:
+1. Intent: parse `proposal_kind`, `target_node`, `worker_id`, dependencies, and reason from the user's request.
+2. Query: run `zermes worker-agents organization --json` before planning so the current tree is the source of truth.
+3. Plan: split multi-node changes into waves; parents are created before children, and assets move before deletion.
+4. Execute: for each atomic change, run draft, inspect blockers and approval requirement, approve when allowed, then apply.
+5. Verify: rerun `zermes worker-agents organization --json`; use `workers --json` or `chats --json` when membership or materialized chats matter.
 
-1. Plan the requested organization change in text.
-2. Inspect current product state with `zermes worker-agents ... --json` only if current state is needed.
-3. Convert the plan into a command flow.
-4. Run or present the draft/action commands according to the user's instruction.
-5. Verify with read-only `zermes worker-agents` commands.
+## Smart Approval
 
-Read repository code only when a documented command is missing, fails unexpectedly, or the user explicitly asks to modify the implementation. For normal organization planning, the CLI/API product surface is the source of truth.
+| Approval level | Action |
+| --- | --- |
+| `POLICY_APPROVED` | Auto-approve and apply immediately; this is zero-risk by policy. |
+| `MAIN_AGENT_APPROVAL` | Auto-approve and apply; the user already requested the operation. |
+| `USER_APPROVAL` | Stop, explain the risk and affected nodes, then wait for explicit user confirmation. |
 
-## Information Sources
+## Execution Rules
 
-Prefer these sources in order:
+- Always query first; never assume root ids, existing departments, or worker ids.
+- Use one draft per atomic operation. Do not combine parent and child creation in a single proposal.
+- If a requested id already exists in the intended place, skip that atomic change and report it as already satisfied.
+- If `blockers` is non-empty or `can_execute` is false, stop that change and report the required resolution.
+- Apply only after approval is satisfied. Draft output alone never means the worker exists.
+- Verify after each dependency wave before drafting children that depend on newly created parents.
 
-1. `zermes worker-agents ... --json` commands for current workers, organization, chats, proposals, approvals, assets, import/export, and retention state.
-2. Dashboard API `/api/worker-agents/*` when working inside the local dashboard context.
-3. Product state files only for read-only inspection or troubleshooting:
-   - `<HERMES_HOME>/worker_agents/management/dashboard_state.json`
-   - `<HERMES_HOME>/worker_agents/threads/<thread_id>/messages.jsonl`
-4. Source code only when product commands/API are unavailable or need implementation changes.
+## Command Reference
 
-Do not edit product state files directly. Use commands/action endpoints so validation, approvals, and audit output stay intact.
+Read `references/commands.md` when you need syntax, proposal kinds, approval commands, risk flags, or wave examples.
 
-## Required Behavior
-
-Always produce a proposal-first plan. For creation, deletion, merge, archive, or restructuring requests:
-
-1. Restate the user intent.
-2. Extract the requested organization tree.
-3. Normalize display names into stable ids.
-4. Identify the existing parent node where the first new node should attach.
-5. Split changes into execution waves, creating parents before children.
-6. Generate `zermes worker-agents evolution-draft` commands.
-7. Explain approval requirements and blocker handling.
-8. Provide verification commands.
-9. State safety boundaries.
-
-If the existing parent node is missing or ambiguous, ask for it before emitting final commands. You may still show a command template with `<existing-parent-node>`.
-
-## Load References
-
-Read only the references needed for the current request:
-
-- `references/command-reference.md`: exact CLI commands and argument meanings.
-- `references/information-sources.md`: product commands, API endpoints, state file locations, and source-code fallback locations.
-- `references/natural-language-to-command-flow.md`: how to parse natural language into waves and commands.
-- `references/approval-and-execution.md`: how to handle approval, blockers, execution availability, and verification.
-- `references/scenarios.md`: examples for creation, deletion, merge, archive, and restructuring.
-
-## Output Template
-
-Use this structure:
-
-```text
-Intent summary:
-[what the user asked for]
-
-Assumptions / missing inputs:
-[existing parent node, actor id, naming assumptions, unresolved questions]
-
-Proposed organization tree:
-[ASCII tree]
-
-Normalized ids:
-[display name -> id mapping]
-
-Command flow:
-Wave 1:
-[commands]
-
-Wave 2:
-[commands]
-
-Approval and execution:
-[approval commands and checkpoints]
-
-Verification:
-[commands to inspect evolution, approvals, organization, chats]
-
-Safety notes:
-[what is not directly modified or exposed]
-```
-
-## Available Commands
-
-Use `zermes`, not `hermes`, in user-facing instructions. These are the main commands this skill should know without reading code:
+Core commands:
 
 ```bash
-zermes worker-agents overview --json
-zermes worker-agents workers --json
 zermes worker-agents organization --json
-zermes worker-agents chats --json
-zermes worker-agents chat-history <thread_id> --limit 50 --json
+zermes worker-agents workers --json
 zermes worker-agents evolution --json
-zermes worker-agents evolution-draft --proposal-kind create_child_agent --actor <actor> --target-node <parent> --requested-worker <worker-id> --reason "<reason>" --json
 zermes worker-agents approvals --json
-zermes worker-agents approval approve <approval_id> --actor <actor> --reason "<reason>" --confirm-high-risk --json
-zermes worker-agents approval reject <approval_id> --actor <actor> --reason "<reason>" --json
-zermes worker-agents approval request-changes <approval_id> --actor <actor> --reason "<reason>" --json
-zermes worker-agents approval delegate <approval_id> --actor <actor> --delegate-to <reviewer> --reason "<reason>" --json
-zermes worker-agents assets --json
-zermes worker-agents asset reject <proposal_id> --actor <actor> --reason "<reason>" --json
-zermes worker-agents cleanup-plan --json
-zermes worker-agents import-dry-run --manifest <manifest.json> --json
+zermes worker-agents chats --json
+
+zermes worker-agents evolution-draft \
+  --proposal-kind <TYPE> \
+  --actor main-agent \
+  --target-node <NODE_ID> \
+  --requested-worker <WORKER_ID> \
+  --reason "<REASON>" \
+  --json
+
+zermes worker-agents approval approve <approval_id> \
+  --actor main-agent \
+  --reason "Auto-approved per user request" \
+  --json
+
+zermes worker-agents evolution-apply-draft \
+  --proposal-kind <TYPE> \
+  --actor main-agent \
+  --target-node <NODE_ID> \
+  --requested-worker <WORKER_ID> \
+  --json
 ```
 
-Read `references/command-reference.md` for parameter meanings and additional draft kinds.
-Read `references/information-sources.md` for where the current product state lives and how to inspect it safely.
+## Safety
 
-## Safety Rules
-
-- Never say the draft command has created the worker. It only produces a draft or validation result.
-- Never combine parent and child creation into the same execution wave when the child depends on a newly created parent.
-- Never bypass approval for high-risk, destructive, permission-expanding, external-agent, or asset-moving changes.
-- Never instruct the user to edit JSON store files directly.
-- Never expose or request raw transcript, stdout, stderr, private memory text, secrets, tokens, credentials, API keys, or passwords.
-
+- Never bypass `USER_APPROVAL` for permission expansion, budget increase, model tier increase, external-agent access, sensitive memory, or comparable high-risk changes.
+- Never edit organization, registry, thread, memory, or dashboard JSON files directly.
+- Never expose secrets, credentials, private memory, raw transcripts, or unredacted stdout/stderr.
+- On failures, report the exact failed phase and stop; do not repeatedly retry mutating operations.
