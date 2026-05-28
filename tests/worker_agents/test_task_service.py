@@ -121,6 +121,42 @@ def test_task_service_lists_tasks_with_filters(tmp_path):
     ]
 
 
+def test_task_service_lists_active_tasks_by_worker(tmp_path):
+    service = _task_service(tmp_path)
+    _register_worker(service, "researcher")
+    _register_worker(service, "writer")
+    service.create_task(
+        task_id="task-1",
+        worker_id="researcher",
+        title="Survey",
+        objective="Summarize the current state.",
+        origin_thread_id="dept-research",
+        report_to_thread_id="dept-research",
+        queue=True,
+    )
+    service.create_task(
+        task_id="task-2",
+        worker_id="researcher",
+        title="Done",
+        objective="Already done.",
+        queue=True,
+    )
+    service.create_task(
+        task_id="task-3",
+        worker_id="writer",
+        title="Draft",
+        objective="Draft a summary.",
+        queue=True,
+    )
+    service.start_task("task-2", updated_by="adapter")
+    service.complete_task("task-2", updated_by="adapter")
+
+    active = service.list_active_tasks("researcher")
+
+    assert [task.task_id for task in active] == ["task-1"]
+    assert active[0].origin_thread_id == "dept-research"
+
+
 def test_task_service_reuses_lifecycle_rules(tmp_path):
     service = _task_service(tmp_path)
     _register_worker(service)

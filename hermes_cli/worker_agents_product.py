@@ -562,6 +562,8 @@ def _ensure_chat_runtime_task(
         objective=request.context.input_message,
         created_by=request.requested_by,
         input_summary=request.context.input_message,
+        origin_thread_id=request.context.source_thread_id,
+        report_to_thread_id=request.context.source_thread_id,
         queue=True,
         tags=("chat_runtime_reply",),
         workspace={

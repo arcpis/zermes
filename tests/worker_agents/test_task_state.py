@@ -32,11 +32,16 @@ def _state(**overrides):
 
 
 def test_worker_task_state_round_trips_json():
-    state = _state()
+    state = _state(
+        origin_thread_id="dept-research",
+        report_to_thread_id="direct-user-researcher",
+    )
 
     loaded = load_worker_task_state_json(dump_worker_task_state_json(state))
 
     assert loaded == state
+    assert loaded.origin_thread_id == "dept-research"
+    assert loaded.report_to_thread_id == "direct-user-researcher"
     assert worker_task_state_to_dict(loaded)["schema_version"] == (
         WORKER_TASK_SCHEMA_VERSION
     )

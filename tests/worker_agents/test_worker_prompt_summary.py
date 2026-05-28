@@ -12,6 +12,7 @@ from worker_agents.organization import (
     OrgTree,
 )
 from worker_agents.profile import WorkerAgentProfile, WorkerDelegationPolicy
+from worker_agents.task_state import WorkerTaskState, WorkerTaskStatus
 from worker_agents.worker_prompt_summary import (
     build_worker_prompt_summary,
     worker_prompt_summary_to_dict,
@@ -114,6 +115,28 @@ def _bindings() -> tuple[DepartmentChatBinding, ...]:
     )
 
 
+def _task(
+    task_id: str,
+    *,
+    worker_id: str = "backend-implementation",
+    status: WorkerTaskStatus = WorkerTaskStatus.RUNNING,
+    origin_thread_id: str = "dept-code-implementation",
+    report_to_thread_id: str = "dept-code-implementation",
+) -> WorkerTaskState:
+    return WorkerTaskState(
+        task_id=task_id,
+        worker_id=worker_id,
+        title="Implement API",
+        objective="Build the worker API.",
+        created_by="user",
+        created_at="2026-05-29T00:00:00Z",
+        updated_at="2026-05-29T00:00:00Z",
+        status=status,
+        origin_thread_id=origin_thread_id,
+        report_to_thread_id=report_to_thread_id,
+    )
+
+
 def test_department_owner_prompt_summary_includes_identity_and_reply_thread():
     summary = build_worker_prompt_summary(
         profile=_profile("code-implementation", allow_delegation=True),
@@ -181,3 +204,32 @@ def test_delegation_targets_stay_within_owned_department():
     assert rendered["delegation"]["required_reply_threads"] == [
         "dept-code-implementation"
     ]
+
+
+def test_prompt_summary_includes_operating_instructions_and_active_work():
+    summary = build_worker_prompt_summary(
+        profile=_profile("backend-implementation"),
+        organization_tree=_tree(),
+        department_chat_bindings=_bindings(),
+        current_thread_id="dept-code-implementation",
+        active_tasks=(
+            _task("task-1"),
+            _task("task-2", status=WorkerTaskStatus.SUCCEEDED),
+            _task("task-3", worker_id="frontend-implementation"),
+            _task(
+                "task-4",
+                origin_thread_id="dept-design",
+                report_to_thread_id="dept-design",
+            ),
+        ),
+    )
+    data = worker_prompt_summary_to_dict(summary)
+
+    assert "active_tasks" in data
+    assert [task["task_id"] for task in data["active_tasks"]] == ["task-1", "task-4"]
+    assert data["active_tasks"][0]["origin_thread_id"] == "dept-code-implementation"
+    assert [task["task_id"] for task in data["pending_reports"]] == ["task-4"]
+    assert any(
+        "cross-chat work memory" in instruction
+        for instruction in data["operating_instructions"]
+    )

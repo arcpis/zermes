@@ -194,7 +194,11 @@ def _public_message_from_invocation(invocation: AgentRuntimeInvocation) -> str:
     explicit_message = getattr(invocation, "public_message", None)
     if isinstance(explicit_message, str) and explicit_message.strip():
         return explicit_message.strip()
-    display_name = invocation.display_name or invocation.worker_id or "Worker"
+    display_name = (
+        getattr(invocation, "display_name", None)
+        or getattr(invocation, "worker_id", None)
+        or "Worker"
+    )
     return (
         f"{display_name} received the request and prepared an internal runtime "
         "session for execution."
@@ -202,8 +206,14 @@ def _public_message_from_invocation(invocation: AgentRuntimeInvocation) -> str:
 
 
 def _internal_summary_from_invocation(invocation: AgentRuntimeInvocation) -> str:
+    allowed_tool_names = getattr(invocation, "allowed_tool_names", ())
+    worker_label = (
+        getattr(invocation, "worker_id", None)
+        or getattr(invocation, "display_name", None)
+        or "Worker"
+    )
     return (
         f"Prepared internal worker invocation for "
-        f"{invocation.worker_id or invocation.display_name} with "
-        f"{len(invocation.allowed_tool_names)} allowed tool(s)."
+        f"{worker_label} with "
+        f"{len(allowed_tool_names)} allowed tool(s)."
     )

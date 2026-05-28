@@ -78,6 +78,8 @@ def _create_task(service, *, task_id="task-1", worker_id="researcher"):
         title="Survey",
         objective="Summarize the current state.",
         input_summary="Summarize only the approved thread summary.",
+        origin_thread_id="dept-research",
+        report_to_thread_id="dept-research",
         budgets={"max_task_tokens": 500, "max_turn_tokens": 100},
         queue=True,
     )
@@ -204,3 +206,44 @@ def test_context_builder_recomputes_current_reply_thread_prompt_summary(tmp_path
     prompt_summary = context.request_context.worker_prompt_summary
     assert prompt_summary["default_reply_thread_id"] == "direct-user-researcher"
     assert prompt_summary["current_thread_summary"] == "Current direct chat summary."
+
+
+def test_context_builder_injects_worker_wide_active_task_memory(tmp_path):
+    service = _task_service(tmp_path)
+    _register_worker(service)
+    _create_task(service, task_id="task-1")
+    service.create_task(
+        task_id="task-2",
+        worker_id="researcher",
+        title="Cross Chat Followup",
+        objective="Report findings from another department chat.",
+        input_summary="Prepare the followup.",
+        origin_thread_id="dept-analysis",
+        report_to_thread_id="dept-analysis",
+        queue=True,
+    )
+    service.task_store.save_rolling_summary(
+        "task-2",
+        "- Found a dependency in the analysis thread.\n",
+    )
+
+    context = build_internal_worker_runtime_context(
+        service,
+        InternalWorkerRuntimeContextRequest(
+            worker_id="researcher",
+            task_id="task-1",
+            current_thread_id="dept-research",
+            relevant_excerpts=("Current message excerpt.",),
+        ),
+    )
+
+    prompt_summary = context.request_context.worker_prompt_summary
+    assert [task["task_id"] for task in prompt_summary["active_tasks"]] == [
+        "task-1",
+        "task-2",
+    ]
+    assert [task["task_id"] for task in prompt_summary["pending_reports"]] == [
+        "task-2",
+    ]
+    assert any("dept-analysis" in item for item in context.request_context.relevant_excerpts)
+    assert any("Found a dependency" in item for item in context.session_context.relevant_excerpts)

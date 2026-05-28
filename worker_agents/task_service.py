@@ -10,6 +10,7 @@ from .registry import WorkerLifecycleStatus, WorkerRegistryError
 from .registry_service import WorkerRegistryService
 from .storage import WorkerAgentRuntimeDataStore, WorkerTaskStore
 from .task_state import (
+    TERMINAL_TASK_STATUSES,
     WorkerTaskError,
     WorkerTaskState,
     WorkerTaskStatus,
@@ -48,6 +49,8 @@ class WorkerTaskService:
         objective: str,
         created_by: str = "system",
         input_summary: str | None = None,
+        origin_thread_id: str | None = None,
+        report_to_thread_id: str | None = None,
         budgets: Mapping[str, Any] | None = None,
         workspace: Mapping[str, Any] | None = None,
         tags: tuple[str, ...] | list[str] = (),
@@ -79,6 +82,8 @@ class WorkerTaskService:
             updated_by=created_by,
             status=WorkerTaskStatus.QUEUED if queue else WorkerTaskStatus.DRAFT,
             input_summary=input_summary,
+            origin_thread_id=origin_thread_id,
+            report_to_thread_id=report_to_thread_id,
             assigned_worker_status=record.status.value,
             profile_snapshot=_profile_snapshot(profile),
             budgets=task_budgets,
@@ -101,17 +106,13 @@ class WorkerTaskService:
         tags: tuple[str, ...] | list[str] | None = None,
     ) -> list[WorkerTaskState]:
         """List task states using lightweight fields stored in runtime data."""
-        tasks_dir = self.task_store.runtime_store.tasks_dir
-        if not tasks_dir.exists():
-            return []
         target_status = WorkerTaskStatus(status) if status is not None else None
         required_tags = set(tags or ())
         result = []
-        for task_dir in sorted(path for path in tasks_dir.iterdir() if path.is_dir()):
-            try:
-                state = self.task_store.load_task_state(task_dir.name)
-            except WorkerTaskError:
-                continue
+        for state in self.task_store.list_task_states(
+            worker_id=worker_id,
+            status=target_status,
+        ):
             if worker_id is not None and state.worker_id != worker_id:
                 continue
             if target_status is not None and state.status != target_status:
@@ -122,6 +123,14 @@ class WorkerTaskService:
                 continue
             result.append(state)
         return result
+
+    def list_active_tasks(self, worker_id: str) -> list[WorkerTaskState]:
+        """Return non-terminal tasks that make up a worker's current workload."""
+        return [
+            task
+            for task in self.task_store.list_task_states(worker_id=worker_id)
+            if task.status not in TERMINAL_TASK_STATUSES
+        ]
 
     def queue_task(
         self, task_id: str, *, updated_by: str = "system", status_reason: str | None = None

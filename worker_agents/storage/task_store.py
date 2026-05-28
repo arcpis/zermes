@@ -22,6 +22,7 @@ from ..task_records import (
 )
 from ..task_state import (
     WorkerTaskError,
+    WorkerTaskStatus,
     WorkerTaskState,
     load_worker_task_state_json,
     validate_task_id,
@@ -72,6 +73,30 @@ class WorkerTaskStore:
         if state.task_id != task_id:
             raise WorkerTaskError("Worker task id does not match its runtime directory")
         return state
+
+    def list_task_states(
+        self,
+        *,
+        worker_id: str | None = None,
+        status: WorkerTaskStatus | str | None = None,
+    ) -> list[WorkerTaskState]:
+        """List task snapshots with storage-level worker/status filtering."""
+        tasks_dir = self.runtime_store.tasks_dir
+        if not tasks_dir.exists():
+            return []
+        target_status = WorkerTaskStatus(status) if status is not None else None
+        result: list[WorkerTaskState] = []
+        for task_dir in sorted(path for path in tasks_dir.iterdir() if path.is_dir()):
+            try:
+                state = self.load_task_state(task_dir.name)
+            except WorkerTaskError:
+                continue
+            if worker_id is not None and state.worker_id != worker_id:
+                continue
+            if target_status is not None and state.status != target_status:
+                continue
+            result.append(state)
+        return result
 
     def append_event(self, event: WorkerTaskEvent) -> Path:
         """Append one event record to a task-local JSONL timeline."""

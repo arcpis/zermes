@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Mapping
+from typing import TYPE_CHECKING, Any, Mapping
 
 from .department_chats import (
     DepartmentChatBinding,
@@ -13,6 +13,10 @@ from .department_chats import (
 )
 from .organization import OrgLifecycleState, OrgLeaderKind, OrgNode, OrgNodeType, OrgTree
 from .profile import WorkerAgentProfile, validate_worker_id
+from .task_state import TERMINAL_TASK_STATUSES, WorkerTaskState
+
+if TYPE_CHECKING:
+    from .task_service import WorkerTaskService
 
 
 class WorkerPromptSummaryError(ValueError):
@@ -42,6 +46,20 @@ class WorkerDelegationPromptSummary:
 
 
 @dataclass(frozen=True)
+class WorkerTaskPromptSummary:
+    """Compact worker-owned task context safe to include in prompts."""
+
+    task_id: str
+    title: str
+    status: str
+    objective: str
+    origin_thread_id: str | None = None
+    report_to_thread_id: str | None = None
+    current_step: str | None = None
+    updated_at: str | None = None
+
+
+@dataclass(frozen=True)
 class WorkerIdentityPromptSummary:
     """Complete low-sensitive identity summary injected into runtime prompts."""
 
@@ -66,6 +84,9 @@ class WorkerIdentityPromptSummary:
     approval_required_tools: tuple[str, ...] = ()
     budget_limits: dict[str, Any] = field(default_factory=dict)
     mention_broadcast_rules: tuple[str, ...] = ()
+    operating_instructions: tuple[str, ...] = ()
+    active_tasks: tuple[WorkerTaskPromptSummary, ...] = ()
+    pending_reports: tuple[WorkerTaskPromptSummary, ...] = ()
     current_thread_id: str | None = None
     current_thread_summary: str | None = None
     delegation: WorkerDelegationPromptSummary = field(
@@ -87,6 +108,8 @@ def build_worker_prompt_summary(
     private_thread_ids: tuple[str, ...] = (),
     current_thread_id: str | None = None,
     current_thread_summary: str | None = None,
+    task_service: "WorkerTaskService | None" = None,
+    active_tasks: tuple[WorkerTaskState, ...] | None = None,
 ) -> WorkerIdentityPromptSummary:
     """Build the controlled prompt summary from durable low-sensitive inputs."""
 
@@ -128,6 +151,24 @@ def build_worker_prompt_summary(
         default_reply_thread_id=default_reply_thread_id,
         department_chat_threads=department_chats,
     )
+    worker_tasks = _active_worker_tasks(
+        profile.worker_id,
+        task_service=task_service,
+        active_tasks=active_tasks,
+    )
+    active_task_summaries = _task_prompt_summaries(worker_tasks)
+    pending_report_summaries = _pending_report_summaries(
+        active_task_summaries,
+        current_thread_id=current_thread_id,
+    )
+    operating_instructions = _build_operating_instructions(
+        display_name=profile.display_name,
+        department_names=tuple(node.name for node in department_nodes),
+        manager_worker_id=_manager_worker_id(profile.worker_id, org_nodes, organization_tree),
+        direct_member_worker_ids=direct_members,
+        default_reply_thread_id=default_reply_thread_id,
+        joined_chat_count=len(department_chats) + len(project_chat_summaries),
+    )
     return WorkerIdentityPromptSummary(
         worker_id=profile.worker_id,
         display_name=profile.display_name,
@@ -160,6 +201,9 @@ def build_worker_prompt_summary(
             "Broadcasts are informational unless delivery requires an explicit reply.",
             "Reply only through default_reply_thread_id or the current source thread.",
         ),
+        operating_instructions=operating_instructions,
+        active_tasks=active_task_summaries,
+        pending_reports=pending_report_summaries,
         current_thread_id=current_thread_id,
         current_thread_summary=current_thread_summary,
         delegation=delegation,
@@ -198,10 +242,32 @@ def worker_prompt_summary_to_dict(
         "approval_required_tools": list(summary.approval_required_tools),
         "budget_limits": dict(summary.budget_limits),
         "mention_broadcast_rules": list(summary.mention_broadcast_rules),
+        "operating_instructions": list(summary.operating_instructions),
+        "active_tasks": [
+            worker_task_prompt_summary_to_dict(task) for task in summary.active_tasks
+        ],
+        "pending_reports": [
+            worker_task_prompt_summary_to_dict(task) for task in summary.pending_reports
+        ],
         "current_thread_id": summary.current_thread_id,
         "current_thread_summary": summary.current_thread_summary,
         "delegation": worker_delegation_prompt_summary_to_dict(summary.delegation),
         "warnings": list(summary.warnings),
+    }
+
+
+def worker_task_prompt_summary_to_dict(
+    summary: WorkerTaskPromptSummary,
+) -> dict[str, Any]:
+    return {
+        "task_id": summary.task_id,
+        "title": summary.title,
+        "status": summary.status,
+        "objective": summary.objective,
+        "origin_thread_id": summary.origin_thread_id,
+        "report_to_thread_id": summary.report_to_thread_id,
+        "current_step": summary.current_step,
+        "updated_at": summary.updated_at,
     }
 
 
@@ -402,6 +468,95 @@ def _delegation_summary(
         required_reply_threads=reply_threads,
         audit_refs=audit_refs,
     )
+
+
+def _active_worker_tasks(
+    worker_id: str,
+    *,
+    task_service: "WorkerTaskService | None",
+    active_tasks: tuple[WorkerTaskState, ...] | None,
+) -> tuple[WorkerTaskState, ...]:
+    if active_tasks is not None:
+        tasks = active_tasks
+    elif task_service is not None:
+        tasks = tuple(task_service.list_active_tasks(worker_id))
+    else:
+        tasks = ()
+    return tuple(
+        task
+        for task in tasks
+        if task.worker_id == worker_id and task.status not in TERMINAL_TASK_STATUSES
+    )
+
+
+def _task_prompt_summaries(
+    tasks: tuple[WorkerTaskState, ...],
+) -> tuple[WorkerTaskPromptSummary, ...]:
+    return tuple(
+        WorkerTaskPromptSummary(
+            task_id=task.task_id,
+            title=task.title,
+            status=task.status.value,
+            objective=task.objective,
+            origin_thread_id=task.origin_thread_id,
+            report_to_thread_id=task.report_to_thread_id,
+            current_step=task.current_step,
+            updated_at=task.updated_at,
+        )
+        for task in sorted(tasks, key=lambda item: (item.updated_at, item.task_id))
+    )
+
+
+def _pending_report_summaries(
+    tasks: tuple[WorkerTaskPromptSummary, ...],
+    *,
+    current_thread_id: str | None,
+) -> tuple[WorkerTaskPromptSummary, ...]:
+    return tuple(
+        task
+        for task in tasks
+        if task.report_to_thread_id
+        and (
+            current_thread_id is None
+            or task.report_to_thread_id != current_thread_id
+        )
+    )
+
+
+def _build_operating_instructions(
+    *,
+    display_name: str,
+    department_names: tuple[str, ...],
+    manager_worker_id: str | None,
+    direct_member_worker_ids: tuple[str, ...],
+    default_reply_thread_id: str | None,
+    joined_chat_count: int,
+) -> tuple[str, ...]:
+    """Build concise behavioral anchors instead of a long worker handbook."""
+    department_label = ", ".join(department_names) if department_names else "unassigned"
+    instructions = [
+        f"You are {display_name}, a durable worker in department(s): {department_label}.",
+        "Treat messages addressed to you in joined chats as work tasks to execute or triage.",
+        "When a task is complete, report the result in the originating or required reply thread.",
+        "Use active_tasks and pending_reports as your cross-chat work memory before answering.",
+    ]
+    if direct_member_worker_ids:
+        instructions.append(
+            "Delegate subtasks to direct member workers when the work is out of scope or parallelizable: "
+            + ", ".join(direct_member_worker_ids)
+            + "."
+        )
+    if manager_worker_id:
+        instructions.append(
+            f"Ask manager worker {manager_worker_id} when scope, authority, or priority is unclear."
+        )
+    if joined_chat_count > 1:
+        instructions.append(
+            "Reply only when the message is relevant to your responsibilities or explicit delivery target."
+        )
+    if default_reply_thread_id:
+        instructions.append(f"Default reply thread: {default_reply_thread_id}.")
+    return tuple(instructions)
 
 
 def _default_reply_thread(

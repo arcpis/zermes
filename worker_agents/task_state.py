@@ -125,6 +125,8 @@ class WorkerTaskState:
     schema_version: int = WORKER_TASK_SCHEMA_VERSION
     updated_by: str | None = None
     input_summary: str | None = None
+    origin_thread_id: str | None = None
+    report_to_thread_id: str | None = None
     assigned_worker_status: str | None = None
     profile_snapshot: Mapping[str, Any] = field(default_factory=dict)
     budgets: Mapping[str, Any] = field(default_factory=dict)
@@ -300,6 +302,8 @@ _TASK_STATE_FIELDS = {
     "title",
     "objective",
     "input_summary",
+    "origin_thread_id",
+    "report_to_thread_id",
     "assigned_worker_status",
     "profile_snapshot",
     "budgets",
@@ -359,6 +363,12 @@ def worker_task_state_from_dict(data: Mapping[str, Any]) -> WorkerTaskState:
         title=_require_string(data["title"], "title"),
         objective=_require_string(data["objective"], "objective"),
         input_summary=_optional_string(data.get("input_summary"), "input_summary"),
+        origin_thread_id=_optional_string(
+            data.get("origin_thread_id"), "origin_thread_id"
+        ),
+        report_to_thread_id=_optional_string(
+            data.get("report_to_thread_id"), "report_to_thread_id"
+        ),
         assigned_worker_status=_optional_string(
             data.get("assigned_worker_status"), "assigned_worker_status"
         ),
@@ -394,6 +404,8 @@ def worker_task_state_to_dict(state: WorkerTaskState) -> dict[str, Any]:
         "title": state.title,
         "objective": state.objective,
         "input_summary": state.input_summary,
+        "origin_thread_id": state.origin_thread_id,
+        "report_to_thread_id": state.report_to_thread_id,
         "assigned_worker_status": state.assigned_worker_status,
         "profile_snapshot": dict(state.profile_snapshot),
         "budgets": dict(state.budgets),

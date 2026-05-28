@@ -108,6 +108,13 @@ def build_internal_worker_runtime_context(
 
     input_message = task.input_summary or task.objective
     task_summary = _task_summary(task)
+    active_tasks = tuple(task_service.list_active_tasks(request.worker_id))
+    relevant_excerpts = _combined_relevant_excerpts(
+        task_service=task_service,
+        current_task=task,
+        active_tasks=active_tasks,
+        requested_excerpts=request.relevant_excerpts,
+    )
     prompt_summary = build_worker_prompt_summary(
         profile=profile,
         organization_tree=request.organization_tree,
@@ -117,6 +124,8 @@ def build_internal_worker_runtime_context(
         private_thread_ids=request.private_thread_ids,
         current_thread_id=request.current_thread_id,
         current_thread_summary=request.current_thread_summary,
+        task_service=task_service,
+        active_tasks=active_tasks,
     )
     request_context = RuntimeRequestContext(
         input_message=input_message,
@@ -127,13 +136,13 @@ def build_internal_worker_runtime_context(
         allowed_tool_descriptions=_allowed_tool_descriptions(profile),
         workspace_policy_ref=_policy_ref("workspace", profile.worker_id),
         redaction_policy_ref="internal-worker-runtime:redaction-policy",
-        relevant_excerpts=request.relevant_excerpts,
+        relevant_excerpts=relevant_excerpts,
     )
     session_context = RuntimeContextBundle(
         user_instruction=input_message,
         task_summary=task_summary,
         thread_summary_refs=request.thread_summary_refs,
-        relevant_excerpts=request.relevant_excerpts,
+        relevant_excerpts=relevant_excerpts,
     )
     return InternalWorkerRuntimeContext(
         worker_record=record,
@@ -238,6 +247,55 @@ def _execution_budget(
 
 def _task_summary(task: WorkerTaskState) -> str:
     return f"{task.title}: {task.objective}"
+
+
+def _combined_relevant_excerpts(
+    *,
+    task_service: WorkerTaskService,
+    current_task: WorkerTaskState,
+    active_tasks: tuple[WorkerTaskState, ...],
+    requested_excerpts: tuple[str, ...],
+) -> tuple[str, ...]:
+    """Inject compact worker-wide task memory without copying transcripts."""
+    excerpts = list(requested_excerpts)
+    seen = set(excerpts)
+    for task in active_tasks:
+        for excerpt in _task_context_excerpts(
+            task_service,
+            task,
+            current_task_id=current_task.task_id,
+        ):
+            if excerpt not in seen:
+                seen.add(excerpt)
+                excerpts.append(excerpt)
+    return tuple(excerpts)
+
+
+def _task_context_excerpts(
+    task_service: WorkerTaskService,
+    task: WorkerTaskState,
+    *,
+    current_task_id: str,
+) -> tuple[str, ...]:
+    location_parts = []
+    if task.origin_thread_id:
+        location_parts.append(f"origin_thread={task.origin_thread_id}")
+    if task.report_to_thread_id:
+        location_parts.append(f"report_to_thread={task.report_to_thread_id}")
+    location = "; ".join(location_parts) if location_parts else "thread links unavailable"
+    current_marker = "current task" if task.task_id == current_task_id else "active task"
+    excerpts = [
+        (
+            f"Worker {current_marker} {task.task_id}: {task.title}; "
+            f"status={task.status.value}; {location}; objective={task.objective}"
+        )
+    ]
+    if task.current_step:
+        excerpts.append(f"Worker task {task.task_id} current step: {task.current_step}")
+    rolling_summary = task_service.task_store.load_rolling_summary(task.task_id).strip()
+    if rolling_summary:
+        excerpts.append(f"Worker task {task.task_id} rolling summary: {rolling_summary}")
+    return tuple(excerpts)
 
 
 def _allowed_tool_descriptions(profile: WorkerAgentProfile) -> tuple[str, ...]:
