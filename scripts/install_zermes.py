@@ -108,7 +108,10 @@ class InstallerCommandError(RuntimeError):
 
     def __init__(self, result: CommandResult):
         command_text = " ".join(result.command)
-        super().__init__(f"installer command failed ({result.returncode}): {command_text}")
+        parts = [f"installer command failed ({result.returncode}): {command_text}"]
+        if result.stderr:
+            parts.append(result.stderr.rstrip())
+        super().__init__("\n".join(parts))
         self.result = result
 
 
