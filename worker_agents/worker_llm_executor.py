@@ -110,6 +110,34 @@ class WorkerLLMExecutor:
         self._base_url = base_url
         self._max_turns = max_turns
 
+    @classmethod
+    def from_main_agent_runtime(
+        cls,
+        *,
+        target_model: str | None = None,
+        max_turns: int = 10,
+    ) -> WorkerLLMExecutor:
+        try:
+            from hermes_cli.runtime_provider import resolve_runtime_provider
+
+            runtime = resolve_runtime_provider(target_model=target_model)
+            return cls(
+                api_key=runtime.get("api_key") or None,
+                base_url=runtime.get("base_url") or None,
+                max_turns=max_turns,
+            )
+        except Exception:
+            return cls(max_turns=max_turns)
+
+    def _resolve_main_agent_model(self) -> str:
+        try:
+            from hermes_cli.runtime_provider import _get_model_config
+
+            model_cfg = _get_model_config()
+            return model_cfg.get("default") or "gpt-4o"
+        except Exception:
+            return "gpt-4o"
+
     def execute(self, invocation: AgentRuntimeInvocation) -> WorkerLLMResult:
         """Run the LLM execution synchronously, bridging to the async loop."""
         try:
@@ -131,7 +159,7 @@ class WorkerLLMExecutor:
         from environments.agent_loop import HermesAgentLoop
         from model_tools import get_tool_definitions
 
-        model_name = invocation.model_name or "gpt-4o"
+        model_name = invocation.model_name or self._resolve_main_agent_model()
         server = _WorkerAsyncServer(
             model=model_name,
             api_key=self._api_key,

@@ -77,6 +77,7 @@ from worker_agents.profile import (
     WorkerCommunicationPolicy,
     WorkerDelegationPolicy,
     WorkerExecutionLimits,
+    WorkerModelSettings,
     WorkerToolPolicy,
     WorkerWorkspacePolicy,
 )
@@ -548,8 +549,6 @@ def build_worker_runtime_reply_handler() -> RuntimeReplyHandler:
 def _build_worker_runtime_handler() -> RuntimeReplyHandler:
     """Return the concrete RuntimeReplyHandler used by product chat sends."""
 
-    facade = SharedAgentRuntimeFacade(llm_executor=WorkerLLMExecutor())
-
     def _handle_runtime_reply(request: RuntimeRequest):
         state = _state_with_materialized_department_chats(load_management_state())
         task_service = _build_worker_task_service_from_profile_home()
@@ -559,11 +558,26 @@ def _build_worker_runtime_handler() -> RuntimeReplyHandler:
             state=state,
         )
         _ensure_chat_runtime_task(task_service, request)
+
+        worker_model = _worker_default_model(task_service, request.worker_id)
+        executor = WorkerLLMExecutor.from_main_agent_runtime(
+            target_model=worker_model,
+        )
+        facade = SharedAgentRuntimeFacade(llm_executor=executor)
+
         return InternalWorkerRuntimeRunner(
             task_service=task_service, facade=facade,
         ).run_runtime_request(request)
 
     return _handle_runtime_reply
+
+
+def _worker_default_model(task_service: WorkerTaskService, worker_id: str) -> str | None:
+    try:
+        profile = task_service.registry_service.profile_store.load_worker_profile(worker_id)
+        return profile.model.default_model or None
+    except Exception:
+        return None
 
 
 def _build_worker_task_service_from_profile_home() -> WorkerTaskService:
@@ -792,6 +806,7 @@ def apply_evolution_draft(**kwargs: Any) -> dict[str, Any]:
         "role": "managed_worker",
         "runtime_type": "internal",
         "status": "enabled",
+        "default_model": str(kwargs.get("default_model", "")).strip() or None,
         "created_at": now,
         "updated_at": now,
         "created_by": str(kwargs.get("actor_id", "")),
@@ -985,6 +1000,7 @@ def _organization_tree_from_state(state: Mapping[str, Any]):
 
 def _worker_profile_from_management_record(record: Mapping[str, Any]) -> WorkerAgentProfile:
     worker_id = str(record.get("worker_id", ""))
+    default_model = str(record.get("default_model") or "").strip() or None
     return WorkerAgentProfile(
         worker_id=worker_id,
         display_name=str(record.get("display_name") or _display_name_from_id(worker_id)),
@@ -992,6 +1008,12 @@ def _worker_profile_from_management_record(record: Mapping[str, Any]) -> WorkerA
         role=str(record.get("role") or "worker"),
         responsibilities=tuple(
             str(item) for item in _list_value(record.get("responsibilities")) if item
+        ),
+        model=WorkerModelSettings(
+            default_model=default_model,
+            allowed_models=tuple(
+                str(item) for item in _list_value(record.get("allowed_models")) if item
+            ),
         ),
         tools=WorkerToolPolicy(
             allowed_tools=tuple(
