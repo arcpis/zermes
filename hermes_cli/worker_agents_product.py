@@ -9,6 +9,7 @@ store; it never scans raw runtime transcripts or adapter output.
 from __future__ import annotations
 
 import json
+import logging
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -132,6 +133,8 @@ FORBIDDEN_KEY_MARKERS = (
     "token",
     "transcript",
 )
+
+_log = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -356,6 +359,12 @@ def ensure_direct_worker_chat(
 
     existing = _find_direct_thread(state, worker_id, user_id)
     if existing is not None:
+        _log.info(
+            "Worker agents direct chat thread already exists: thread_id=%s, worker_id=%s, user_id=%s",
+            existing["thread_id"],
+            worker_id,
+            user_id,
+        )
         return _sanitize_mapping(
             {
                 "action": "ensure_direct_worker_chat",
@@ -372,6 +381,13 @@ def ensure_direct_worker_chat(
         state["threads"] = [*_sequence(state.get("threads")), thread]
         state["source_updated_at"] = _now_iso()
         write_management_state(state)
+    _log.info(
+        "Worker agents direct chat thread created: thread_id=%s, worker_id=%s, user_id=%s, dry_run=%s",
+        thread["thread_id"],
+        worker_id,
+        user_id,
+        dry_run,
+    )
     return _sanitize_mapping(
         {
             "action": "ensure_direct_worker_chat",
@@ -477,6 +493,16 @@ def send_chat_message(
     routing_state = _state_with_materialized_department_chats(state)
     thread = _require_thread_from_state(routing_state, thread_id)
     _require_writable_thread(thread)
+    thread_type = str(thread.get("thread_type", ""))
+    chat_kind = "direct" if thread_type == "direct" else "group"
+    _log.info(
+        "Worker agents chat message received: thread_id=%s, chat_kind=%s, sender_id=%s, message_type=%s, text=%r",
+        thread_id,
+        chat_kind,
+        sender_id,
+        message_type,
+        text[:200],
+    )
     message = _build_outbound_message(
         thread_id=thread_id,
         sender_id=sender_id,
@@ -1414,6 +1440,11 @@ def _ensure_department_chat_in_state(
     thread_id = _department_thread_id(org_node_id)
     existing = _find_thread_by_id(state, thread_id)
     if existing is not None:
+        _log.info(
+            "Worker agents department chat thread already exists: thread_id=%s, org_node_id=%s",
+            thread_id,
+            org_node_id,
+        )
         return {
             "action": "ensure_department_chat",
             "target_id": org_node_id,
@@ -1444,6 +1475,13 @@ def _ensure_department_chat_in_state(
     thread = _build_department_thread(node, enabled_workers, user_id=user_id)
     if not dry_run:
         state["threads"] = [*_sequence(state.get("threads")), thread]
+    _log.info(
+        "Worker agents department chat thread created: thread_id=%s, org_node_id=%s, enabled_workers=%s, dry_run=%s",
+        thread_id,
+        org_node_id,
+        enabled_workers,
+        dry_run,
+    )
     return {
         "action": "ensure_department_chat",
         "target_id": org_node_id,
