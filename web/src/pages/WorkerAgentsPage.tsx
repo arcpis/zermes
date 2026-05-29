@@ -98,6 +98,7 @@ export default function WorkerAgentsPage() {
   const [messages, setMessages] = useState<MessageRow[]>([]);
   const [selectedThread, setSelectedThread] = useState<string>("");
   const [messageText, setMessageText] = useState("");
+  const [mentionTargets, setMentionTargets] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>("");
   const [actionResult, setActionResult] = useState<string>("");
@@ -106,6 +107,7 @@ export default function WorkerAgentsPage() {
     () => chats.find((chat) => chat.thread_id === selectedThread),
     [chats, selectedThread],
   );
+  const isDirectChat = selectedChat?.thread_type === "private";
   const sendDisabled =
     !selectedChat ||
     selectedChat.read_only ||
@@ -157,21 +159,35 @@ export default function WorkerAgentsPage() {
   async function sendMessage(message_type: "normal" | "mention" | "broadcast") {
     if (sendDisabled || !selectedThread) return;
     setActionResult("");
+    const body: Record<string, unknown> = {
+      sender_id: "user",
+      text: messageText,
+      message_type,
+    };
+    if (message_type === "mention") {
+      const ids = mentionTargets.split(",").map((s) => s.trim()).filter(Boolean);
+      if (ids.length === 0) {
+        setError("Mention requires at least one target worker ID.");
+        return;
+      }
+      body.target_ids = ids;
+      body.target_kind = "worker";
+    }
+    if (message_type === "broadcast") {
+      body.target_kind = "thread";
+    }
     try {
       const result = await fetchJSON<{ audit_ref: string; summary: string }>(
         `/api/worker-agents/chats/${encodeURIComponent(selectedThread)}/send`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            sender_id: "user",
-            text: messageText,
-            message_type,
-          }),
+          body: JSON.stringify(body),
         },
       );
       setActionResult(`${result.summary} ${result.audit_ref}`);
       setMessageText("");
+      setMentionTargets("");
       await loadHistory(selectedThread);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -328,19 +344,44 @@ export default function WorkerAgentsPage() {
                 disabled={selectedChat?.read_only}
                 className="min-h-20 resize-y border border-current/20 bg-transparent p-2 text-sm outline-none"
               />
+              {!isDirectChat && (
+                <label className="flex flex-col gap-1 text-xs text-midground/70">
+                  @ Workers (comma-separated IDs, for mention)
+                  <input
+                    type="text"
+                    value={mentionTargets}
+                    onChange={(event) => setMentionTargets(event.target.value)}
+                    placeholder="e.g. frontend, backend"
+                    className="border border-current/20 bg-transparent px-2 py-1 text-sm outline-none"
+                  />
+                </label>
+              )}
               <div className="flex flex-wrap gap-2">
-                <Button disabled={sendDisabled} size="sm" onClick={() => void sendMessage("normal")}>
-                  <Send className="h-4 w-4" />
-                  Send
-                </Button>
-                <Button disabled={sendDisabled} size="sm" onClick={() => void sendMessage("mention")}>
-                  <MessageSquare className="h-4 w-4" />
-                  Mention
-                </Button>
-                <Button disabled={sendDisabled} size="sm" onClick={() => void sendMessage("broadcast")}>
-                  <ShieldCheck className="h-4 w-4" />
-                  Broadcast
-                </Button>
+                {isDirectChat ? (
+                  <Button disabled={sendDisabled} size="sm" onClick={() => void sendMessage("normal")}>
+                    <Send className="h-4 w-4" />
+                    Send
+                  </Button>
+                ) : (
+                  <>
+                    <Button
+                      disabled={sendDisabled || !mentionTargets.trim()}
+                      size="sm"
+                      onClick={() => void sendMessage("mention")}
+                    >
+                      <MessageSquare className="h-4 w-4" />
+                      Mention
+                    </Button>
+                    <Button
+                      disabled={sendDisabled}
+                      size="sm"
+                      onClick={() => void sendMessage("broadcast")}
+                    >
+                      <ShieldCheck className="h-4 w-4" />
+                      Broadcast
+                    </Button>
+                  </>
+                )}
               </div>
               {actionResult && <p className="text-xs text-midground/60">{actionResult}</p>}
             </div>
