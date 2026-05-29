@@ -545,7 +545,7 @@ from .runtime_contract import (
     validate_runtime_event_sequence,
     validate_runtime_state_transition,
 )
-from .runtime_facade import AgentRuntimeInvocation, SharedAgentRuntimeFacade
+from .runtime_facade import AgentRuntimeExecution, AgentRuntimeInvocation, SharedAgentRuntimeFacade
 from .runtime_reply_channel import (
     RuntimeReplyChannelError,
     RuntimeReplyDispatch,
@@ -617,6 +617,11 @@ from .internal_runtime_task_integration import (
     mark_internal_runtime_started,
     record_internal_runtime_event,
     runtime_error_code_to_final_state,
+)
+from .worker_llm_executor import (
+    WorkerLLMExecutor,
+    WorkerLLMExecutorError,
+    WorkerLLMResult,
 )
 from .external_adapters import (
     ExternalAdapterCapability,

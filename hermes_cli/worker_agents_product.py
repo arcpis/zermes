@@ -105,6 +105,8 @@ from worker_agents.runtime_reply_channel import (
     target_worker_ids_for_chat_message,
 )
 from worker_agents.internal_runtime_runner import InternalWorkerRuntimeRunner
+from worker_agents.runtime_facade import SharedAgentRuntimeFacade
+from worker_agents.worker_llm_executor import WorkerLLMExecutor
 from worker_agents.registry_service import WorkerRegistryService
 from worker_agents.storage import WorkerAgentProfileStore, WorkerAgentRuntimeDataStore
 from worker_agents.task_service import WorkerTaskService
@@ -546,6 +548,8 @@ def build_worker_runtime_reply_handler() -> RuntimeReplyHandler:
 def _build_worker_runtime_handler() -> RuntimeReplyHandler:
     """Return the concrete RuntimeReplyHandler used by product chat sends."""
 
+    facade = SharedAgentRuntimeFacade(llm_executor=WorkerLLMExecutor())
+
     def _handle_runtime_reply(request: RuntimeRequest):
         state = _state_with_materialized_department_chats(load_management_state())
         task_service = _build_worker_task_service_from_profile_home()
@@ -555,9 +559,9 @@ def _build_worker_runtime_handler() -> RuntimeReplyHandler:
             state=state,
         )
         _ensure_chat_runtime_task(task_service, request)
-        return InternalWorkerRuntimeRunner(task_service=task_service).run_runtime_request(
-            request
-        )
+        return InternalWorkerRuntimeRunner(
+            task_service=task_service, facade=facade,
+        ).run_runtime_request(request)
 
     return _handle_runtime_reply
 

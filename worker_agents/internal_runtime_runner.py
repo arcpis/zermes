@@ -10,8 +10,8 @@ from .internal_runtime_context import (
     build_internal_worker_runtime_context,
 )
 from .runtime_boundary import AgentRuntimeSessionConfig
-from .runtime_contract import RuntimeRequest, RuntimeResult, RuntimeState, RuntimeType
-from .runtime_facade import AgentRuntimeInvocation, SharedAgentRuntimeFacade
+from .runtime_contract import RuntimeErrorCode, RuntimeErrorInfo, RuntimeRequest, RuntimeResult, RuntimeState, RuntimeType
+from .runtime_facade import AgentRuntimeExecution, AgentRuntimeInvocation, SharedAgentRuntimeFacade
 from .internal_runtime_task_integration import (
     finalize_internal_runtime_result,
     mark_internal_runtime_started,
@@ -81,12 +81,12 @@ class InternalWorkerRuntimeRunner:
         request: InternalWorkerRuntimeContextRequest,
         *,
         request_id: str | None = None,
-    ) -> AgentRuntimeInvocation:
-        """Run the current facade entrypoint for an internal worker task.
+    ) -> AgentRuntimeInvocation | AgentRuntimeExecution:
+        """Run the facade entrypoint for an internal worker task.
 
-        The shared facade currently prepares a validated invocation. Future live
-        execution can replace the facade implementation without changing this
-        runner boundary.
+        When the facade has a ``WorkerLLMExecutor``, this returns an
+        ``AgentRuntimeExecution`` with the LLM reply.  Otherwise it
+        returns the prepared ``AgentRuntimeInvocation``.
         """
 
         prepared = self.prepare_run(request, request_id=request_id)
@@ -95,10 +95,11 @@ class InternalWorkerRuntimeRunner:
     def run_runtime_request(self, request: RuntimeRequest) -> RuntimeResult:
         """Run a chat-built runtime request and return a routable result.
 
-        The shared facade currently prepares the managed worker invocation. This
-        method is the product-facing bridge that preserves task state and result
-        routing now, while keeping the live model execution boundary inside the
-        facade for future replacement.
+        When the facade has a ``WorkerLLMExecutor``, ``run()`` returns an
+        ``AgentRuntimeExecution`` with the LLM reply.  Otherwise it
+        returns an ``AgentRuntimeInvocation`` (original stub behaviour).
+        Both paths produce a ``RuntimeResult`` with the appropriate
+        public_message and internal_summary.
         """
 
         if not isinstance(request, RuntimeRequest):
@@ -111,19 +112,51 @@ class InternalWorkerRuntimeRunner:
             task_id=request.task_id,
             request_id=request.request_id,
         )
-        invocation = self.run(context_request, request_id=request.request_id)
+        run_result = self.run(context_request, request_id=request.request_id)
         timestamp = self.task_service.registry_service.now()
+
+        if isinstance(run_result, AgentRuntimeExecution):
+            public_message = run_result.public_message
+            internal_summary = run_result.internal_summary
+            llm = run_result.llm_result
+            if llm is not None and llm.error is not None:
+                final_state = RuntimeState.FAILED
+                audit_summary = "Internal worker runtime request failed during LLM execution."
+                error_info = RuntimeErrorInfo(
+                    code=RuntimeErrorCode.NON_RETRYABLE,
+                    message=llm.error,
+                    safe_summary="Worker runtime could not produce a reply for this message.",
+                    retryable=False,
+                    source="worker_llm_executor",
+                    created_at=timestamp,
+                )
+            elif llm is not None:
+                final_state = RuntimeState.SUCCEEDED
+                audit_summary = "Internal worker runtime request executed through LLM."
+                error_info = None
+            else:
+                final_state = RuntimeState.SUCCEEDED
+                audit_summary = "Internal worker runtime request reached the shared runtime facade."
+                error_info = None
+        else:
+            public_message = _public_message_from_invocation(run_result)
+            internal_summary = _internal_summary_from_invocation(run_result)
+            final_state = RuntimeState.SUCCEEDED
+            audit_summary = "Internal worker runtime request reached the shared runtime facade."
+            error_info = None
+
         result = RuntimeResult(
             request_id=request.request_id,
             task_id=request.task_id,
             worker_id=request.worker_id,
             runtime_type=RuntimeType.INTERNAL_WORKER,
-            final_state=RuntimeState.SUCCEEDED,
+            final_state=final_state,
             started_at=request.created_at,
             completed_at=timestamp,
-            public_message=_public_message_from_invocation(invocation),
-            internal_summary=_internal_summary_from_invocation(invocation),
-            audit_summary="Internal worker runtime request reached the shared runtime facade.",
+            public_message=public_message,
+            internal_summary=internal_summary,
+            audit_summary=audit_summary,
+            error=error_info,
         )
         finalize_internal_runtime_result(self.task_service, result)
         return result
@@ -150,8 +183,8 @@ def run_internal_worker_runtime_task(
     *,
     facade: SharedAgentRuntimeFacade | None = None,
     request_id: str | None = None,
-) -> AgentRuntimeInvocation:
-    """Prepare the shared runtime invocation for one internal worker task."""
+) -> AgentRuntimeInvocation | AgentRuntimeExecution:
+    """Run the facade entrypoint for one internal worker task."""
 
     return InternalWorkerRuntimeRunner(
         task_service=task_service,
