@@ -8,6 +8,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from hermes_cli import worker_agents_product as product
+from worker_agents.task_state import WorkerTaskError
 
 
 router = APIRouter()
@@ -294,5 +295,5 @@ def cleanup_plan() -> dict[str, Any]:
 def _guard(callback):
     try:
         return callback()
-    except ValueError as exc:
+    except (ValueError, WorkerTaskError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

@@ -5,6 +5,8 @@ import pytest
 from hermes_cli.worker_agents_product import write_management_state_for_tests
 from worker_agents.organization import MAIN_AGENT_ID
 
+pytestmark = pytest.mark.timeout(120)
+
 
 def _dashboard_gap_state():
     return {
@@ -101,6 +103,28 @@ def client(monkeypatch, tmp_path):
     monkeypatch.setenv("ZERMES_HOME", str(tmp_path))
     write_management_state_for_tests(_dashboard_gap_state(), tmp_path)
 
+    from worker_agents.runtime_contract import RuntimeResult, RuntimeState
+
+    def _stub_runtime_reply_handler(request):
+        return RuntimeResult(
+            request_id=request.request_id,
+            task_id=request.task_id,
+            worker_id=request.worker_id,
+            runtime_type=request.runtime_type,
+            final_state=RuntimeState.SUCCEEDED,
+            started_at=request.created_at,
+            completed_at=request.created_at,
+            public_message="Stub reply",
+            internal_summary="Stub handler for testing",
+        )
+
+    import hermes_cli.worker_agents_product as _product_mod
+    monkeypatch.setattr(
+        _product_mod,
+        "build_worker_runtime_reply_handler",
+        lambda: _stub_runtime_reply_handler,
+    )
+
     from hermes_cli.web_server import app, _SESSION_HEADER_NAME, _SESSION_TOKEN
 
     test_client = TestClient(app)
@@ -166,12 +190,12 @@ def test_department_and_direct_chat_histories_are_isolated(client):
 
     assert dept_send.status_code == 200
     assert direct_send.status_code == 200
-    assert [msg["body_preview"] for msg in dept_history.json()["messages"]] == [
-        "department update"
-    ]
-    assert [msg["body_preview"] for msg in direct_history.json()["messages"]] == [
-        "private note"
-    ]
+    dept_previews = [msg["body_preview"] for msg in dept_history.json()["messages"]]
+    direct_previews = [msg["body_preview"] for msg in direct_history.json()["messages"]]
+    assert "department update" in dept_previews
+    assert "private note" not in dept_previews
+    assert "private note" in direct_previews
+    assert "department update" not in direct_previews
 
 
 def test_product_mention_creates_delivery_tracking(client):

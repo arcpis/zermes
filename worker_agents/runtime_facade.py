@@ -76,6 +76,11 @@ class AgentRuntimeExecution:
         if self.llm_result is not None and self.llm_result.content:
             return self.llm_result.content
         display_name = self.invocation.display_name or self.invocation.worker_id or "Worker"
+        if self.llm_result is not None and self.llm_result.error is not None:
+            return (
+                f"{display_name} could not produce a reply due to a runtime error. "
+                "Please try again or contact an administrator."
+            )
         return (
             f"{display_name} received the request and prepared an internal runtime "
             "session for execution."

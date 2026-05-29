@@ -111,7 +111,7 @@ from worker_agents.worker_llm_executor import WorkerLLMExecutor
 from worker_agents.registry_service import WorkerRegistryService
 from worker_agents.storage import WorkerAgentProfileStore, WorkerAgentRuntimeDataStore
 from worker_agents.task_service import WorkerTaskService
-from worker_agents.task_state import WorkerTaskError
+from worker_agents.task_state import TERMINAL_TASK_STATUSES, WorkerTaskError
 from worker_agents.storage.safe_paths import validate_single_path_segment
 from worker_agents.worker_prompt_summary import (
     build_worker_prompt_summary,
@@ -618,26 +618,31 @@ def _ensure_chat_runtime_task(
     request: RuntimeRequest,
 ) -> None:
     try:
-        task_service.get_task(request.task_id)
-        return
+        existing = task_service.get_task(request.task_id)
     except WorkerTaskError:
-        pass
-    task_service.create_task(
-        task_id=request.task_id,
-        worker_id=request.worker_id,
-        title=f"Reply to chat message {request.context.source_thread_id or request.task_id}",
-        objective=request.context.input_message,
-        created_by=request.requested_by,
-        input_summary=request.context.input_message,
-        origin_thread_id=request.context.source_thread_id,
-        report_to_thread_id=request.context.source_thread_id,
-        queue=True,
-        tags=("chat_runtime_reply",),
-        workspace={
-            "source_thread_id": request.context.source_thread_id,
-            "source_message_refs": list(request.context.source_message_refs),
-        },
-    )
+        task_service.create_task(
+            task_id=request.task_id,
+            worker_id=request.worker_id,
+            title=f"Reply to chat message {request.context.source_thread_id or request.task_id}",
+            objective=request.context.input_message,
+            created_by=request.requested_by,
+            input_summary=request.context.input_message,
+            origin_thread_id=request.context.source_thread_id,
+            report_to_thread_id=request.context.source_thread_id,
+            queue=True,
+            tags=("chat_runtime_reply",),
+            workspace={
+                "source_thread_id": request.context.source_thread_id,
+                "source_message_refs": list(request.context.source_message_refs),
+            },
+        )
+        return
+
+    if existing.status in TERMINAL_TASK_STATUSES:
+        raise WorkerTaskError(
+            f"Task {request.task_id!r} already in terminal state "
+            f"{existing.status.value!r}; cannot restart"
+        )
 
 
 def _runtime_worker_profile_from_management_record(

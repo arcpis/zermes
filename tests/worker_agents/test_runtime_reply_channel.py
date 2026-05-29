@@ -122,7 +122,8 @@ def test_runtime_failure_routes_safe_summary_to_thread():
     )
 
     assert dispatch.delivered_messages[0].body_preview == (
-        "Worker runtime could not produce a reply for this message."
+        "worker-a could not produce a reply due to a runtime error. "
+        "Please try again or contact an administrator."
     )
 
 

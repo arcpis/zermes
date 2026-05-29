@@ -126,7 +126,12 @@ class WorkerLLMExecutor:
                 base_url=runtime.get("base_url") or None,
                 max_turns=max_turns,
             )
-        except Exception:
+        except Exception as exc:
+            logger.warning(
+                "WorkerLLMExecutor.from_main_agent_runtime failed, "
+                "falling back to no-key executor: %s: %s",
+                type(exc).__name__, exc,
+            )
             return cls(max_turns=max_turns)
 
     def _resolve_main_agent_model(self) -> str:

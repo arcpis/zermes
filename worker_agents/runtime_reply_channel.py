@@ -212,6 +212,7 @@ def _failure_result_from_exception(
     request: RuntimeRequest, exc: Exception, timestamp: str
 ) -> RuntimeResult:
     safe_summary = "Worker runtime could not produce a reply for this message."
+    worker_label = request.worker_id or "Worker"
     return RuntimeResult(
         request_id=request.request_id,
         task_id=request.task_id,
@@ -220,6 +221,10 @@ def _failure_result_from_exception(
         final_state=RuntimeState.FAILED,
         started_at=request.created_at,
         completed_at=timestamp,
+        public_message=(
+            f"{worker_label} could not produce a reply due to a runtime error. "
+            "Please try again or contact an administrator."
+        ),
         internal_summary=f"Runtime reply handler failed: {type(exc).__name__}",
         error=RuntimeErrorInfo(
             code=RuntimeErrorCode.NON_RETRYABLE,
