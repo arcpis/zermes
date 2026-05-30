@@ -234,6 +234,8 @@ def _context_request_from_runtime_request(
         relevant_excerpts=context.relevant_excerpts,
         current_thread_id=context.source_thread_id,
         current_thread_summary=context.target_context_summary,
+        chat_message_type=context.chat_message_type,
+        thread_participants=context.thread_participants,
     )
 
 

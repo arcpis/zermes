@@ -38,6 +38,8 @@ class AgentRuntimeInvocation:
     cleanup_policy: str | None
     user_instruction: str
     task_summary: str
+    chat_message_type: str | None = None
+    thread_participants: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -151,6 +153,8 @@ class SharedAgentRuntimeFacade:
             cleanup_policy=config.cleanup_policy,
             user_instruction=config.context.user_instruction,
             task_summary=config.context.task_summary,
+            chat_message_type=config.context.chat_message_type,
+            thread_participants=config.context.thread_participants,
         )
 
     def run(self, config: AgentRuntimeSessionConfig) -> AgentRuntimeInvocation | AgentRuntimeExecution:

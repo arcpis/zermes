@@ -317,6 +317,8 @@ class RuntimeContextBundle:
     relevant_excerpts: tuple[str, ...] = ()
     includes_full_transcript: bool = False
     includes_private_memory_text: bool = False
+    chat_message_type: str | None = None
+    thread_participants: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         _require_non_empty_string(self.user_instruction, "user_instruction")
@@ -324,6 +326,7 @@ class RuntimeContextBundle:
         _normalize_string_tuple(self.thread_summary_refs, "thread_summary_refs")
         _normalize_string_tuple(self.relevant_message_refs, "relevant_message_refs")
         _normalize_string_tuple(self.relevant_excerpts, "relevant_excerpts")
+        _normalize_string_tuple(self.thread_participants, "thread_participants")
         if self.includes_full_transcript:
             raise AgentRuntimeBoundaryError(
                 "runtime context must not include full transcripts"

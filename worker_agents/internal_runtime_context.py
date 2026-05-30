@@ -49,6 +49,8 @@ class InternalWorkerRuntimeContextRequest:
     project_chats: tuple[DepartmentProjectChat, ...] = ()
     department_context_summaries: tuple[DepartmentChatSummary, ...] = ()
     private_thread_ids: tuple[str, ...] = ()
+    chat_message_type: str | None = None
+    thread_participants: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -105,6 +107,7 @@ def build_internal_worker_runtime_context(
     _optional_non_empty_string(request.current_thread_id, "current_thread_id")
     _optional_non_empty_string(request.current_thread_summary, "current_thread_summary")
     _ensure_string_tuple(request.private_thread_ids, "private_thread_ids")
+    _ensure_string_tuple(request.thread_participants, "thread_participants")
 
     input_message = task.input_summary or task.objective
     task_summary = _task_summary(task)
@@ -143,6 +146,8 @@ def build_internal_worker_runtime_context(
         task_summary=task_summary,
         thread_summary_refs=request.thread_summary_refs,
         relevant_excerpts=relevant_excerpts,
+        chat_message_type=request.chat_message_type,
+        thread_participants=request.thread_participants,
     )
     return InternalWorkerRuntimeContext(
         worker_record=record,

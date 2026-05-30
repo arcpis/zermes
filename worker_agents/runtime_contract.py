@@ -338,6 +338,8 @@ class RuntimeRequestContext:
     workspace_policy_ref: str | None = None
     redaction_policy_ref: str | None = None
     relevant_excerpts: tuple[str, ...] = ()
+    chat_message_type: str | None = None
+    thread_participants: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         _require_string(self.input_message, "input_message")
@@ -354,6 +356,7 @@ class RuntimeRequestContext:
             "artifact_manifest_refs",
             "allowed_tool_descriptions",
             "relevant_excerpts",
+            "thread_participants",
         ):
             _string_tuple(getattr(self, field_name), field_name)
         _optional_string(self.source_thread_id, "source_thread_id")
@@ -361,6 +364,7 @@ class RuntimeRequestContext:
         _optional_string(self.target_context_summary, "target_context_summary")
         _optional_string(self.workspace_policy_ref, "workspace_policy_ref")
         _optional_string(self.redaction_policy_ref, "redaction_policy_ref")
+        _optional_string(self.chat_message_type, "chat_message_type")
         _reject_sensitive_fields(runtime_request_context_to_dict(self), "context")
 
 
@@ -706,6 +710,8 @@ def runtime_request_context_to_dict(
         "workspace_policy_ref": context.workspace_policy_ref,
         "redaction_policy_ref": context.redaction_policy_ref,
         "relevant_excerpts": list(context.relevant_excerpts),
+        "chat_message_type": context.chat_message_type,
+        "thread_participants": list(context.thread_participants),
     }
 
 
@@ -729,6 +735,8 @@ def runtime_request_context_from_dict(
             "workspace_policy_ref",
             "redaction_policy_ref",
             "relevant_excerpts",
+            "chat_message_type",
+            "thread_participants",
         },
         "context",
     )
@@ -772,6 +780,12 @@ def runtime_request_context_from_dict(
         ),
         relevant_excerpts=_string_tuple(
             data.get("relevant_excerpts", ()), "relevant_excerpts"
+        ),
+        chat_message_type=_optional_string(
+            data.get("chat_message_type"), "chat_message_type"
+        ),
+        thread_participants=_string_tuple(
+            data.get("thread_participants", ()), "thread_participants"
         ),
     )
 

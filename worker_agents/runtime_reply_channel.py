@@ -85,6 +85,13 @@ def build_runtime_request_from_chat_message(
             thread_summary_refs=(f"worker_agents/threads/{thread.thread_id}/summary",),
             relevant_excerpts=(_source_message_excerpt(source_message),),
             redaction_policy_ref="worker-chat-runtime:message-preview-only",
+            chat_message_type=source_message.message_type.value,
+            thread_participants=tuple(
+                f"worker:{ref.participant_id}"
+                for ref in thread.participants
+                if ref.kind == ChatParticipantKind.WORKER
+                and ref.participant_id != target_worker_id
+            ),
         ),
         budget=RuntimeExecutionBudget(
             budget_source=f"worker-chat:{thread.thread_id}:{target_worker_id}",
