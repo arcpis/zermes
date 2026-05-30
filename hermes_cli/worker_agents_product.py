@@ -495,20 +495,21 @@ def send_chat_message(
     _require_writable_thread(thread)
     thread_type = str(thread.get("thread_type", ""))
     chat_kind = "direct" if thread_type == "direct" else "group"
-    _log.info(
-        "Worker agents chat message received: thread_id=%s, chat_kind=%s, sender_id=%s, message_type=%s, text=%r",
-        thread_id,
-        chat_kind,
-        sender_id,
-        message_type,
-        text[:200],
-    )
     message = _build_outbound_message(
         thread_id=thread_id,
         sender_id=sender_id,
         text=text,
         message_type=message_type,
         target_ids=tuple(target_ids) if message_type == "normal" else (),
+    )
+    _log.info(
+        "Worker agents chat message received: message_id=%s, thread_id=%s, chat_kind=%s, sender_id=%s, message_type=%s, text=%r",
+        message.message_id,
+        thread_id,
+        chat_kind,
+        sender_id,
+        message_type,
+        text[:200],
     )
     router = MessageRouter()
     router.add_thread(chat_thread_from_dict(_thread_contract_dict(thread)))
@@ -576,6 +577,11 @@ def _build_worker_runtime_handler() -> RuntimeReplyHandler:
     """Return the concrete RuntimeReplyHandler used by product chat sends."""
 
     def _handle_runtime_reply(request: RuntimeRequest):
+        _log.info(
+            "Worker runtime reply handler invoked: request_id=%s, worker_id=%s",
+            request.request_id,
+            request.worker_id,
+        )
         state = _state_with_materialized_department_chats(load_management_state())
         task_service = _build_worker_task_service_from_profile_home()
         _ensure_runtime_worker_profile(
@@ -591,9 +597,15 @@ def _build_worker_runtime_handler() -> RuntimeReplyHandler:
         )
         facade = SharedAgentRuntimeFacade(llm_executor=executor)
 
-        return InternalWorkerRuntimeRunner(
+        result = InternalWorkerRuntimeRunner(
             task_service=task_service, facade=facade,
         ).run_runtime_request(request)
+        _log.info(
+            "Worker runtime reply handler completed: request_id=%s, final_state=%s",
+            request.request_id,
+            result.final_state.value,
+        )
+        return result
 
     return _handle_runtime_reply
 

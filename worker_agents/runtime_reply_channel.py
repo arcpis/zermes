@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from typing import Callable, Mapping
 
@@ -32,6 +33,9 @@ from .runtime_contract import (
 
 class RuntimeReplyChannelError(ValueError):
     """Raised when a chat message cannot be bridged to a worker runtime reply."""
+
+
+_log = logging.getLogger(__name__)
 
 
 RuntimeReplyHandler = Callable[[RuntimeRequest], RuntimeResult | None]
@@ -130,11 +134,17 @@ def dispatch_chat_message_to_worker_runtime(
         target_worker_id=target_worker_id,
         created_at=timestamp,
     )
+    _log.info(
+        "Worker agent dispatching: request_id=%s, worker_id=%s",
+        runtime_request.request_id,
+        target_worker_id,
+    )
     try:
         runtime_result = reply_handler(runtime_request)
     except Exception as exc:  # noqa: BLE001 - failures must be user-visible here.
         runtime_result = _failure_result_from_exception(runtime_request, exc, timestamp)
     if runtime_result is None:
+        _log.info("Worker agent produced no reply: request_id=%s", runtime_request.request_id)
         return RuntimeReplyDispatch(
             runtime_request=runtime_request,
             source_thread_id=thread.thread_id,
@@ -150,6 +160,12 @@ def dispatch_chat_message_to_worker_runtime(
         parent_worker_id=target_worker_id
         if runtime_result.runtime_type == RuntimeType.TEMPORARY_SUBAGENT
         else None,
+    )
+    _log.info(
+        "Worker agent replied: request_id=%s, final_state=%s, delivered_count=%d",
+        runtime_request.request_id,
+        runtime_result.final_state.value,
+        len(routed.delivered_messages),
     )
     return RuntimeReplyDispatch(
         runtime_request=runtime_request,

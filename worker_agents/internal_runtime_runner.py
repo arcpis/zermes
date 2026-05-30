@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 
 from .internal_runtime_context import (
@@ -21,6 +22,9 @@ from .task_service import WorkerTaskService
 
 class InternalWorkerRuntimeRunnerError(ValueError):
     """Raised when an internal worker runtime run cannot be prepared."""
+
+
+_log = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -107,6 +111,11 @@ class InternalWorkerRuntimeRunner:
                 "run_runtime_request requires a RuntimeRequest"
             )
         context_request = _context_request_from_runtime_request(request)
+        _log.info(
+            "Internal worker runtime request started: request_id=%s, worker_id=%s",
+            request.request_id,
+            request.worker_id,
+        )
         mark_internal_runtime_started(
             self.task_service,
             task_id=request.task_id,
@@ -157,6 +166,11 @@ class InternalWorkerRuntimeRunner:
             internal_summary=internal_summary,
             audit_summary=audit_summary,
             error=error_info,
+        )
+        _log.info(
+            "Internal worker runtime request completed: request_id=%s, final_state=%s",
+            request.request_id,
+            final_state.value,
         )
         finalize_internal_runtime_result(self.task_service, result)
         return result

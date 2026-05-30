@@ -188,6 +188,12 @@ class WorkerLLMExecutor:
             {"role": "user", "content": user_msg},
         ]
 
+        logger.info(
+            "Worker LLM executing: worker_id=%s, model=%s",
+            invocation.worker_id,
+            model_name,
+        )
+
         loop = HermesAgentLoop(
             server=server,
             tool_schemas=worker_tools,
@@ -212,6 +218,15 @@ class WorkerLLMExecutor:
         final_content = _extract_final_content(result.messages)
         tool_calls_made = sum(
             1 for m in result.messages if m.get("role") == "tool"
+        )
+
+        logger.info(
+            "Worker LLM replied: worker_id=%s, model=%s, turns_used=%d, tool_calls_made=%d, finished_naturally=%s",
+            invocation.worker_id,
+            model_name,
+            result.turns_used,
+            tool_calls_made,
+            result.finished_naturally,
         )
 
         return WorkerLLMResult(
