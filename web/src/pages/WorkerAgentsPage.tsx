@@ -47,6 +47,11 @@ interface ChatRow {
   risk_badges?: RiskBadge[];
 }
 
+interface MessageSender {
+  kind: string;
+  participant_id: string;
+}
+
 interface MessageRow {
   message_id: string;
   thread_id: string;
@@ -55,6 +60,7 @@ interface MessageRow {
   visibility: string;
   body_preview: string;
   sensitive_flags: string[];
+  sender?: MessageSender;
 }
 
 interface RiskBadge {
@@ -323,6 +329,11 @@ export default function WorkerAgentsPage() {
               ) : (
                 messages.map((message) => (
                   <article key={message.message_id} className="border-b border-current/10 px-3 py-2">
+                    {message.sender && message.sender.kind === "worker" && (
+                      <div className="mb-1 text-xs font-medium uppercase tracking-[0.06em] text-blue-200">
+                        worker · {message.sender.participant_id}
+                      </div>
+                    )}
                     <div className="flex flex-wrap gap-2 text-xs uppercase text-midground/55">
                       <span>{message.message_type}</span>
                       <span>{message.delivery_status}</span>
