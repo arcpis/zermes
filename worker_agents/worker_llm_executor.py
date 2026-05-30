@@ -234,36 +234,42 @@ class WorkerLLMExecutor:
         )
 
         try:
-            result = await loop.run(messages)
-        except Exception as exc:
-            logger.error("Worker LLM execution failed: %s", exc)
-            return WorkerLLMResult(
-                content="",
-                turns_used=0,
-                tool_calls_made=0,
-                finished_naturally=False,
-                model_used=model_name,
-                error=f"{type(exc).__name__}: {exc}",
+            try:
+                result = await loop.run(messages)
+            except Exception as exc:
+                logger.error("Worker LLM execution failed: %s", exc)
+                return WorkerLLMResult(
+                    content="",
+                    turns_used=0,
+                    tool_calls_made=0,
+                    finished_naturally=False,
+                    model_used=model_name,
+                    error=f"{type(exc).__name__}: {exc}",
+                )
+
+            final_content = _extract_final_content(result.messages)
+            tool_calls_made = sum(
+                1 for m in result.messages if m.get("role") == "tool"
             )
 
-        final_content = _extract_final_content(result.messages)
-        tool_calls_made = sum(
-            1 for m in result.messages if m.get("role") == "tool"
-        )
+            logger.info(
+                "Worker LLM replied: worker_id=%s, model=%s, turns_used=%d, tool_calls_made=%d, finished_naturally=%s",
+                invocation.worker_id,
+                model_name,
+                result.turns_used,
+                tool_calls_made,
+                result.finished_naturally,
+            )
 
-        logger.info(
-            "Worker LLM replied: worker_id=%s, model=%s, turns_used=%d, tool_calls_made=%d, finished_naturally=%s",
-            invocation.worker_id,
-            model_name,
-            result.turns_used,
-            tool_calls_made,
-            result.finished_naturally,
-        )
-
-        return WorkerLLMResult(
-            content=final_content,
-            turns_used=result.turns_used,
-            tool_calls_made=tool_calls_made,
-            finished_naturally=result.finished_naturally,
-            model_used=model_name,
-        )
+            return WorkerLLMResult(
+                content=final_content,
+                turns_used=result.turns_used,
+                tool_calls_made=tool_calls_made,
+                finished_naturally=result.finished_naturally,
+                model_used=model_name,
+            )
+        finally:
+            try:
+                await server.client.close()
+            except Exception:
+                pass
