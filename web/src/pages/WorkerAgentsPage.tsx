@@ -176,6 +176,10 @@ export default function WorkerAgentsPage() {
     if (message_type === "broadcast") {
       body.target_kind = "thread";
     }
+    const previousText = messageText;
+    const previousMentionTargets = mentionTargets;
+    setMessageText("");
+    setMentionTargets("");
     try {
       const result = await fetchJSON<{ audit_ref: string; summary: string }>(
         `/api/worker-agents/chats/${encodeURIComponent(selectedThread)}/send`,
@@ -186,10 +190,10 @@ export default function WorkerAgentsPage() {
         },
       );
       setActionResult(`${result.summary} ${result.audit_ref}`);
-      setMessageText("");
-      setMentionTargets("");
       await loadHistory(selectedThread);
     } catch (err) {
+      setMessageText(previousText);
+      setMentionTargets(previousMentionTargets);
       setError(err instanceof Error ? err.message : String(err));
     }
   }
