@@ -1852,7 +1852,7 @@ def _build_organization_node_summary(
     for worker_id in (*member_worker_ids, *(() if individual_worker_id is None else (individual_worker_id,))):
         if worker_id not in worker_ids:
             risks.append(_node_risk("missing_worker", "Referenced worker is missing", org_node_id))
-    collaboration_mode = _collaboration_mode(node_type, member_worker_ids, individual_worker_id)
+    collaboration_mode = _collaboration_mode(node_type, member_worker_ids, individual_worker_id, child_ids)
     if collaboration_mode == "department_group_chat_unavailable":
         risks.append(_node_risk("chat_binding_invalid", "Default group chat is unavailable", org_node_id))
     return OrganizationManagementNodeSummary(
@@ -2094,10 +2094,12 @@ def _collaboration_mode(
     node_type: str,
     member_worker_ids: tuple[str, ...],
     individual_worker_id: str | None,
+    child_ids: tuple[str, ...] = (),
 ) -> str:
     if node_type == OrgNodeType.INDIVIDUAL.value or individual_worker_id:
         return "private_chat"
-    if len(member_worker_ids) <= 1:
+    has_children = len(child_ids) > 0
+    if not has_children and len(member_worker_ids) <= 1:
         return "private_or_parent_chat"
     if node_type == OrgNodeType.DEPARTMENT.value:
         return "department_group_chat"

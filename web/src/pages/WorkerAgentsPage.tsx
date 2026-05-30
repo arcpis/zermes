@@ -3,10 +3,16 @@ import {
   AlertTriangle,
   Archive,
   Bot,
+  Building2,
+  ChevronDown,
+  ChevronRight,
   MessageSquare,
+  Network,
   RefreshCw,
   Send,
   ShieldCheck,
+  User,
+  Users,
 } from "lucide-react";
 import { Button } from "@nous-research/ui/ui/components/button";
 import { Spinner } from "@nous-research/ui/ui/components/spinner";
@@ -263,15 +269,24 @@ export default function WorkerAgentsPage() {
     }
   }
 
-  function openDepartmentChat(orgNodeId: string) {
-    const threadId = `dept-${orgNodeId}`;
-    const chat = chats.find((item) => item.thread_id === threadId);
-    if (!chat) {
-      setError("Department chat is not available for this organization node.");
-      return;
+  async function openDepartmentChat(orgNodeId: string) {
+    setActionResult("");
+    try {
+      const result = await fetchJSON<{ thread: ChatRow; disabled_reason?: string }>(
+        `/api/worker-agents/organization/${encodeURIComponent(orgNodeId)}/department-chat`,
+        { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" },
+      );
+      if (!result.thread) {
+        setError(result.disabled_reason || "Department chat is not available for this organization node.");
+        return;
+      }
+      setChats((current) => upsertChat(current, result.thread));
+      setSelectedThread(result.thread.thread_id);
+      setActiveTab("Chats");
+      await loadHistory(result.thread.thread_id);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
     }
-    setSelectedThread(threadId);
-    setActiveTab("Chats");
   }
 
   if (loading) {
@@ -466,6 +481,7 @@ export default function WorkerAgentsPage() {
       {activeTab === "Organization" && (
         <OrganizationTree
           nodes={organization}
+          workers={workers}
           onOpenDepartmentChat={openDepartmentChat}
           onOpenWorkerChat={(workerId) => void openWorkerChat(workerId)}
         />
@@ -530,14 +546,17 @@ function WorkerTable({
 
 function OrganizationTree({
   nodes,
+  workers,
   onOpenDepartmentChat,
   onOpenWorkerChat,
 }: {
   nodes: OrganizationNode[];
+  workers: WorkerRow[];
   onOpenDepartmentChat: (orgNodeId: string) => void;
   onOpenWorkerChat: (workerId: string) => void;
 }) {
   if (nodes.length === 0) return <EmptyState text="No organization tree" />;
+  const displayNameMap = new Map(workers.map((w) => [w.worker_id, w.display_name || w.worker_id]));
   return (
     <section className="flex flex-col border border-current/15">
       {nodes.map((node) => (
@@ -545,6 +564,7 @@ function OrganizationTree({
           key={node.summary.org_node_id}
           node={node}
           depth={0}
+          displayNameMap={displayNameMap}
           onOpenDepartmentChat={onOpenDepartmentChat}
           onOpenWorkerChat={onOpenWorkerChat}
         />
@@ -556,76 +576,145 @@ function OrganizationTree({
 function OrganizationNodeRow({
   node,
   depth,
+  displayNameMap,
   onOpenDepartmentChat,
   onOpenWorkerChat,
 }: {
   node: OrganizationNode;
   depth: number;
+  displayNameMap: Map<string, string>;
   onOpenDepartmentChat: (orgNodeId: string) => void;
   onOpenWorkerChat: (workerId: string) => void;
 }) {
+  const [expanded, setExpanded] = useState(depth < 2);
   const summary = node.summary;
-  const memberIds = summary.member_worker_ids ?? [];
-  const onlyWorkerId = summary.individual_worker_id || (memberIds.length === 1 ? memberIds[0] : null);
+
+  const totalMemberCount = useMemo(() => {
+    const ids = new Set<string>();
+    const collect = (n: OrganizationNode) => {
+      const s = n.summary;
+      for (const id of s.member_worker_ids) ids.add(id);
+      if (s.leader_worker_id) ids.add(s.leader_worker_id);
+      if (s.individual_worker_id) ids.add(s.individual_worker_id);
+      for (const child of n.children) collect(child);
+    };
+    collect(node);
+    return ids.size;
+  }, [node]);
+
+  const hasChildren = node.children.length > 0;
+  const isLeaf = !hasChildren;
+
   const canOpenDepartmentChat =
-    !summary.read_only && summary.collaboration_mode === "department_group_chat";
-  const canOpenWorkerChat = !summary.read_only && Boolean(onlyWorkerId);
+    !summary.read_only &&
+    summary.collaboration_mode === "department_group_chat" &&
+    !isLeaf;
+
+  const NodeIcon =
+    summary.node_type === "root"
+      ? Network
+      : isLeaf
+        ? User
+        : summary.node_type === "department"
+          ? Building2
+          : summary.node_type === "team"
+            ? Users
+            : User;
 
   return (
     <div>
       <article
-        className="border-b border-current/10 px-3 py-3"
-        style={{ paddingLeft: `${12 + depth * 18}px` }}
+        className={cn(
+          "group border-b border-current/10 transition-colors hover:bg-midground/5",
+          summary.read_only && "opacity-70",
+        )}
+        style={{ paddingLeft: `${12 + depth * 20}px` }}
       >
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="min-w-0">
+        <div className="flex items-start gap-2 px-3 py-3">
+          {hasChildren ? (
+            <button
+              onClick={() => setExpanded((prev) => !prev)}
+              className="mt-0.5 shrink-0 text-midground/55 hover:text-midground"
+              aria-label={expanded ? "Collapse" : "Expand"}
+            >
+              {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+            </button>
+          ) : (
+            <span className="mt-0.5 block w-4 shrink-0" />
+          )}
+
+          <NodeIcon
+            className={cn(
+              "mt-0.5 h-4 w-4 shrink-0",
+              summary.node_type === "root"
+                ? "text-amber-300/70"
+                : isLeaf
+                  ? "text-emerald-300/70"
+                  : summary.node_type === "department"
+                    ? "text-blue-300/70"
+                    : summary.node_type === "team"
+                      ? "text-purple-300/70"
+                      : "text-emerald-300/70",
+            )}
+          />
+
+          <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
-              <span className="font-medium">{summary.name || summary.org_node_id}</span>
-              <span className="text-xs uppercase text-midground/55">{summary.node_type}</span>
-              <span className="text-xs text-midground/55">{summary.lifecycle}</span>
-              {summary.read_only && <span className="text-xs text-yellow-200">read-only</span>}
+              <span className="font-medium text-sm">{summary.name || summary.org_node_id}</span>
+              {!isLeaf && totalMemberCount > 0 && (
+                <span className="inline-flex items-center gap-1 rounded bg-midground/10 px-1.5 py-0.5 text-[10px] font-medium text-midground/70">
+                  <Users className="h-3 w-3" />
+                  {totalMemberCount}
+                </span>
+              )}
+              {summary.read_only && (
+                <span className="rounded bg-yellow-300/15 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider text-yellow-200">
+                  read-only
+                </span>
+              )}
             </div>
-            <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-midground/60">
-              <span>mode: {summary.collaboration_mode}</span>
-              <span>lead: {summary.leader_worker_id || summary.leader_kind}</span>
-              <span>members: {memberIds.length}</span>
-            </div>
+
             {(node.warnings.length > 0 || (summary.risk_badges?.length ?? 0) > 0) && (
-              <div className="mt-2 space-y-1 text-xs text-yellow-200">
+              <div className="mt-2 space-y-1 text-[11px] text-yellow-200/80">
                 {node.warnings.map((warning) => (
-                  <p key={warning}>{warning}</p>
+                  <p key={warning} className="flex items-center gap-1">
+                    <AlertTriangle className="h-3 w-3 shrink-0" />
+                    {warning}
+                  </p>
                 ))}
                 {summary.risk_badges?.map((badge) => (
-                  <p key={badge.code}>{badge.label || badge.code}</p>
+                  <p key={badge.code} className="flex items-center gap-1">
+                    <AlertTriangle className="h-3 w-3 shrink-0" />
+                    {badge.label || badge.code}
+                  </p>
                 ))}
               </div>
             )}
           </div>
-          <div className="flex shrink-0 flex-wrap gap-2">
+
+          <div className="flex shrink-0 gap-1.5 pt-0.5">
             {canOpenDepartmentChat && (
               <Button size="sm" onClick={() => onOpenDepartmentChat(summary.org_node_id)}>
-                <MessageSquare className="h-4 w-4" />
-                Dept chat
-              </Button>
-            )}
-            {canOpenWorkerChat && onlyWorkerId && (
-              <Button size="sm" onClick={() => onOpenWorkerChat(onlyWorkerId)}>
-                <Bot className="h-4 w-4" />
-                Worker chat
+                <Users className="h-4 w-4" />
+                Group
               </Button>
             )}
           </div>
         </div>
+
       </article>
-      {node.children.map((child) => (
-        <OrganizationNodeRow
-          key={child.summary.org_node_id}
-          node={child}
-          depth={depth + 1}
-          onOpenDepartmentChat={onOpenDepartmentChat}
-          onOpenWorkerChat={onOpenWorkerChat}
-        />
-      ))}
+
+      {expanded &&
+        node.children.map((child) => (
+          <OrganizationNodeRow
+            key={child.summary.org_node_id}
+            node={child}
+            depth={depth + 1}
+            displayNameMap={displayNameMap}
+            onOpenDepartmentChat={onOpenDepartmentChat}
+            onOpenWorkerChat={onOpenWorkerChat}
+          />
+        ))}
     </div>
   );
 }
