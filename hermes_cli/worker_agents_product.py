@@ -634,17 +634,21 @@ def _ensure_runtime_worker_profile(
 ) -> None:
     worker = _optional_mapping(_mapping(state.get("worker_records")).get(worker_id))
     if worker is None:
-        raise ValueError(f"worker does not exist: {worker_id!r}")
-    status = str(worker.get("status", "")).lower()
-    if status != "enabled":
-        raise ValueError(f"worker is not enabled: {worker_id!r}")
-    try:
-        task_service.registry_service.get_worker(worker_id)
-    except WorkerRegistryError:
-        task_service.registry_service.register_worker(
-            profile=_runtime_worker_profile_from_management_record(worker),
-            created_by="worker_chat_runtime",
-        )
+        try:
+            task_service.registry_service.get_worker(worker_id)
+        except WorkerRegistryError:
+            raise ValueError(f"worker does not exist: {worker_id!r}")
+    else:
+        status = str(worker.get("status", "")).lower()
+        if status != "enabled":
+            raise ValueError(f"worker is not enabled: {worker_id!r}")
+        try:
+            task_service.registry_service.get_worker(worker_id)
+        except WorkerRegistryError:
+            task_service.registry_service.register_worker(
+                profile=_runtime_worker_profile_from_management_record(worker),
+                created_by="worker_chat_runtime",
+            )
     task_service.registry_service.enable_worker(
         worker_id,
         updated_by="worker_chat_runtime",
