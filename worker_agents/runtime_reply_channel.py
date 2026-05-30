@@ -123,6 +123,10 @@ def route_runtime_reply_to_source_thread(
     )
 
 
+def _is_no_reply(result: RuntimeResult) -> bool:
+    return isinstance(result.public_message, str) and result.public_message.strip() == "[NO_REPLY]"
+
+
 def dispatch_chat_message_to_worker_runtime(
     *,
     router: MessageRouter,
@@ -152,6 +156,19 @@ def dispatch_chat_message_to_worker_runtime(
         runtime_result = _failure_result_from_exception(runtime_request, exc, timestamp)
     if runtime_result is None:
         _log.info("Worker agent produced no reply: request_id=%s", runtime_request.request_id)
+        return RuntimeReplyDispatch(
+            runtime_request=runtime_request,
+            source_thread_id=thread.thread_id,
+            source_message_id=source_message.message_id,
+            target_worker_id=target_worker_id,
+        )
+
+    if _is_no_reply(runtime_result):
+        _log.info(
+            "Worker agent elected not to reply: request_id=%s, worker_id=%s",
+            runtime_request.request_id,
+            target_worker_id,
+        )
         return RuntimeReplyDispatch(
             runtime_request=runtime_request,
             source_thread_id=thread.thread_id,

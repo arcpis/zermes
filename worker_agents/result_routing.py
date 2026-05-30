@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import PurePosixPath, PureWindowsPath
+import re
 from typing import Any, Mapping
 
 from .message_router import (
@@ -335,6 +336,20 @@ class ApprovalAndSafetyRoute:
             _require_string(item_id, "skipped_route_item_ids")
 
 
+_MENTION_RE = re.compile(r"@(\w[\w-]*)")
+
+
+def _parse_mentioned_worker_ids(text: str) -> tuple[str, ...]:
+    seen: set[str] = set()
+    result: list[str] = []
+    for match in _MENTION_RE.finditer(text):
+        worker_id = match.group(1)
+        if worker_id not in seen:
+            seen.add(worker_id)
+            result.append(worker_id)
+    return tuple(result)
+
+
 def classify_runtime_result(
     result: RuntimeResult, *, source_result_ref: str | None = None
 ) -> RuntimeResultClassification:
@@ -375,10 +390,11 @@ def classify_runtime_result(
         sequence += 1
 
     if result.public_message:
+        mentioned = _parse_mentioned_worker_ids(result.public_message)
         add_item(
             ResultRouteItemKind.PUBLIC_MESSAGE,
             ResultRouteVisibility.USER_VISIBLE,
-            {"body_preview": result.public_message},
+            {"body_preview": result.public_message, "mentioned_worker_ids": mentioned},
             audit_summary="Runtime produced a user-visible message.",
         )
     if result.internal_summary:
@@ -851,7 +867,8 @@ def _message_for_route_item(
         body_preview = _require_string(
             item.payload.get("body_preview"), "public message body_preview"
         )
-        message_type = ChatMessageType.NORMAL
+        mentioned = item.payload.get("mentioned_worker_ids")
+        message_type = ChatMessageType.MENTION if mentioned else ChatMessageType.NORMAL
     elif item.kind == ResultRouteItemKind.FAILURE_REPORT:
         body_preview = _failure_body_preview(item.payload)
         message_type = ChatMessageType.SUMMARY

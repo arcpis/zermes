@@ -63,6 +63,31 @@ class _WorkerAsyncServer:
         return await self.client.chat.completions.create(**kwargs)
 
 
+def _build_chat_reply_guidance(
+    chat_message_type: str | None,
+    thread_participants: tuple[str, ...],
+) -> str:
+    if not chat_message_type:
+        return ""
+    if chat_message_type == "normal":
+        return "This is a direct (private) chat message. Reply normally with your response."
+    if chat_message_type in ("mention", "broadcast") and thread_participants:
+        worker_refs = ", ".join(
+            f"@{ref.removeprefix('worker:')}"
+            for ref in thread_participants
+        )
+        message_label = "BROADCAST" if chat_message_type == "broadcast" else "MENTION"
+        return (
+            f"This is a group chat {message_label} message. "
+            f"Other participants in this thread: {worker_refs}. "
+            "You may choose one of these reply options:\n"
+            "1. Reply normally (visible to everyone in the thread).\n"
+            "2. Mention a specific worker by starting your reply with @worker-id.\n"
+            "3. Do not reply — output [NO_REPLY] as your entire response."
+        )
+    return ""
+
+
 def _build_system_message(invocation: AgentRuntimeInvocation) -> str:
     parts: list[str] = [f"You are {invocation.display_name}."]
     if invocation.responsibility_summary:
@@ -75,6 +100,12 @@ def _build_system_message(invocation: AgentRuntimeInvocation) -> str:
         parts.append(f"Readable paths: {', '.join(invocation.workspace_read_roots)}")
     if invocation.workspace_write_roots:
         parts.append(f"Writable paths: {', '.join(invocation.workspace_write_roots)}")
+    guidance = _build_chat_reply_guidance(
+        invocation.chat_message_type,
+        invocation.thread_participants,
+    )
+    if guidance:
+        parts.append(guidance)
     return "\n\n".join(parts)
 
 
