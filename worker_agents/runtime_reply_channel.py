@@ -71,7 +71,7 @@ def build_runtime_request_from_chat_message(
     source_ref = f"worker_agents/threads/{thread.thread_id}/messages/{source_message.message_id}"
     return RuntimeRequest(
         request_id=request_id or f"runtime-{source_message.message_id}-{target_worker_id}",
-        task_id=f"chat-{source_message.message_id}",
+        task_id=f"chat-{source_message.message_id}-{target_worker_id}",
         worker_id=target_worker_id,
         runtime_type=RuntimeType.INTERNAL_WORKER,
         requested_by=_participant_ref_text(source_message.sender),
