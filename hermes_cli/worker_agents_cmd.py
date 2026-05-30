@@ -226,6 +226,9 @@ def _broadcast(args: argparse.Namespace) -> Any:
         target_id=args.target_id,
         importance=args.importance,
         dry_run=args.dry_run,
+        runtime_reply_handler=None
+        if args.dry_run
+        else product.build_worker_runtime_reply_handler(),
     )
 
 

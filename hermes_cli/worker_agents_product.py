@@ -1223,7 +1223,7 @@ def _dispatch_runtime_replies_for_message(
 ) -> list[Mapping[str, Any]]:
     """Persist public runtime replies through the same thread message store."""
 
-    if message.message_type not in {ChatMessageType.NORMAL, ChatMessageType.MENTION}:
+    if message.message_type not in {ChatMessageType.NORMAL, ChatMessageType.MENTION, ChatMessageType.BROADCAST}:
         return []
     dispatches = []
     for worker_id in _runtime_target_worker_ids(thread, message, delivery_records):
@@ -1245,17 +1245,29 @@ def _runtime_target_worker_ids(
     message: WorkerMessageEnvelope,
     delivery_records: tuple[Mapping[str, Any], ...],
 ) -> tuple[str, ...]:
-    """Return runtime targets for normal sends and resolved mentions.
+    """Return runtime targets for normal sends, resolved mentions and broadcasts.
 
-    Normal messages use the existing recipient-scope rules. Mention messages
-    additionally use resolved delivery recipients so an @department mention can
-    trigger the department leader instead of remaining only a tracking record.
+    Normal messages use the existing recipient-scope rules. Mention and broadcast
+    messages additionally use resolved delivery recipients so an @department
+    mention or a broadcast can trigger recipients instead of remaining only
+    tracking records.
     """
 
     worker_ids = list(target_worker_ids_for_chat_message(thread, message))
     if message.message_type == ChatMessageType.MENTION:
         for record in delivery_records:
             recipient = _optional_mapping(record.get("resolved_recipient"))
+            if (
+                recipient is None
+                or recipient.get("kind") != ChatParticipantKind.WORKER.value
+            ):
+                continue
+            worker_id = recipient.get("participant_id")
+            if isinstance(worker_id, str) and worker_id:
+                worker_ids.append(worker_id)
+    elif message.message_type == ChatMessageType.BROADCAST:
+        for record in delivery_records:
+            recipient = _optional_mapping(record.get("recipient"))
             if (
                 recipient is None
                 or recipient.get("kind") != ChatParticipantKind.WORKER.value
