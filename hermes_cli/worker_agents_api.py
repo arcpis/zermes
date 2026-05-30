@@ -128,6 +128,11 @@ def chats() -> list[dict[str, Any]]:
     return product.list_chats()
 
 
+@router.get("/chats/{thread_id}/members")
+def chat_members(thread_id: str) -> list[dict[str, Any]]:
+    return _guard(lambda: product.get_thread_members(thread_id))
+
+
 @router.get("/chats/{thread_id}/history")
 def chat_history(
     thread_id: str,

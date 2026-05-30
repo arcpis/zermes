@@ -476,6 +476,29 @@ def get_thread_history(query: ChatHistoryQuery) -> dict[str, Any]:
     }
 
 
+def get_thread_members(thread_id: str) -> list[dict[str, Any]]:
+    validate_single_path_segment(thread_id, "thread_id")
+    state = _state_with_materialized_department_chats(load_management_state())
+    thread = _require_thread_from_state(state, thread_id)
+    worker_records = _mapping(state.get("worker_records"))
+    members: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for participant in _sequence(thread.get("participants")):
+        participant_map = _optional_mapping(participant) if isinstance(participant, Mapping) else {}
+        kind = str(participant_map.get("kind", ""))
+        participant_id = str(participant_map.get("participant_id", ""))
+        if kind != "worker" or not participant_id or participant_id in seen:
+            continue
+        seen.add(participant_id)
+        worker_record = _optional_mapping(worker_records.get(participant_id))
+        display_name = str(worker_record.get("display_name", participant_id)) if worker_record else participant_id
+        members.append({
+            "worker_id": participant_id,
+            "display_name": display_name,
+        })
+    return _sanitize_sequence(members)
+
+
 def send_chat_message(
     *,
     thread_id: str,

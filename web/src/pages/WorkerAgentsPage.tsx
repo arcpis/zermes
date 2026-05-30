@@ -69,6 +69,11 @@ interface RiskBadge {
   severity: string;
 }
 
+interface ThreadMember {
+  worker_id: string;
+  display_name: string;
+}
+
 interface OrganizationNode {
   summary: OrganizationSummary;
   children: OrganizationNode[];
@@ -104,7 +109,8 @@ export default function WorkerAgentsPage() {
   const [messages, setMessages] = useState<MessageRow[]>([]);
   const [selectedThread, setSelectedThread] = useState<string>("");
   const [messageText, setMessageText] = useState("");
-  const [mentionTargets, setMentionTargets] = useState("");
+  const [selectedMentionIds, setSelectedMentionIds] = useState<Set<string>>(new Set());
+  const [threadMembers, setThreadMembers] = useState<ThreadMember[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>("");
   const [actionResult, setActionResult] = useState<string>("");
@@ -119,6 +125,7 @@ export default function WorkerAgentsPage() {
     selectedChat.read_only ||
     !selectedChat.valid_management_boundary ||
     !messageText.trim();
+  const mentionDisabled = sendDisabled || selectedMentionIds.size === 0;
 
   useEffect(() => {
     void loadPage();
@@ -128,6 +135,27 @@ export default function WorkerAgentsPage() {
     if (!selectedThread) return;
     void loadHistory(selectedThread);
   }, [selectedThread]);
+
+  useEffect(() => {
+    if (!selectedThread || isDirectChat) {
+      setThreadMembers([]);
+      setSelectedMentionIds(new Set());
+      return;
+    }
+    void loadThreadMembers(selectedThread);
+  }, [selectedThread, isDirectChat]);
+
+  async function toggleMemberSelection(workerId: string) {
+    setSelectedMentionIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(workerId)) {
+        next.delete(workerId);
+      } else {
+        next.add(workerId);
+      }
+      return next;
+    });
+  }
 
   async function loadPage() {
     setLoading(true);
@@ -162,6 +190,17 @@ export default function WorkerAgentsPage() {
     }
   }
 
+  async function loadThreadMembers(threadId: string) {
+    try {
+      const data = await fetchJSON<ThreadMember[]>(
+        `/api/worker-agents/chats/${encodeURIComponent(threadId)}/members`,
+      );
+      setThreadMembers(data);
+    } catch {
+      setThreadMembers([]);
+    }
+  }
+
   async function sendMessage(message_type: "normal" | "mention" | "broadcast") {
     if (sendDisabled || !selectedThread) return;
     setActionResult("");
@@ -171,7 +210,7 @@ export default function WorkerAgentsPage() {
       message_type,
     };
     if (message_type === "mention") {
-      const ids = mentionTargets.split(",").map((s) => s.trim()).filter(Boolean);
+      const ids = Array.from(selectedMentionIds);
       if (ids.length === 0) {
         setError("Mention requires at least one target worker ID.");
         return;
@@ -183,9 +222,9 @@ export default function WorkerAgentsPage() {
       body.target_kind = "thread";
     }
     const previousText = messageText;
-    const previousMentionTargets = mentionTargets;
+    const previousMentionIds = new Set(selectedMentionIds);
     setMessageText("");
-    setMentionTargets("");
+    setSelectedMentionIds(new Set());
     try {
       const result = await fetchJSON<{ audit_ref: string; summary: string }>(
         `/api/worker-agents/chats/${encodeURIComponent(selectedThread)}/send`,
@@ -199,7 +238,7 @@ export default function WorkerAgentsPage() {
       await loadHistory(selectedThread);
     } catch (err) {
       setMessageText(previousText);
-      setMentionTargets(previousMentionTargets);
+      setSelectedMentionIds(previousMentionIds);
       setError(err instanceof Error ? err.message : String(err));
     }
   }
@@ -360,16 +399,36 @@ export default function WorkerAgentsPage() {
                 className="min-h-20 resize-y border border-current/20 bg-transparent p-2 text-sm outline-none"
               />
               {!isDirectChat && (
-                <label className="flex flex-col gap-1 text-xs text-midground/70">
-                  @ Workers (comma-separated IDs, for mention)
-                  <input
-                    type="text"
-                    value={mentionTargets}
-                    onChange={(event) => setMentionTargets(event.target.value)}
-                    placeholder="e.g. frontend, backend"
-                    className="border border-current/20 bg-transparent px-2 py-1 text-sm outline-none"
-                  />
-                </label>
+                <div className="flex flex-col gap-2">
+                  <span className="text-xs text-midground/70">
+                    @ Mention members (click to select, click again to deselect)
+                  </span>
+                  {threadMembers.length === 0 ? (
+                    <p className="text-xs text-midground/45">No members available for this thread.</p>
+                  ) : (
+                    <div className="flex flex-wrap gap-1.5">
+                      {threadMembers.map((member) => {
+                        const isSelected = selectedMentionIds.has(member.worker_id);
+                        return (
+                          <button
+                            key={member.worker_id}
+                            type="button"
+                            onClick={() => void toggleMemberSelection(member.worker_id)}
+                            className={cn(
+                              "inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs transition-colors",
+                              isSelected
+                                ? "bg-blue-600/30 text-blue-100 ring-1 ring-blue-400/60"
+                                : "bg-midground/5 text-midground/60 hover:bg-midground/15 hover:text-midground",
+                            )}
+                          >
+                            <span className="select-none">@</span>
+                            <span>{member.display_name || member.worker_id}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
               )}
               <div className="flex flex-wrap gap-2">
                 {isDirectChat ? (
@@ -380,7 +439,7 @@ export default function WorkerAgentsPage() {
                 ) : (
                   <>
                     <Button
-                      disabled={sendDisabled || !mentionTargets.trim()}
+                      disabled={mentionDisabled}
                       size="sm"
                       onClick={() => void sendMessage("mention")}
                     >
