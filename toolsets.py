@@ -396,11 +396,21 @@ TOOLSETS = {
         ],
         "includes": []
     },
-    
+
+    "worker_messaging": {
+        "description": "Worker Agent task dispatch and reply checking via group chat",
+        "tools": [
+            "send_worker_message",
+            "check_worker_replies",
+            "wait_for_worker_reply",
+        ],
+        "includes": [],
+    },
+
     "hermes-cli": {
         "description": "Full interactive CLI toolset - all default tools plus cronjob management",
         "tools": _HERMES_CORE_TOOLS,
-        "includes": []
+        "includes": ["worker_messaging"]
     },
 
     "hermes-cron": {

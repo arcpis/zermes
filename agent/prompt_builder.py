@@ -263,6 +263,20 @@ CODE_MODIFICATION_TRIGGER_GUIDANCE = (
     "not to modify code."
 )
 
+WORKER_AGENT_GUIDANCE = (
+    "# Worker Agent task dispatch\n"
+    "- You have access to a team of specialized Worker Agents. "
+    "Use them to delegate coding, analysis, and other domain-specific tasks.\n"
+    "- Use `send_worker_message` to dispatch tasks to workers via the default group chat. "
+    "Mention specific workers with `mention_worker_ids` to target them. "
+    "The task will be delivered asynchronously — you can continue other work while waiting.\n"
+    "- After dispatching, use `check_worker_replies` to check for completed results. "
+    "Use `wait_for_worker_reply` when you need to block until a specific worker responds.\n"
+    "- When no suitable worker exists for a task, handle it yourself.\n"
+    "- For simple conversations and general questions, respond directly without involving workers.\n"
+    "- Do not create new worker agents or modify the organization tree unless the user explicitly asks.\n"
+)
+
 TOOL_USE_ENFORCEMENT_GUIDANCE = (
     "# Tool-use enforcement\n"
     "You MUST use your tools to take action — do not describe what you would do "
@@ -983,6 +997,93 @@ def _skill_should_show(
             return False
 
     return True
+
+
+def build_worker_agents_prompt() -> str:
+    from worker_agents.management.root_workers import (
+        DEFAULT_GROUP_THREAD_ID,
+        collect_enabled_root_worker_ids,
+        load_worker_management_state,
+    )
+
+    try:
+        state = load_worker_management_state()
+    except Exception:
+        return ""
+
+    worker_ids = collect_enabled_root_worker_ids(state)
+    if not worker_ids:
+        return ""
+
+    worker_records = state.get("worker_records", {})
+    if not isinstance(worker_records, dict):
+        return ""
+
+    lines = [
+        "# Available Worker Agents",
+        "",
+        "You are the main agent. You can dispatch tasks to the following "
+        "worker agents via the default group chat. Use `send_worker_message` "
+        f"with `thread_id=\"{DEFAULT_GROUP_THREAD_ID}\"` and mention the "
+        "target worker in `mention_worker_ids`.",
+        "",
+    ]
+
+    for worker_id in worker_ids:
+        record = worker_records.get(worker_id)
+        if not isinstance(record, dict):
+            continue
+        display_name = str(record.get("display_name", worker_id))
+        role = str(record.get("role", ""))
+        description = str(record.get("description", ""))
+        if description == worker_id:
+            description = ""
+
+        summary = f"- **{display_name}** (`{worker_id}`)"
+        if role:
+            summary += f" — {role}"
+        if description:
+            summary += f": {description}"
+        lines.append(summary)
+
+    lines.append("")
+    lines.append(
+        "For simple conversations and general questions, respond directly "
+        "without involving workers."
+    )
+
+    return "\n".join(lines)
+
+
+def build_worker_task_state_prompt() -> str:
+    """Build a compact structured view of currently pending Worker tasks.
+
+    The dispatch state lives outside conversation history so compression cannot
+    lose it.  This prompt block gives the model precise task ownership without
+    relying on semantic memory recall.
+    """
+    try:
+        from tools.worker_task_state import get_pending_tasks
+    except Exception:
+        return ""
+
+    pending = [task for task in get_pending_tasks() if task.status == "pending"]
+    if not pending:
+        return ""
+
+    lines = ["# Pending Worker Tasks", ""]
+    for task in pending:
+        worker_list = ", ".join(task.dispatched_to) or "unknown"
+        lines.append(
+            "- "
+            f"task_id={task.task_id}; "
+            f"thread_id={task.thread_id}; "
+            f"dispatched_to={worker_list}; "
+            f"dispatch_message_id={task.dispatch_message_id or 'unknown'}; "
+            f"summary={task.task_summary}; "
+            f"dispatched_at={task.dispatched_at}"
+        )
+    return "\n".join(lines)
 
 
 def build_skills_system_prompt(

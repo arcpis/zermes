@@ -19,6 +19,8 @@ from agent.prompt_builder import (
     build_nous_subscription_prompt,
     build_context_files_prompt,
     build_environment_hints,
+    build_worker_agents_prompt,
+    build_worker_task_state_prompt,
     CONTEXT_FILE_MAX_CHARS,
     DEFAULT_AGENT_IDENTITY,
     TOOL_USE_ENFORCEMENT_GUIDANCE,
@@ -44,6 +46,75 @@ class TestGuidanceConstants:
         assert "session_search" in MEMORY_GUIDANCE
         assert "like a diary" not in MEMORY_GUIDANCE
         assert ">80%" not in MEMORY_GUIDANCE
+
+    def test_worker_task_state_prompt_lists_pending_tasks(self):
+        from tools.worker_task_state import add_pending_task
+
+        add_pending_task(
+            task_id="task-1",
+            thread_id="thread-default-group",
+            dispatched_to=("coder-agent",),
+            task_summary="Implement login page",
+            dispatch_message_id="msg-1",
+        )
+
+        prompt = build_worker_task_state_prompt()
+
+        assert "# Pending Worker Tasks" in prompt
+        assert "task_id=task-1" in prompt
+        assert "dispatched_to=coder-agent" in prompt
+        assert "summary=Implement login page" in prompt
+
+    def test_worker_agents_prompt_reads_public_management_state(self, monkeypatch, tmp_path):
+        import json
+
+        monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+        state_path = tmp_path / "worker_agents" / "management" / "dashboard_state.json"
+        state_path.parent.mkdir(parents=True)
+        state_path.write_text(
+            json.dumps(
+                {
+                    "organization_tree": {
+                        "root_node_id": "root",
+                        "nodes": {
+                            "root": {
+                                "node_type": "department",
+                                "member_worker_ids": ["planner"],
+                                "child_ids": ["engineering"],
+                            },
+                            "engineering": {
+                                "node_type": "department",
+                                "leader": {"kind": "worker", "worker_id": "engineer"},
+                                "member_worker_ids": [],
+                                "child_ids": [],
+                            },
+                        },
+                    },
+                    "worker_records": {
+                        "planner": {
+                            "status": "enabled",
+                            "display_name": "Planner",
+                            "role": "Planning",
+                            "description": "Breaks down work",
+                        },
+                        "engineer": {
+                            "status": "enabled",
+                            "display_name": "Engineer",
+                            "role": "Implementation",
+                            "description": "Builds scoped changes",
+                        },
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        prompt = build_worker_agents_prompt()
+
+        assert "# Available Worker Agents" in prompt
+        assert '`thread_id="thread-default-group"`' in prompt
+        assert "**Planner** (`planner`)" in prompt
+        assert "**Engineer** (`engineer`)" in prompt
 
     def test_session_search_guidance_is_simple_cross_session_recall(self):
         assert "relevant cross-session context exists" in SESSION_SEARCH_GUIDANCE

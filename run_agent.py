@@ -148,6 +148,9 @@ from agent.prompt_builder import (
     HERMES_AGENT_HELP_GUIDANCE,
     KANBAN_GUIDANCE,
     CODE_MODIFICATION_TRIGGER_GUIDANCE,
+    WORKER_AGENT_GUIDANCE,
+    build_worker_agents_prompt,
+    build_worker_task_state_prompt,
     build_nous_subscription_prompt,
 )
 from agent.model_metadata import (
@@ -1810,6 +1813,14 @@ class AIAgent:
         if session_id:
             # Use provided session ID (e.g., from CLI)
             self.session_id = session_id
+        elif "send_worker_message" in self.valid_tool_names:
+            _last_id = self._resolve_last_session_for_agent()
+            if _last_id:
+                self.session_id = _last_id
+            else:
+                timestamp_str = self.session_start.strftime("%Y%m%d_%H%M%S")
+                short_uuid = uuid.uuid4().hex[:6]
+                self.session_id = f"{timestamp_str}_{short_uuid}"
         else:
             # Generate a new session ID
             timestamp_str = self.session_start.strftime("%Y%m%d_%H%M%S")
@@ -2457,6 +2468,16 @@ class AIAgent:
         # Context engine reset (works for both built-in compressor and plugins)
         if hasattr(self, "context_compressor") and self.context_compressor:
             self.context_compressor.on_session_reset()
+
+    @staticmethod
+    def _resolve_last_session_for_agent(source: str = "cli") -> Optional[str]:
+        try:
+            from hermes_state import SessionDB
+            db = SessionDB()
+            sessions = db.search_sessions(source=source, limit=1)
+            return sessions[0]["id"] if sessions else None
+        except Exception:
+            return None
 
     def _ensure_lmstudio_runtime_loaded(self, config_context_length: Optional[int] = None) -> None:
         """
@@ -5327,6 +5348,14 @@ class AIAgent:
             # The approval planner is optional by toolset, so only teach the
             # model this routing rule when the tool can actually be called.
             prompt_parts.append(CODE_MODIFICATION_TRIGGER_GUIDANCE)
+        if "send_worker_message" in self.valid_tool_names:
+            prompt_parts.append(WORKER_AGENT_GUIDANCE)
+            _worker_prompt = build_worker_agents_prompt()
+            if _worker_prompt:
+                prompt_parts.append(_worker_prompt)
+            _worker_task_prompt = build_worker_task_state_prompt()
+            if _worker_task_prompt:
+                prompt_parts.append(_worker_task_prompt)
 
         # Computer-use (macOS) — goes in as its own block rather than being
         # merged into tool_guidance because the content is multi-paragraph.

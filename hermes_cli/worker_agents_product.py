@@ -59,6 +59,10 @@ from worker_agents.management import (
 from worker_agents.management.import_export import (
     export_package_manifest_to_dict,
 )
+from worker_agents.management.root_workers import (
+    DEFAULT_GROUP_THREAD_ID,
+    collect_enabled_root_worker_ids,
+)
 from worker_agents.message_broadcasts import (
     BroadcastImportance,
     BroadcastTarget,
@@ -505,6 +509,7 @@ def send_chat_message(
     sender_id: str,
     text: str,
     message_type: str = "normal",
+    sender_kind: str = "user",
     target_ids: Iterable[str] = (),
     target_kind: str | None = None,
     target_id: str | None = None,
@@ -521,9 +526,10 @@ def send_chat_message(
     message = _build_outbound_message(
         thread_id=thread_id,
         sender_id=sender_id,
+        sender_kind=sender_kind,
         text=text,
         message_type=message_type,
-        target_ids=tuple(target_ids) if message_type == "normal" else (),
+        target_ids=tuple(target_ids),
     )
     _log.info(
         "Worker agents chat message received: message_id=%s, thread_id=%s, chat_kind=%s, sender_id=%s, message_type=%s, text=%r",
@@ -1877,6 +1883,131 @@ def _department_chat_skipped_response(org_node_id: str, reason: str) -> dict[str
     }
 
 
+def _collect_root_workers(state: Mapping[str, Any]) -> list[str]:
+    """Compatibility wrapper for older product tests and local imports."""
+
+    return collect_enabled_root_worker_ids(state)
+
+
+def _build_default_group_thread(
+    worker_ids: list[str],
+    *,
+    user_id: str,
+) -> dict[str, Any]:
+    """构建默认群聊线程数据，包含所有顶层 Worker Agent。"""
+    thread = WorkerChatThread(
+        thread_id=DEFAULT_GROUP_THREAD_ID,
+        thread_type=ChatThreadType.ORGANIZATION_GROUP,
+        participants=(
+            ChatParticipantRef(ChatParticipantKind.USER, user_id),
+            ChatParticipantRef(ChatParticipantKind.MAIN_AGENT, MAIN_AGENT_ID),
+            *(
+                ChatParticipantRef(ChatParticipantKind.WORKER, worker_id)
+                for worker_id in worker_ids
+            ),
+        ),
+        title="默认群聊",
+        created_at=_now_iso(),
+        updated_at=_now_iso(),
+        main_agent_visible=True,
+        audit_summary=f"默认群聊，包含 {len(worker_ids)} 个启用的 Worker Agent。",
+    )
+    data = chat_thread_to_dict(thread)
+    data.update(
+        {
+            "status": "active",
+            "org_node_id": "root",
+            "binding_id": "root-default-group",
+            "last_summary": f"默认群聊，包含 {len(worker_ids)} 个启用的 Worker Agent。",
+        }
+    )
+    return data
+
+
+def _ensure_default_group_thread_in_state(
+    state: dict[str, Any],
+    *,
+    user_id: str,
+    dry_run: bool,
+) -> dict[str, Any]:
+    """在内存状态中创建或更新默认群聊。
+
+    与 _ensure_department_chat_in_state 逻辑一致：存在则更新参与者，
+    不存在则新建。不强制要求最少 Worker 数，允许空群聊。
+    """
+    thread_id = DEFAULT_GROUP_THREAD_ID
+    existing = _find_thread_by_id(state, thread_id)
+    worker_ids = _collect_root_workers(state)
+
+    if existing is not None:
+        thread = _build_default_group_thread(worker_ids, user_id=user_id)
+        thread["created_at"] = existing.get("created_at", thread["created_at"])
+        updated_status = "updated"
+        if not dry_run:
+            threads = [dict(t) for t in _sequence(state.get("threads"))]
+            replaced = False
+            for i, t in enumerate(threads):
+                if t.get("thread_id") == thread_id:
+                    threads[i] = thread
+                    replaced = True
+                    break
+            if not replaced:
+                threads.append(thread)
+            state["threads"] = threads
+        _log.info(
+            "Default group thread updated: thread_id=%s, worker_count=%s, dry_run=%s",
+            thread_id,
+            len(worker_ids),
+            dry_run,
+        )
+        return {
+            "action": "ensure_default_group_thread",
+            "target_id": thread_id,
+            "updated_status": updated_status,
+            "thread": _thread_response(thread),
+            "audit_ref": f"worker_agents/threads/{thread_id}",
+            "next_required_action": "open_chat_thread",
+        }
+
+    thread = _build_default_group_thread(worker_ids, user_id=user_id)
+    if not dry_run:
+        state["threads"] = [*_sequence(state.get("threads")), thread]
+    _log.info(
+        "Default group thread created: thread_id=%s, worker_count=%s, dry_run=%s",
+        thread_id,
+        len(worker_ids),
+        dry_run,
+    )
+    return {
+        "action": "ensure_default_group_thread",
+        "target_id": thread_id,
+        "updated_status": "validated" if dry_run else "created",
+        "thread": _thread_response(thread),
+        "audit_ref": f"worker_agents/threads/{thread_id}",
+        "next_required_action": "open_chat_thread",
+    }
+
+
+def ensure_default_group_thread(
+    *,
+    user_id: str = "user",
+    dry_run: bool = False,
+) -> dict[str, Any]:
+    """创建或返回默认群聊，包含组织树中所有已启用的 Worker Agent。
+
+    主Agent启动时调用此函数以确保默认群聊存在，通过此群聊分发任务。
+    """
+    validate_single_path_segment(user_id, "user_id")
+    state = load_management_state()
+    response = _ensure_default_group_thread_in_state(
+        state, user_id=user_id, dry_run=dry_run,
+    )
+    if response.get("updated_status") in ("created", "updated") and not dry_run:
+        state["source_updated_at"] = _now_iso()
+        write_management_state(state)
+    return _sanitize_mapping(response)
+
+
 def _find_thread_by_id(state: Mapping[str, Any], thread_id: str) -> dict[str, Any] | None:
     for thread in _sequence(state.get("threads")):
         if thread.get("thread_id") == thread_id:
@@ -2048,11 +2179,12 @@ def _build_outbound_message(
     *,
     thread_id: str,
     sender_id: str,
+    sender_kind: str,
     text: str,
     message_type: str,
     target_ids: tuple[str, ...],
 ) -> WorkerMessageEnvelope:
-    sender = ChatParticipantRef(ChatParticipantKind.USER, sender_id)
+    sender = ChatParticipantRef(ChatParticipantKind(sender_kind), sender_id)
     participant_refs = tuple(
         ChatParticipantRef(ChatParticipantKind.WORKER, target_id)
         for target_id in target_ids
