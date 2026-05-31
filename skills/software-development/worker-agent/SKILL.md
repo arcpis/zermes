@@ -1,6 +1,6 @@
 ---
 name: worker-agent
-description: "Execute WorkerAgent organization changes end-to-end. Use when users ask to create, delete, merge, archive, or restructure workers, departments, teams, or reporting relationships; query current state, draft proposals, auto-approve safe changes, apply them, verify results, and only stop for user confirmation on high-risk operations."
+description: "WorkerAgent organization operations: create, delete, merge, archive workers/departments, update worker profiles, query org state. Load for any worker-agent or organization-structure task — renaming, restructuring, membership changes, status queries, or approval handling."
 license: MIT
 metadata:
   hermes:
