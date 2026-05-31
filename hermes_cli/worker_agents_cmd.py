@@ -113,6 +113,17 @@ def add_worker_agents_parser(subparsers: argparse._SubParsersAction) -> None:
     apply_draft.add_argument("--active-task-ref", action="append", default=[])
     apply_draft.add_argument("--reason", default="")
 
+    worker_update = _action_command(commands, "worker-update", _worker_update)
+    worker_update.add_argument("worker_id")
+    worker_update.add_argument("--display-name")
+    worker_update.add_argument("--description")
+    worker_update.add_argument("--role")
+    worker_update.add_argument("--responsibilities")
+    worker_update.add_argument("--allowed-tools")
+    worker_update.add_argument("--approval-required-tools")
+    worker_update.add_argument("--allowed-skills")
+    worker_update.add_argument("--default-model")
+
 
 def cmd_worker_agents(args: argparse.Namespace) -> None:
     if not getattr(args, "worker_agents_command", None):
@@ -301,6 +312,21 @@ def _evolution_apply_draft(args: argparse.Namespace) -> Any:
 
 def _import_dry_run(args: argparse.Namespace) -> Any:
     return product.get_import_dry_run(args.manifest)
+
+
+def _worker_update(args: argparse.Namespace) -> Any:
+    return product.update_worker_profile(
+        worker_id=args.worker_id,
+        display_name=args.display_name,
+        description=args.description,
+        role=args.role,
+        responsibilities=args.responsibilities,
+        allowed_tools=args.allowed_tools,
+        approval_required_tools=args.approval_required_tools,
+        allowed_skills=args.allowed_skills,
+        default_model=args.default_model,
+        dry_run=args.dry_run,
+    )
 
 
 def _print_result(args: argparse.Namespace, data: Any) -> None:

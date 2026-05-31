@@ -63,18 +63,45 @@ Inspect the draft output before any approval or apply step:
 
 ## Apply Command
 
-Apply executes an approved proposal and mutates managed state. Currently only `create_child_agent` drafts can be applied; other proposal kinds must be handled through the organization evolution executor directly.
+Apply executes an approved proposal and mutates managed state. All four proposal kinds are supported: `create_child_agent`, `delete_child_agent`, `merge_department`, and `archive_node`.
 
 ```bash
 zermes worker-agents evolution-apply-draft \
-  --proposal-kind create_child_agent \
+  --proposal-kind <TYPE> \
   --actor main-agent \
   --target-node <NODE_ID> \
   --requested-worker <WORKER_ID> \
+  --destination-node <DEST_ID> \
   --json
 ```
 
 Use the same operation parameters as the draft. Add `--dry-run` to validate execution readiness without mutation. The `--reason` flag is optional and records the business justification in the audit log.
+
+Kind-specific requirements:
+
+- `create_child_agent`: `--requested-worker` is required.
+- `delete_child_agent`: removes the node and disables all member workers.
+- `merge_department`: `--destination-node` is required; children and members are merged into the destination.
+- `archive_node`: sets lifecycle to `archived` and disables all member workers.
+
+## Worker Update Command
+
+Update a worker agent's profile (identity, skills, tools) and sync the management snapshot.
+
+```bash
+zermes worker-agents worker-update <WORKER_ID> \
+  --display-name "<name>" \
+  --description "<description>" \
+  --role "<role>" \
+  --responsibilities "<responsibilities>" \
+  --allowed-tools "<tools>" \
+  --approval-required-tools "<tools>" \
+  --allowed-skills "<skills>" \
+  --default-model "<model>" \
+  --json
+```
+
+All fields are optional; only provided fields are updated. Comma-separate multiple values for `--responsibilities`, `--allowed-tools`, `--approval-required-tools`, and `--allowed-skills`. Add `--dry-run` to validate without mutation.
 
 ## Approval Commands
 
@@ -197,3 +224,73 @@ zermes worker-agents chats --json
 ```
 
 Expected result: `qa-engineer` is visible under `engineering`, appears in worker listings, and any required chat bindings are materialized when the product flow supports them.
+
+## Additional Operation Examples
+
+### Delete a worker or department
+
+```bash
+zermes worker-agents evolution-draft \
+  --proposal-kind delete_child_agent \
+  --actor main-agent \
+  --target-node <NODE_ID> \
+  --asset-disposition-ref <REF> \
+  --reason "Remove deprecated department" \
+  --json
+
+zermes worker-agents evolution-apply-draft \
+  --proposal-kind delete_child_agent \
+  --actor main-agent \
+  --target-node <NODE_ID> \
+  --json
+```
+
+### Merge departments
+
+```bash
+zermes worker-agents evolution-draft \
+  --proposal-kind merge_department \
+  --actor main-agent \
+  --target-node <SOURCE_NODE> \
+  --destination-node <DEST_NODE> \
+  --rollback-plan-ref <REF> \
+  --reason "Consolidate into parent department" \
+  --json
+
+zermes worker-agents evolution-apply-draft \
+  --proposal-kind merge_department \
+  --actor main-agent \
+  --target-node <SOURCE_NODE> \
+  --destination-node <DEST_NODE> \
+  --json
+```
+
+### Archive a node
+
+```bash
+zermes worker-agents evolution-draft \
+  --proposal-kind archive_node \
+  --actor main-agent \
+  --target-node <NODE_ID> \
+  --active-task-ref <TASK_REF> \
+  --reason "Department no longer active" \
+  --json
+
+zermes worker-agents evolution-apply-draft \
+  --proposal-kind archive_node \
+  --actor main-agent \
+  --target-node <NODE_ID> \
+  --json
+```
+
+### Update a worker profile
+
+```bash
+zermes worker-agents worker-update <WORKER_ID> \
+  --display-name "Senior QA Engineer" \
+  --role "quality_engineer" \
+  --allowed-skills "testing,code-review" \
+  --json
+```
+
+Expected result: profile is updated and dashboard state is synced with new values.

@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 import logging
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable, Mapping
@@ -802,7 +802,7 @@ def draft_evolution_proposal(**kwargs: Any) -> dict[str, Any]:
 
 
 def apply_evolution_draft(**kwargs: Any) -> dict[str, Any]:
-    """Apply a safe no-blocker create-child draft to the management snapshot.
+    """Apply an approved evolution draft to the management snapshot.
 
     This is intentionally scoped to the low-sensitivity management state used by
     the current dashboard product surface. It does not mutate active organization
@@ -814,9 +814,72 @@ def apply_evolution_draft(**kwargs: Any) -> dict[str, Any]:
     draft_data = evolution_proposal_draft_to_dict(draft)
     if draft.blockers:
         raise ValueError("evolution draft has blockers: " + "; ".join(draft.blockers))
-    if draft.proposal_kind.value != "create_child_agent":
-        raise ValueError("only create_child_agent drafts can be applied to management state")
 
+    kind = draft.proposal_kind.value
+    actor_id = str(kwargs.get("actor_id", ""))
+    state = load_management_state()
+    now = _now_iso()
+
+    if kind == "create_child_agent":
+        target_id, department_chat = _apply_create_child_agent(state, kwargs, now)
+        action_label = "created"
+    elif kind == "delete_child_agent":
+        target_id = _apply_delete_child_agent(state, kwargs, now, actor_id)
+        department_chat = None
+        action_label = "deleted"
+    elif kind == "merge_department":
+        target_id = _apply_merge_department(state, kwargs, now)
+        department_chat = None
+        action_label = "merged"
+    elif kind == "archive_node":
+        target_id = _apply_archive_node(state, kwargs, now, actor_id)
+        department_chat = None
+        action_label = "archived"
+    else:
+        raise ValueError(f"unsupported proposal kind: {kind!r}")
+
+    state["source_revision"] = str(
+        _int_value(
+            _optional_mapping(state.get("organization_tree") or {}).get("revision", 0)
+        )
+    )
+    state["source_updated_at"] = now
+
+    if not dry_run:
+        write_management_state(state)
+
+    result = {
+        "action": "evolution_apply_draft",
+        "target_id": target_id,
+        "updated_status": "validated" if dry_run else action_label,
+        "summary": f"Validated {kind} draft for Worker Agents management state."
+        if dry_run
+        else f"Applied {kind} draft to Worker Agents management state.",
+        "draft": draft_data,
+        "overview": _sanitize_mapping(
+            dashboard_snapshot_to_dict(
+                build_dashboard_snapshot(
+                    DashboardDataSources(
+                        worker_records=_mapping(state.get("worker_records")),
+                        organization_tree=_optional_mapping(state.get("organization_tree")),
+                        department_summaries=_sequence(state.get("department_summaries")),
+                        health_summaries=_mapping(state.get("health_summaries")),
+                        policy_summaries=_string_mapping(state.get("policy_summaries")),
+                        source_revision=str(state.get("source_revision", "")),
+                        source_updated_at=_optional_str(state.get("source_updated_at")),
+                    )
+                )
+            )
+        ),
+    }
+    if department_chat is not None:
+        result["department_chat"] = department_chat
+    return _sanitize_mapping(result)
+
+
+def _apply_create_child_agent(
+    state: dict[str, Any], kwargs: dict[str, Any], now: str
+) -> tuple[str, dict[str, Any] | None]:
     requested_worker_id = kwargs.get("requested_worker_id")
     if not isinstance(requested_worker_id, str) or not requested_worker_id:
         raise ValueError("requested_worker_id is required")
@@ -824,12 +887,13 @@ def apply_evolution_draft(**kwargs: Any) -> dict[str, Any]:
     target_node_id = str(kwargs.get("target_node_id", ""))
     validate_single_path_segment(target_node_id, "target_node_id")
 
-    state = load_management_state()
     worker_records = dict(_mapping(state.get("worker_records")))
     if requested_worker_id in worker_records:
         raise ValueError(f"worker already exists in management state: {requested_worker_id!r}")
 
-    now = _now_iso()
+    reason = str(kwargs.get("reason", "") or "")
+    display_name = _display_name_from_id(requested_worker_id)
+
     organization_tree = _ensure_management_organization_tree(state, target_node_id, now)
     nodes = dict(_mapping(organization_tree.get("nodes")))
     target_node = _optional_mapping(nodes.get(target_node_id))
@@ -838,8 +902,6 @@ def apply_evolution_draft(**kwargs: Any) -> dict[str, Any]:
     if requested_worker_id in nodes:
         raise ValueError(f"organization node already exists: {requested_worker_id!r}")
 
-    reason = str(kwargs.get("reason", "") or "")
-    display_name = _display_name_from_id(requested_worker_id)
     child_node = {
         "org_node_id": requested_worker_id,
         "name": display_name,
@@ -896,43 +958,267 @@ def apply_evolution_draft(**kwargs: Any) -> dict[str, Any]:
         owner_worker_id=requested_worker_id,
         reason=reason,
     )
-    state["source_revision"] = str(revision)
-    state["source_updated_at"] = now
+
+    dry_run = bool(kwargs.get("dry_run", False))
     department_chat = _ensure_department_chat_in_state(
         state,
         org_node_id=target_node_id,
         user_id="user",
         dry_run=dry_run,
     )
+    return requested_worker_id, department_chat
+
+
+def _apply_delete_child_agent(
+    state: dict[str, Any], kwargs: dict[str, Any], now: str, actor_id: str
+) -> str:
+    target_node_id = str(kwargs.get("target_node_id", ""))
+    validate_single_path_segment(target_node_id, "target_node_id")
+    if target_node_id == "root":
+        raise ValueError("cannot delete the root node")
+
+    organization_tree = _ensure_management_organization_tree(state, target_node_id, now)
+    nodes = dict(_mapping(organization_tree.get("nodes")))
+    target_node = _optional_mapping(nodes.get(target_node_id))
+    if target_node is None:
+        raise ValueError(f"target organization node does not exist: {target_node_id!r}")
+
+    parent_id = _optional_str(target_node.get("parent_id"))
+    if parent_id and parent_id in nodes:
+        parent_node = dict(nodes[parent_id])
+        parent_children = list(_list_value(parent_node.get("child_ids")))
+        if target_node_id in parent_children:
+            parent_children.remove(target_node_id)
+        nodes[parent_id] = {**parent_node, "child_ids": parent_children}
+
+    del nodes[target_node_id]
+
+    worker_records = dict(_mapping(state.get("worker_records")))
+    for worker_id in _list_value(target_node.get("member_worker_ids")):
+        record = _optional_mapping(worker_records.get(worker_id))
+        if record is not None:
+            worker_records[worker_id] = {
+                **record,
+                "status": "disabled",
+                "updated_at": now,
+                "updated_by": actor_id,
+            }
+    state["worker_records"] = worker_records
+
+    revision = _int_value(organization_tree.get("revision", 0)) + 1
+    state["organization_tree"] = {
+        **organization_tree,
+        "revision": revision,
+        "updated_at": now,
+        "nodes": nodes,
+    }
+    return target_node_id
+
+
+def _apply_merge_department(
+    state: dict[str, Any], kwargs: dict[str, Any], now: str
+) -> str:
+    target_node_id = str(kwargs.get("target_node_id", ""))
+    destination_node_id = str(kwargs.get("destination_node_id", ""))
+    validate_single_path_segment(target_node_id, "target_node_id")
+    validate_single_path_segment(destination_node_id, "destination_node_id")
+    if target_node_id == destination_node_id:
+        raise ValueError("source and destination nodes must be different")
+
+    organization_tree = _ensure_management_organization_tree(state, target_node_id, now)
+    nodes = dict(_mapping(organization_tree.get("nodes")))
+    source_node = _optional_mapping(nodes.get(target_node_id))
+    dest_node = _optional_mapping(nodes.get(destination_node_id))
+    if source_node is None:
+        raise ValueError(f"source node does not exist: {target_node_id!r}")
+    if dest_node is None:
+        raise ValueError(f"destination node does not exist: {destination_node_id!r}")
+
+    source_children = list(_list_value(source_node.get("child_ids")))
+    dest_children = list(_list_value(dest_node.get("child_ids")))
+    for child_id in source_children:
+        if child_id not in dest_children:
+            dest_children.append(child_id)
+        if child_id in nodes:
+            nodes[child_id] = {**nodes[child_id], "parent_id": destination_node_id}
+    nodes[destination_node_id] = {**dest_node, "child_ids": dest_children}
+
+    source_members = list(_list_value(source_node.get("member_worker_ids")))
+    dest_members = list(_list_value(dest_node.get("member_worker_ids")))
+    for member_id in source_members:
+        if member_id not in dest_members:
+            dest_members.append(member_id)
+    nodes[destination_node_id] = {**nodes[destination_node_id], "member_worker_ids": dest_members}
+
+    parent_id = _optional_str(source_node.get("parent_id"))
+    if parent_id and parent_id in nodes:
+        parent_node = dict(nodes[parent_id])
+        parent_children = list(_list_value(parent_node.get("child_ids")))
+        if target_node_id in parent_children:
+            parent_children.remove(target_node_id)
+        nodes[parent_id] = {**parent_node, "child_ids": parent_children}
+
+    del nodes[target_node_id]
+
+    revision = _int_value(organization_tree.get("revision", 0)) + 1
+    state["organization_tree"] = {
+        **organization_tree,
+        "revision": revision,
+        "updated_at": now,
+        "nodes": nodes,
+    }
+    return destination_node_id
+
+
+def _apply_archive_node(
+    state: dict[str, Any], kwargs: dict[str, Any], now: str, actor_id: str
+) -> str:
+    target_node_id = str(kwargs.get("target_node_id", ""))
+    validate_single_path_segment(target_node_id, "target_node_id")
+
+    organization_tree = _ensure_management_organization_tree(state, target_node_id, now)
+    nodes = dict(_mapping(organization_tree.get("nodes")))
+    target_node = _optional_mapping(nodes.get(target_node_id))
+    if target_node is None:
+        raise ValueError(f"target organization node does not exist: {target_node_id!r}")
+
+    nodes[target_node_id] = {**target_node, "lifecycle": "archived"}
+
+    worker_records = dict(_mapping(state.get("worker_records")))
+    for worker_id in _list_value(target_node.get("member_worker_ids")):
+        record = _optional_mapping(worker_records.get(worker_id))
+        if record is not None:
+            worker_records[worker_id] = {
+                **record,
+                "status": "disabled",
+                "updated_at": now,
+                "updated_by": actor_id,
+            }
+    state["worker_records"] = worker_records
+
+    revision = _int_value(organization_tree.get("revision", 0)) + 1
+    state["organization_tree"] = {
+        **organization_tree,
+        "revision": revision,
+        "updated_at": now,
+        "nodes": nodes,
+    }
+    return target_node_id
+
+
+def update_worker_profile(**kwargs: Any) -> dict[str, Any]:
+    """Update an existing worker's profile fields and sync the management snapshot.
+
+    Supported fields: display_name, description, role, responsibilities,
+    allowed_tools, approval_required_tools, allowed_skills, default_model.
+    """
+
+    worker_id = str(kwargs.pop("worker_id", ""))
+    validate_single_path_segment(worker_id, "worker_id")
+    dry_run = bool(kwargs.pop("dry_run", False))
+
+    profile_store = WorkerAgentProfileStore()
+    try:
+        profile = profile_store.load_worker_profile(worker_id)
+    except Exception as exc:
+        raise ValueError(f"worker profile not found: {worker_id!r}") from exc
+
+    updated_fields: dict[str, Any] = {}
+
+    display_name = kwargs.get("display_name")
+    if isinstance(display_name, str) and display_name.strip():
+        profile = replace(profile, display_name=display_name.strip())
+        updated_fields["display_name"] = display_name.strip()
+
+    description = kwargs.get("description")
+    if isinstance(description, str) and description.strip():
+        profile = replace(profile, description=description.strip())
+        updated_fields["description"] = description.strip()
+
+    role = kwargs.get("role")
+    if isinstance(role, str) and role.strip():
+        profile = replace(profile, role=role.strip())
+        updated_fields["role"] = role.strip()
+
+    responsibilities = kwargs.get("responsibilities")
+    if isinstance(responsibilities, str) and responsibilities.strip():
+        items = tuple(r.strip() for r in responsibilities.split(",") if r.strip())
+        profile = replace(profile, responsibilities=items)
+        updated_fields["responsibilities"] = list(items)
+
+    allowed_tools = kwargs.get("allowed_tools")
+    if isinstance(allowed_tools, str) and allowed_tools.strip():
+        items = tuple(t.strip() for t in allowed_tools.split(",") if t.strip())
+        current_tools = profile.tools
+        profile = replace(profile, tools=replace(current_tools, allowed_tools=items))
+        updated_fields["allowed_tools"] = list(items)
+
+    approval_required_tools = kwargs.get("approval_required_tools")
+    if isinstance(approval_required_tools, str) and approval_required_tools.strip():
+        items = tuple(t.strip() for t in approval_required_tools.split(",") if t.strip())
+        current_tools = profile.tools
+        profile = replace(profile, tools=replace(current_tools, approval_required_tools=items))
+        updated_fields["approval_required_tools"] = list(items)
+
+    allowed_skills = kwargs.get("allowed_skills")
+    if isinstance(allowed_skills, str) and allowed_skills.strip():
+        items = tuple(s.strip() for s in allowed_skills.split(",") if s.strip())
+        current_skills = profile.skills
+        profile = replace(profile, skills=replace(current_skills, allowed_skill_ids=items))
+        updated_fields["allowed_skills"] = list(items)
+
+    default_model = kwargs.get("default_model")
+    if isinstance(default_model, str) and default_model.strip():
+        current_model = profile.model
+        profile = replace(profile, model=replace(current_model, default_model=default_model.strip()))
+        updated_fields["default_model"] = default_model.strip()
+
+    if not updated_fields:
+        return _sanitize_mapping({
+            "action": "update_worker_profile",
+            "worker_id": worker_id,
+            "updated_status": "no_changes",
+            "summary": "No fields to update.",
+        })
+
     if not dry_run:
-        write_management_state(state)
-    return _sanitize_mapping(
-        {
-            "action": "evolution_apply_draft",
-            "target_id": requested_worker_id,
-            "updated_status": "validated" if dry_run else "created",
-            "summary": "Validated create_child_agent draft for Worker Agents management state."
-            if dry_run
-            else "Applied create_child_agent draft to Worker Agents management state.",
-            "draft": draft_data,
-            "department_chat": department_chat,
-            "overview": _sanitize_mapping(
-                dashboard_snapshot_to_dict(
-                    build_dashboard_snapshot(
-                        DashboardDataSources(
-                            worker_records=_mapping(state.get("worker_records")),
-                            organization_tree=_optional_mapping(state.get("organization_tree")),
-                            department_summaries=_sequence(state.get("department_summaries")),
-                            health_summaries=_mapping(state.get("health_summaries")),
-                            policy_summaries=_string_mapping(state.get("policy_summaries")),
-                            source_revision=str(state.get("source_revision", "")),
-                            source_updated_at=_optional_str(state.get("source_updated_at")),
-                        )
-                    )
-                )
-            ),
-        }
-    )
+        profile_store.save_worker_profile(profile)
+        _sync_worker_record_to_management_state(worker_id, profile)
+
+    return _sanitize_mapping({
+        "action": "update_worker_profile",
+        "worker_id": worker_id,
+        "updated_status": "validated" if dry_run else "updated",
+        "updated_fields": updated_fields,
+        "summary": f"Validated profile update for {worker_id!r}."
+        if dry_run
+        else f"Updated profile for {worker_id!r}.",
+    })
+
+
+def _sync_worker_record_to_management_state(
+    worker_id: str, profile: WorkerAgentProfile
+) -> None:
+    state = load_management_state()
+    worker_records = dict(_mapping(state.get("worker_records")))
+    record = _optional_mapping(worker_records.get(worker_id))
+    if record is None:
+        return
+    now = _now_iso()
+    worker_records[worker_id] = {
+        **record,
+        "display_name": profile.display_name,
+        "description": profile.description,
+        "role": profile.role,
+        "responsibilities": list(profile.responsibilities),
+        "allowed_tools": list(profile.tools.allowed_tools),
+        "approval_required_tools": list(profile.tools.approval_required_tools),
+        "allowed_skills": list(profile.skills.allowed_skill_ids),
+        "default_model": profile.model.default_model,
+        "updated_at": now,
+    }
+    state["worker_records"] = worker_records
+    write_management_state(state)
 
 
 def get_evolution_execution(proposal_id: str) -> dict[str, Any]:
