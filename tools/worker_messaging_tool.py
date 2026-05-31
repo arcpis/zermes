@@ -40,9 +40,7 @@ from worker_agents.storage.safe_paths import validate_single_path_segment
 
 from tools.worker_task_state import (
     add_pending_task,
-    get_pending_task_summaries,
     load_read_cursor,
-    mark_task_completed,
     save_read_cursor,
 )
 
@@ -113,7 +111,9 @@ def _filter_new_messages(
                 found_last = True
             continue
         new_messages.append(msg)
-    return new_messages
+    # If the cursor points at a message that no longer exists, fall back to
+    # reading the current file rather than silently losing all future replies.
+    return new_messages if found_last else list(all_messages)
 
 
 def _find_worker_responses(
@@ -129,6 +129,24 @@ def _find_worker_responses(
             continue
         result.append(msg)
     return result
+
+
+def _pending_tasks_response() -> list[dict[str, Any]]:
+    from tools.worker_task_state import get_pending_tasks
+
+    return [
+        {
+            "task_id": task.task_id,
+            "thread_id": task.thread_id,
+            "dispatched_to": list(task.dispatched_to),
+            "task_summary": task.task_summary,
+            "dispatched_at": task.dispatched_at,
+            "status": task.status,
+            "dispatch_message_id": task.dispatch_message_id,
+        }
+        for task in get_pending_tasks()
+        if task.status == "pending"
+    ]
 
 
 def _messages_to_response_list(
@@ -151,12 +169,11 @@ def _auto_complete_tasks(
     thread_id: str,
     new_replies: list[WorkerMessageEnvelope],
 ) -> list[str]:
-    """Mark any pending tasks as completed when a Worker reply is detected.
+    """Mark matching pending tasks as completed from Worker mention replies.
 
-    Matches tasks by thread_id: any pending task in this thread is considered
-    completed when any Worker reply arrives.
-
-    Returns the list of task_ids that were completed.
+    A reply can complete only one pending task.  Matching is deliberately
+    conservative: the reply must come from the dispatched worker, and normal
+    chat chatter does not complete tasks.
     """
     if not new_replies:
         return []
@@ -164,10 +181,24 @@ def _auto_complete_tasks(
 
     state = load_task_state()
     completed_ids: list[str] = []
-    reply_message_ids = tuple(msg.message_id for msg in new_replies)
     updated_tasks: list = []
+    completed_task_ids: set[str] = set()
     for task in state.pending_tasks:
-        if task.status == "pending" and task.thread_id == thread_id:
+        matching_reply = next(
+            (
+                msg
+                for msg in new_replies
+                if msg.message_type == ChatMessageType.MENTION
+                and msg.thread_id == task.thread_id == thread_id
+                and task.task_id not in completed_task_ids
+                and (
+                    "all" in task.dispatched_to
+                    or msg.sender.participant_id in task.dispatched_to
+                )
+            ),
+            None,
+        )
+        if task.status == "pending" and matching_reply is not None:
             updated_tasks.append(
                 task.__class__(
                     task_id=task.task_id,
@@ -176,10 +207,15 @@ def _auto_complete_tasks(
                     task_summary=task.task_summary,
                     dispatched_at=task.dispatched_at,
                     status="completed",
-                    result_message_ids=reply_message_ids,
+                    result_message_ids=(matching_reply.message_id,),
+                    dispatch_message_id=task.dispatch_message_id,
+                    completed_by=matching_reply.sender.participant_id,
+                    completed_at=_now_iso(),
+                    completion_message_id=matching_reply.message_id,
                 )
             )
             completed_ids.append(task.task_id)
+            completed_task_ids.add(task.task_id)
         else:
             updated_tasks.append(task)
     state.pending_tasks = tuple(updated_tasks)
@@ -206,40 +242,73 @@ def _handle_send_worker_message(args: dict[str, Any]) -> str:
 
     if not text.strip():
         return json.dumps({"error": "text must not be empty"}, ensure_ascii=False)
+    try:
+        from hermes_cli.worker_agents_product import (
+            DEFAULT_GROUP_THREAD_ID as PRODUCT_DEFAULT_GROUP_THREAD_ID,
+            ensure_default_group_thread,
+            load_management_state,
+            send_chat_message,
+        )
 
-    message_id = _generate_message_id()
-    sender = ChatParticipantRef(ChatParticipantKind.MAIN_AGENT, MAIN_AGENT_ID)
-    participant_refs = tuple(
-        ChatParticipantRef(ChatParticipantKind.WORKER, wid)
-        for wid in mention_worker_ids
-    )
-    message_type = ChatMessageType.MENTION if mention_worker_ids else ChatMessageType.NORMAL
+        if thread_id == PRODUCT_DEFAULT_GROUP_THREAD_ID:
+            ensure_default_group_thread(user_id="user")
+        if mention_worker_ids:
+            state = load_management_state()
+            thread = next(
+                (
+                    item
+                    for item in state.get("threads", ())
+                    if isinstance(item, dict) and item.get("thread_id") == thread_id
+                ),
+                None,
+            )
+            participants = thread.get("participants", ()) if isinstance(thread, dict) else ()
+            worker_participants = {
+                item.get("participant_id")
+                for item in participants
+                if isinstance(item, dict)
+                and item.get("kind") == ChatParticipantKind.WORKER.value
+            }
+            missing = [
+                worker_id
+                for worker_id in mention_worker_ids
+                if worker_id not in worker_participants
+            ]
+            if missing:
+                raise ValueError(f"unknown worker mention target(s): {', '.join(missing)}")
+        route_result = send_chat_message(
+            thread_id=thread_id,
+            sender_id=MAIN_AGENT_ID,
+            sender_kind=ChatParticipantKind.MAIN_AGENT.value,
+            text=text,
+            message_type=ChatMessageType.MENTION.value
+            if mention_worker_ids
+            else ChatMessageType.NORMAL.value,
+            target_ids=mention_worker_ids,
+            target_kind=ChatParticipantKind.WORKER.value
+            if mention_worker_ids
+            else None,
+        )
+    except Exception as exc:
+        logger.warning("Worker message dispatch failed: %s", exc)
+        return json.dumps(
+            {
+                "status": "error",
+                "error": str(exc),
+            },
+            ensure_ascii=False,
+        )
 
-    envelope = WorkerMessageEnvelope(
-        message_id=message_id,
-        thread_id=thread_id,
-        sender=sender,
-        recipient_scope=ChatRecipientScope(
-            participant_refs=participant_refs,
-            include_entire_thread=True,
-        ),
-        message_type=message_type,
-        created_at=_now_iso(),
-        delivery_status=MessageDeliveryStatus.CREATED,
-        visibility=MessageVisibility.THREAD,
-        body_preview=text[:500],
-        audit_summary=f"Main agent dispatched task to {', '.join(mention_worker_ids) if mention_worker_ids else 'all workers'}.",
-    )
-
-    _append_thread_message(envelope)
+    audit_ref = str(route_result.get("audit_ref", ""))
+    message_id = audit_ref.rsplit("/", 1)[-1] if "/" in audit_ref else _generate_message_id()
 
     task_id = _generate_task_id()
-    dispatched_to = ",".join(mention_worker_ids) if mention_worker_ids else "all"
     add_pending_task(
         task_id=task_id,
         thread_id=thread_id,
-        dispatched_to=dispatched_to,
+        dispatched_to=mention_worker_ids if mention_worker_ids else ("all",),
         task_summary=text[:200],
+        dispatch_message_id=message_id,
     )
 
     return json.dumps(
@@ -249,6 +318,7 @@ def _handle_send_worker_message(args: dict[str, Any]) -> str:
             "task_id": task_id,
             "dispatched_to": list(mention_worker_ids) if mention_worker_ids else ["all"],
             "task_summary": text[:200],
+            "route": route_result,
         },
         ensure_ascii=False,
     )
@@ -274,13 +344,11 @@ def _handle_check_worker_replies(args: dict[str, Any]) -> str:
     if all_messages:
         save_read_cursor(thread_id, all_messages[-1].message_id)
 
-    pending = get_pending_task_summaries()
-
     return json.dumps(
         {
             "new_replies": _messages_to_response_list(worker_replies),
             "completed_tasks": completed_ids,
-            "pending_tasks": pending,
+            "pending_tasks": _pending_tasks_response(),
         },
         ensure_ascii=False,
     )
@@ -316,12 +384,11 @@ def _handle_wait_for_worker_reply(args: dict[str, Any]) -> str:
             completed_ids = _auto_complete_tasks(thread_id, worker_replies)
             if all_messages:
                 save_read_cursor(thread_id, all_messages[-1].message_id)
-            pending = get_pending_task_summaries()
             return json.dumps(
                 {
                     "new_replies": _messages_to_response_list(worker_replies),
                     "completed_tasks": completed_ids,
-                    "pending_tasks": pending,
+                    "pending_tasks": _pending_tasks_response(),
                 },
                 ensure_ascii=False,
             )
@@ -332,7 +399,7 @@ def _handle_wait_for_worker_reply(args: dict[str, Any]) -> str:
         {
             "new_replies": [],
             "completed_tasks": [],
-            "pending_tasks": get_pending_task_summaries(),
+            "pending_tasks": _pending_tasks_response(),
             "note": f"No Worker reply received within {timeout_seconds}s timeout.",
         },
         ensure_ascii=False,

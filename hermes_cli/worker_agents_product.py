@@ -507,6 +507,7 @@ def send_chat_message(
     sender_id: str,
     text: str,
     message_type: str = "normal",
+    sender_kind: str = "user",
     target_ids: Iterable[str] = (),
     target_kind: str | None = None,
     target_id: str | None = None,
@@ -523,9 +524,10 @@ def send_chat_message(
     message = _build_outbound_message(
         thread_id=thread_id,
         sender_id=sender_id,
+        sender_kind=sender_kind,
         text=text,
         message_type=message_type,
-        target_ids=tuple(target_ids) if message_type == "normal" else (),
+        target_ids=tuple(target_ids),
     )
     _log.info(
         "Worker agents chat message received: message_id=%s, thread_id=%s, chat_kind=%s, sender_id=%s, message_type=%s, text=%r",
@@ -2203,11 +2205,12 @@ def _build_outbound_message(
     *,
     thread_id: str,
     sender_id: str,
+    sender_kind: str,
     text: str,
     message_type: str,
     target_ids: tuple[str, ...],
 ) -> WorkerMessageEnvelope:
-    sender = ChatParticipantRef(ChatParticipantKind.USER, sender_id)
+    sender = ChatParticipantRef(ChatParticipantKind(sender_kind), sender_id)
     participant_refs = tuple(
         ChatParticipantRef(ChatParticipantKind.WORKER, target_id)
         for target_id in target_ids
