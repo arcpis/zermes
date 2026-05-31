@@ -12,6 +12,7 @@ from worker_agents.message_router import (
     MessageVisibility,
     WorkerMessageEnvelope,
 )
+from worker_agents.runtime_contract import RuntimeResult, RuntimeState, RuntimeType
 
 
 def _worker(worker_id: str, *, status: str = "enabled") -> dict:
@@ -88,8 +89,26 @@ def _append_worker_reply(thread_id: str, worker_id: str, text: str, message_id: 
     )
 
 
-def test_send_worker_message_routes_through_default_group_and_records_task():
+def _runtime_reply(request):
+    return RuntimeResult(
+        request_id=request.request_id,
+        task_id=request.task_id,
+        worker_id=request.worker_id,
+        runtime_type=RuntimeType.INTERNAL_WORKER,
+        final_state=RuntimeState.SUCCEEDED,
+        started_at=request.created_at,
+        completed_at="2026-05-31T00:00:01Z",
+        public_message=f"{request.worker_id} accepted the task.",
+    )
+
+
+def test_send_worker_message_routes_through_default_group_and_records_task(monkeypatch):
     product.write_management_state_for_tests(_state())
+    monkeypatch.setattr(
+        product,
+        "build_worker_runtime_reply_handler",
+        lambda: _runtime_reply,
+    )
 
     result = json.loads(
         messaging._handle_send_worker_message(
@@ -114,11 +133,13 @@ def test_send_worker_message_routes_through_default_group_and_records_task():
         management["mentions"][0]["resolved_recipient"]["participant_id"]
         == "worker-a"
     )
+    assert result["route"]["audit"]["runtime_dispatches"][0]["target_worker_id"] == "worker-a"
 
     messages = messaging._read_thread_messages(product.DEFAULT_GROUP_THREAD_ID)
     assert messages[0].sender.kind == ChatParticipantKind.MAIN_AGENT
     assert messages[0].sender.participant_id == "zermes_main_agent"
     assert messages[0].body_preview == "Please implement the login page."
+    assert messages[1].body_preview == "worker-a accepted the task."
 
     task = task_state.get_pending_tasks()[0]
     assert task.dispatch_message_id == result["message_id"]
@@ -142,8 +163,13 @@ def test_send_worker_message_rejects_unknown_worker_without_pending_task():
     assert task_state.get_pending_tasks() == ()
 
 
-def test_check_worker_replies_completes_only_matching_worker_task():
+def test_check_worker_replies_completes_only_matching_worker_task(monkeypatch):
     product.write_management_state_for_tests(_state())
+    monkeypatch.setattr(
+        product,
+        "build_worker_runtime_reply_handler",
+        lambda: (lambda _request: None),
+    )
     first = json.loads(
         messaging._handle_send_worker_message(
             {"text": "Task for A", "mention_worker_ids": ["worker-a"]}
@@ -173,8 +199,13 @@ def test_check_worker_replies_completes_only_matching_worker_task():
     assert [task["task_id"] for task in result["pending_tasks"]] == [second["task_id"]]
 
 
-def test_check_worker_replies_does_not_complete_on_normal_worker_message():
+def test_check_worker_replies_does_not_complete_on_normal_worker_message(monkeypatch):
     product.write_management_state_for_tests(_state())
+    monkeypatch.setattr(
+        product,
+        "build_worker_runtime_reply_handler",
+        lambda: (lambda _request: None),
+    )
     sent = json.loads(
         messaging._handle_send_worker_message(
             {"text": "Task for A", "mention_worker_ids": ["worker-a"]}

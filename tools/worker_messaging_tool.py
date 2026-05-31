@@ -245,6 +245,7 @@ def _handle_send_worker_message(args: dict[str, Any]) -> str:
     try:
         from hermes_cli.worker_agents_product import (
             DEFAULT_GROUP_THREAD_ID as PRODUCT_DEFAULT_GROUP_THREAD_ID,
+            build_worker_runtime_reply_handler,
             ensure_default_group_thread,
             load_management_state,
             send_chat_message,
@@ -288,6 +289,10 @@ def _handle_send_worker_message(args: dict[str, Any]) -> str:
             target_kind=ChatParticipantKind.WORKER.value
             if mention_worker_ids
             else None,
+            # Reuse the same runtime bridge as the Worker Agents CLI/API so a
+            # main-agent dispatch is an executable Worker request, not just a
+            # low-level append to the shared chat log.
+            runtime_reply_handler=build_worker_runtime_reply_handler(),
         )
     except Exception as exc:
         logger.warning("Worker message dispatch failed: %s", exc)
