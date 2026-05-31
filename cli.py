@@ -5013,7 +5013,7 @@ class HermesCLI:
             self._worker_messaging_enabled()
             and slash_command in {"/new", "/reset", "/clear"}
         ):
-            return f"{description} [disabled: single-session worker messaging mode]"
+            return f"{description} [disabled in worker mode; use /delete-context]"
         return description
 
     def show_help(self):
@@ -5500,6 +5500,35 @@ class HermesCLI:
                 print(f"(^_^)v New session started: {title}")
             else:
                 print("(^_^)v New session started!")
+
+    def delete_context(self, silent: bool = False) -> None:
+        """Delete chat context and DB messages without rotating the current session."""
+
+        self.conversation_history = []
+        self._pending_title = None
+        self._resumed = False
+
+        if self._session_db:
+            self._session_db.clear_messages(self.session_id)
+
+        if self.agent:
+            self.agent.reset_session_state()
+            if hasattr(self.agent, "_last_flushed_db_idx"):
+                self.agent._last_flushed_db_idx = 0
+            if hasattr(self.agent, "_todo_store"):
+                try:
+                    from tools.todo_tool import TodoStore
+                    self.agent._todo_store = TodoStore()
+                except Exception:
+                    pass
+            if hasattr(self.agent, "_invalidate_system_prompt"):
+                self.agent._invalidate_system_prompt()
+
+        if not silent:
+            if self._worker_messaging_enabled():
+                _cprint("  Chat context deleted. Worker tasks and reply cursors were preserved.")
+            else:
+                _cprint("  Chat context deleted. Current session was kept.")
 
     def _handle_resume_command(self, cmd_original: str) -> None:
         """Handle /resume <session_id_or_title> — switch to a previous session mid-conversation."""
@@ -6868,6 +6897,8 @@ class HermesCLI:
                     self._console_print(f"[dim {_tip_color}]✦ Tip: {_tip}[/]")
                 except Exception:
                     pass
+        elif canonical == "delete-context":
+            self.delete_context()
         elif canonical == "history":
             self.show_history()
         elif canonical == "title":

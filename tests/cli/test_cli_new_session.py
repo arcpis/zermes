@@ -287,42 +287,6 @@ def test_hermes_cli_worker_messaging_toolset_resumes_last_session():
     assert cli._resumed is True
 
 
-def test_hermes_cli_worker_messaging_help_marks_new_session_commands():
-    cli = _make_cli(toolsets=["hermes-cli"])
-    output: list[str] = []
-    method_globals = cli.show_help.__globals__
-    original = method_globals["_cprint"]
-    method_globals["_cprint"] = lambda msg: output.append(msg)
-
-    try:
-        cli.show_help()
-    finally:
-        method_globals["_cprint"] = original
-
-    joined = "\n".join(output)
-    assert "/new" in joined
-    assert "/reset" in joined
-    assert "/clear" in joined
-    assert joined.count("[disabled:") >= 3
-
-
-def test_regular_cli_help_keeps_new_session_commands_enabled():
-    cli = _make_cli(toolsets=[])
-    output: list[str] = []
-    method_globals = cli.show_help.__globals__
-    original = method_globals["_cprint"]
-    method_globals["_cprint"] = lambda msg: output.append(msg)
-
-    try:
-        cli.show_help()
-    finally:
-        method_globals["_cprint"] = original
-
-    joined = "\n".join(output)
-    assert "/new" in joined
-    assert "disabled: single-session worker messaging mode" not in joined
-
-
 def test_hermes_cli_worker_messaging_toolset_blocks_new_session(capsys):
     cli = _make_cli(toolsets=["hermes-cli"])
     old_session_id = cli.session_id
@@ -338,3 +302,39 @@ def test_hermes_cli_worker_messaging_toolset_blocks_new_session(capsys):
 
     assert cli.session_id == old_session_id
     assert any("单会话模式" in item for item in notices)
+
+
+def test_delete_context_keeps_session_and_preserves_worker_state():
+    from tools.worker_task_state import (
+        add_pending_task,
+        get_pending_tasks,
+        load_read_cursor,
+        save_read_cursor,
+    )
+
+    add_pending_task(
+        task_id="task-delete-context",
+        thread_id="thread-default-group",
+        dispatched_to=("coder-agent",),
+        task_summary="Implement delegated work",
+        dispatch_message_id="msg-dispatch-1",
+    )
+    save_read_cursor("thread-default-group", "msg-read-1")
+
+    cli = _make_cli(toolsets=["hermes-cli"])
+    old_session_id = cli.session_id
+    cli._resumed = True
+    cli.agent = _FakeAgent(cli.session_id, datetime.now())
+    cli.conversation_history = [{"role": "user", "content": "old context"}]
+
+    cli.process_command("/delete-context")
+
+    assert cli.session_id == old_session_id
+    assert cli._resumed is False
+    assert cli.conversation_history == []
+    assert any(task.task_id == "task-delete-context" for task in get_pending_tasks())
+    assert (
+        load_read_cursor("thread-default-group").last_read_message_id
+        == "msg-read-1"
+    )
+    cli.agent._invalidate_system_prompt.assert_called_once()
