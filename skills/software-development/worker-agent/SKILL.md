@@ -1,5 +1,5 @@
 ---
-name: worker-agent-organization-planner
+name: worker-agent
 description: "Execute WorkerAgent organization changes end-to-end. Use when users ask to create, delete, merge, archive, or restructure workers, departments, teams, or reporting relationships; query current state, draft proposals, auto-approve safe changes, apply them, verify results, and only stop for user confirmation on high-risk operations."
 license: MIT
 metadata:

@@ -612,6 +612,12 @@ terminal(command="tmux new-session -d -s resumed 'hermes --resume 20260225_14305
 
 ---
 
+## Worker Agents
+
+For managing worker agents, departments, and organization structure (create, delete, merge, archive, restructure workers/departments/teams, or query reporting relationships), load the `worker-agent` skill with `skill_view(name='worker-agent')`. This skill uses the `zermes worker-agents` CLI to execute organization changes end-to-end with proposal-first workflows and approval gating.
+
+---
+
 ## Durable & Background Systems
 
 Four systems run alongside the main conversation loop. Quick reference

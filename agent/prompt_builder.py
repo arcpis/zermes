@@ -144,7 +144,10 @@ DEFAULT_AGENT_IDENTITY = (
 HERMES_AGENT_HELP_GUIDANCE = (
     "If the user asks about configuring, setting up, or using Hermes Agent "
     "itself, load the `hermes-agent` skill with skill_view(name='hermes-agent') "
-    "before answering. Docs: https://hermes-agent.nousresearch.com/docs"
+    "before answering. Docs: https://hermes-agent.nousresearch.com/docs\n"
+    "Exception: for worker agent management (creating, deleting, reorganizing "
+    "workers, departments, teams, or reporting relationships), load the "
+    "`worker-agent` skill instead."
 )
 
 MEMORY_GUIDANCE = (
@@ -1194,6 +1197,9 @@ def build_skills_system_prompt(
             "skills, voice, gateway, plugins, or any feature — load the `hermes-agent` skill "
             "first. It has the actual commands (e.g. `hermes config set …`, `hermes tools`, "
             "`hermes setup`) so you don't have to guess or invent workarounds.\n"
+            "After loading `hermes-agent`, still scan the full skill list above — "
+            "specialized skills like `worker-agent` cover domain-specific workflows "
+            "that `hermes-agent` does not. Load every matching skill, not just the first one.\n"
             "If a skill has issues, fix it with skill_manage(action='patch').\n"
             "After difficult/iterative tasks, offer to save as a skill. "
             "If a skill you loaded was missing steps, had wrong commands, or needed "
