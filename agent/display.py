@@ -1014,6 +1014,14 @@ def get_cute_tool_message(
         thread_id = args.get("thread_id", "thread-default-group")
         thread_short = thread_id.replace("thread-", "") if thread_id.startswith("thread-") else thread_id
         mentions = args.get("mention_worker_ids", [])
+        if isinstance(mentions, str):
+            try:
+                import json as _json
+                mentions = _json.loads(mentions)
+            except Exception:
+                mentions = [mentions] if mentions else []
+        if not isinstance(mentions, (list, tuple)):
+            mentions = [mentions] if mentions else []
         text = _trunc(args.get("text", ""), 30)
         if mentions:
             targets = ", ".join(str(m) for m in mentions[:3])
@@ -1028,6 +1036,14 @@ def get_cute_tool_message(
         thread_id = args.get("thread_id", "thread-default-group")
         thread_short = thread_id.replace("thread-", "") if thread_id.startswith("thread-") else thread_id
         worker_ids = args.get("worker_ids", [])
+        if isinstance(worker_ids, str):
+            try:
+                import json as _json
+                worker_ids = _json.loads(worker_ids)
+            except Exception:
+                worker_ids = [worker_ids] if worker_ids else []
+        if not isinstance(worker_ids, (list, tuple)):
+            worker_ids = [worker_ids] if worker_ids else []
         timeout = args.get("timeout_seconds", 300)
         if worker_ids:
             targets = ", ".join(str(w) for w in worker_ids[:3])
