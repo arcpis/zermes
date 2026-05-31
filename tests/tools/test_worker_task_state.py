@@ -64,3 +64,6 @@ def test_read_cursor_round_trips():
         state_mod.load_read_cursor("thread-default-group").last_read_message_id
         == "msg-1"
     )
+    raw = json.loads(state_mod._cursor_path().read_text(encoding="utf-8"))
+    assert raw["schema_version"] == state_mod.TASK_DISPATCH_STATE_SCHEMA_VERSION
+    assert raw["cursors"]["thread-default-group"]["last_read_message_id"] == "msg-1"

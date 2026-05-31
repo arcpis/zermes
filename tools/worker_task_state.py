@@ -18,7 +18,9 @@ from pathlib import Path
 from typing import Optional
 
 from hermes_constants import get_hermes_home
+from utils import atomic_json_write
 
+TASK_DISPATCH_STATE_SCHEMA_VERSION = 1
 _STATE_DIR_NAME = "state"
 _TASK_STATE_FILE = "task_dispatch_state.json"
 _CURSOR_FILE = "last_read_cursors.json"
@@ -86,7 +88,10 @@ class TaskDispatchState:
     pending_tasks: tuple[PendingTask, ...] = ()
 
     def to_dict(self) -> dict:
-        return {"pending_tasks": [t.to_dict() for t in self.pending_tasks]}
+        return {
+            "schema_version": TASK_DISPATCH_STATE_SCHEMA_VERSION,
+            "pending_tasks": [t.to_dict() for t in self.pending_tasks],
+        }
 
     @classmethod
     def from_dict(cls, data: dict) -> TaskDispatchState:
@@ -132,10 +137,7 @@ def load_task_state() -> TaskDispatchState:
 def save_task_state(state: TaskDispatchState) -> None:
     """Persist the task dispatch state to disk."""
     _ensure_state_dir()
-    _task_state_path().write_text(
-        json.dumps(state.to_dict(), indent=2, ensure_ascii=False),
-        encoding="utf-8",
-    )
+    atomic_json_write(_task_state_path(), state.to_dict())
 
 
 def add_pending_task(
@@ -207,12 +209,17 @@ def load_read_cursors() -> dict[str, ReadCursor]:
         return {}
     try:
         raw = json.loads(path.read_text(encoding="utf-8"))
+        # Versioned files store cursor data under "cursors"; older files used
+        # the thread-id mapping directly.  Accept both to avoid losing state
+        # from already-running worker deployments.
+        cursor_map = raw.get("cursors", raw) if isinstance(raw, dict) else {}
         return {
             thread_id: ReadCursor(
                 thread_id=thread_id,
                 last_read_message_id=cursor.get("last_read_message_id"),
             )
-            for thread_id, cursor in raw.items()
+            for thread_id, cursor in cursor_map.items()
+            if isinstance(cursor, dict)
         }
     except (json.JSONDecodeError, KeyError):
         return {}
@@ -221,19 +228,18 @@ def load_read_cursors() -> dict[str, ReadCursor]:
 def save_read_cursors(cursors: dict[str, ReadCursor]) -> None:
     """Persist all thread read cursors to disk."""
     _ensure_state_dir()
-    _cursor_path().write_text(
-        json.dumps(
-            {
+    atomic_json_write(
+        _cursor_path(),
+        {
+            "schema_version": TASK_DISPATCH_STATE_SCHEMA_VERSION,
+            "cursors": {
                 thread_id: {
                     "thread_id": c.thread_id,
                     "last_read_message_id": c.last_read_message_id,
                 }
                 for thread_id, c in cursors.items()
             },
-            indent=2,
-            ensure_ascii=False,
-        ),
-        encoding="utf-8",
+        },
     )
 
 
