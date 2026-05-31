@@ -1414,6 +1414,8 @@ def build_evolution_proposal_draft(
     elif kind == EvolutionProposalKind.ARCHIVE_NODE:
         if wizard_input.active_task_refs:
             blockers.append("active tasks must finish before archiving a node")
+        risks.append(_evolution_risk("destructive_change", "Archiving disables member workers", wizard_input.target_node_id))
+        user_approval_required = True
     elif kind == EvolutionProposalKind.CREATE_CHILD_AGENT:
         if not wizard_input.requested_worker_id:
             blockers.append("requested worker id is required for child agent creation")

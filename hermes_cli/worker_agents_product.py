@@ -1075,9 +1075,15 @@ def _apply_merge_department(
 
     source_children = list(_list_value(source_node.get("child_ids")))
     dest_children = list(_list_value(dest_node.get("child_ids")))
+    conflicting_child_ids = [c for c in source_children if c in dest_children]
+    if conflicting_child_ids:
+        raise ValueError(
+            f"source and destination share child nodes that would collide: "
+            f"{', '.join(conflicting_child_ids)}. "
+            f"Reassign or delete conflicting children before merging."
+        )
     for child_id in source_children:
-        if child_id not in dest_children:
-            dest_children.append(child_id)
+        dest_children.append(child_id)
         if child_id in nodes:
             nodes[child_id] = {**nodes[child_id], "parent_id": destination_node_id}
     nodes[destination_node_id] = {**dest_node, "child_ids": dest_children}
@@ -1098,6 +1104,26 @@ def _apply_merge_department(
         nodes[parent_id] = {**parent_node, "child_ids": parent_children}
 
     del nodes[target_node_id]
+
+    worker_records = dict(_mapping(state.get("worker_records")))
+    for member_id in source_members:
+        record = _optional_mapping(worker_records.get(member_id))
+        if record is not None:
+            existing_depts = list(
+                _list_value(record.get("metadata", {}).get("department_ids", []))
+            )
+            if target_node_id in existing_depts:
+                existing_depts.remove(target_node_id)
+            if destination_node_id not in existing_depts:
+                existing_depts.append(destination_node_id)
+            existing_metadata = dict(record.get("metadata", {}))
+            existing_metadata["department_ids"] = existing_depts
+            worker_records[member_id] = {
+                **record,
+                "metadata": existing_metadata,
+                "updated_at": now,
+            }
+    state["worker_records"] = worker_records
 
     revision = _int_value(organization_tree.get("revision", 0)) + 1
     state["organization_tree"] = {
@@ -1128,6 +1154,16 @@ def _apply_archive_node(
         record = _optional_mapping(worker_records.get(worker_id))
         if record is not None:
             worker_records[worker_id] = {
+                **record,
+                "status": "disabled",
+                "updated_at": now,
+                "updated_by": actor_id,
+            }
+    individual_worker_id = _optional_str(target_node.get("individual_worker_id"))
+    if individual_worker_id:
+        record = _optional_mapping(worker_records.get(individual_worker_id))
+        if record is not None:
+            worker_records[individual_worker_id] = {
                 **record,
                 "status": "disabled",
                 "updated_at": now,
