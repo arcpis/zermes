@@ -263,6 +263,23 @@ CODE_MODIFICATION_TRIGGER_GUIDANCE = (
     "not to modify code."
 )
 
+# Worker Agent task dispatch guidance. Injected when the send_worker_message
+# tool is available in the current toolset, so the main agent knows how to
+# delegate to specialized worker agents via the default group chat.
+WORKER_AGENT_GUIDANCE = (
+    "# Worker Agent task dispatch\n"
+    "- You have access to a team of specialized Worker Agents. "
+    "Use them to delegate coding, analysis, and other domain-specific tasks.\n"
+    "- Use `send_worker_message` to dispatch tasks to workers via the default group chat. "
+    "Mention specific workers with `mention_worker_ids` to target them. "
+    "The task will be delivered asynchronously — you can continue other work while waiting.\n"
+    "- After dispatching, use `check_worker_replies` to check for completed results. "
+    "Use `wait_for_worker_reply` when you need to block until a specific worker responds.\n"
+    "- When no suitable worker exists for a task, handle it yourself.\n"
+    "- For simple conversations and general questions, respond directly without involving workers.\n"
+    "- Do not create new worker agents or modify the organization tree unless the user explicitly asks.\n"
+)
+
 TOOL_USE_ENFORCEMENT_GUIDANCE = (
     "# Tool-use enforcement\n"
     "You MUST use your tools to take action — do not describe what you would do "
@@ -983,6 +1000,62 @@ def _skill_should_show(
             return False
 
     return True
+
+
+def build_worker_agents_prompt() -> str:
+    from hermes_cli.worker_agents_product import (
+        load_management_state,
+        _collect_root_workers,
+        DEFAULT_GROUP_THREAD_ID,
+    )
+
+    try:
+        state = load_management_state()
+    except Exception:
+        return ""
+
+    worker_ids = _collect_root_workers(state)
+    if not worker_ids:
+        return ""
+
+    worker_records = state.get("worker_records", {})
+    if not isinstance(worker_records, dict):
+        return ""
+
+    lines = [
+        "# Available Worker Agents",
+        "",
+        "You are the main agent. You can dispatch tasks to the following "
+        "worker agents via the default group chat. Use `send_worker_message` "
+        f"with `thread_id=\"{DEFAULT_GROUP_THREAD_ID}\"` and mention the "
+        "target worker in `mention_worker_ids`.",
+        "",
+    ]
+
+    for worker_id in worker_ids:
+        record = worker_records.get(worker_id)
+        if not isinstance(record, dict):
+            continue
+        display_name = str(record.get("display_name", worker_id))
+        role = str(record.get("role", ""))
+        description = str(record.get("description", ""))
+        if description == worker_id:
+            description = ""
+
+        summary = f"- **{display_name}** (`{worker_id}`)"
+        if role:
+            summary += f" — {role}"
+        if description:
+            summary += f": {description}"
+        lines.append(summary)
+
+    lines.append("")
+    lines.append(
+        "For simple conversations and general questions, respond directly "
+        "without involving workers."
+    )
+
+    return "\n".join(lines)
 
 
 def build_skills_system_prompt(

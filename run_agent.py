@@ -148,6 +148,8 @@ from agent.prompt_builder import (
     HERMES_AGENT_HELP_GUIDANCE,
     KANBAN_GUIDANCE,
     CODE_MODIFICATION_TRIGGER_GUIDANCE,
+    WORKER_AGENT_GUIDANCE,
+    build_worker_agents_prompt,
     build_nous_subscription_prompt,
 )
 from agent.model_metadata import (
@@ -5327,6 +5329,11 @@ class AIAgent:
             # The approval planner is optional by toolset, so only teach the
             # model this routing rule when the tool can actually be called.
             prompt_parts.append(CODE_MODIFICATION_TRIGGER_GUIDANCE)
+        if "send_worker_message" in self.valid_tool_names:
+            prompt_parts.append(WORKER_AGENT_GUIDANCE)
+            _worker_prompt = build_worker_agents_prompt()
+            if _worker_prompt:
+                prompt_parts.append(_worker_prompt)
 
         # Computer-use (macOS) — goes in as its own block rather than being
         # merged into tool_guidance because the content is multi-paragraph.
