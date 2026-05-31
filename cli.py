@@ -1051,6 +1051,16 @@ def _run_state_db_auto_maintenance(session_db) -> None:
         logger.debug("state.db auto-maintenance skipped: %s", exc)
 
 
+def _try_resolve_last_session(source: str = "cli") -> Optional[str]:
+    try:
+        from hermes_state import SessionDB
+        db = SessionDB()
+        sessions = db.search_sessions(source=source, limit=1)
+        return sessions[0]["id"] if sessions else None
+    except Exception:
+        return None
+
+
 def _run_checkpoint_auto_maintenance() -> None:
     """Call ``checkpoint_manager.maybe_auto_prune_checkpoints`` using current config.
 
@@ -2491,6 +2501,15 @@ class HermesCLI:
         if resume:
             self.session_id = resume
             self._resumed = True
+        elif "worker_messaging" in (self.enabled_toolsets or ()):
+            _last_id = _try_resolve_last_session()
+            if _last_id:
+                self.session_id = _last_id
+                self._resumed = True
+            else:
+                timestamp_str = self.session_start.strftime("%Y%m%d_%H%M%S")
+                short_uuid = uuid.uuid4().hex[:6]
+                self.session_id = f"{timestamp_str}_{short_uuid}"
         else:
             timestamp_str = self.session_start.strftime("%Y%m%d_%H%M%S")
             short_uuid = uuid.uuid4().hex[:6]
@@ -5351,6 +5370,9 @@ class HermesCLI:
 
     def new_session(self, silent=False, title=None):
         """Start a fresh session with a new session ID and cleared agent state."""
+        if "worker_messaging" in (self.enabled_toolsets or ()):
+            _cprint(f"{_DIM}单会话模式，不支持创建新会话。当前会话将持续运行。{_RST}")
+            return
         if self.agent and self.conversation_history:
             # Trigger memory extraction on the old session before session_id rotates.
             self.agent.commit_memory_session(self.conversation_history)

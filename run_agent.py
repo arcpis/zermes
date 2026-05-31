@@ -1812,6 +1812,14 @@ class AIAgent:
         if session_id:
             # Use provided session ID (e.g., from CLI)
             self.session_id = session_id
+        elif "send_worker_message" in self.valid_tool_names:
+            _last_id = self._resolve_last_session_for_agent()
+            if _last_id:
+                self.session_id = _last_id
+            else:
+                timestamp_str = self.session_start.strftime("%Y%m%d_%H%M%S")
+                short_uuid = uuid.uuid4().hex[:6]
+                self.session_id = f"{timestamp_str}_{short_uuid}"
         else:
             # Generate a new session ID
             timestamp_str = self.session_start.strftime("%Y%m%d_%H%M%S")
@@ -2459,6 +2467,16 @@ class AIAgent:
         # Context engine reset (works for both built-in compressor and plugins)
         if hasattr(self, "context_compressor") and self.context_compressor:
             self.context_compressor.on_session_reset()
+
+    @staticmethod
+    def _resolve_last_session_for_agent(source: str = "cli") -> Optional[str]:
+        try:
+            from hermes_state import SessionDB
+            db = SessionDB()
+            sessions = db.search_sessions(source=source, limit=1)
+            return sessions[0]["id"] if sessions else None
+        except Exception:
+            return None
 
     def _ensure_lmstudio_runtime_loaded(self, config_context_length: Optional[int] = None) -> None:
         """
