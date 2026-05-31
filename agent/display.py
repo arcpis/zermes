@@ -826,6 +826,20 @@ def _detect_tool_failure(tool_name: str, result: str | None) -> tuple[bool, str]
             if data.get("success") is False and "exceed the limit" in data.get("error", ""):
                 return True, " [full]"
 
+    # Worker messaging tools return structured JSON with a top-level "status"
+    # field.  "dispatched" / "ok" are success; anything else (e.g. "error")
+    # is a real failure.  The generic heuristic below would false-positive on
+    # the nested route audit which contains field names like "failure_reason".
+    if tool_name in ("send_worker_message", "check_worker_replies", "wait_for_worker_reply"):
+        data = safe_json_loads(result)
+        if isinstance(data, dict):
+            status = str(data.get("status", "")).lower()
+            if status in ("dispatched", "ok"):
+                return False, ""
+            if status == "error" or data.get("error"):
+                return True, " [error]"
+        return False, ""
+
     # Generic heuristic for non-terminal tools
     # Multimodal tool results (dicts with _multimodal=True) are not strings —
     # treat them as successes since failures would be JSON-encoded strings.
