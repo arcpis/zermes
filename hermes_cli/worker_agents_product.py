@@ -59,6 +59,10 @@ from worker_agents.management import (
 from worker_agents.management.import_export import (
     export_package_manifest_to_dict,
 )
+from worker_agents.management.root_workers import (
+    DEFAULT_GROUP_THREAD_ID,
+    collect_enabled_root_worker_ids,
+)
 from worker_agents.message_broadcasts import (
     BroadcastImportance,
     BroadcastTarget,
@@ -135,8 +139,6 @@ FORBIDDEN_KEY_MARKERS = (
 )
 
 _log = logging.getLogger(__name__)
-
-DEFAULT_GROUP_THREAD_ID = "thread-default-group"
 
 
 @dataclass(frozen=True)
@@ -1882,37 +1884,9 @@ def _department_chat_skipped_response(org_node_id: str, reason: str) -> dict[str
 
 
 def _collect_root_workers(state: Mapping[str, Any]) -> list[str]:
-    """收集组织树中所有可用的已启用 Worker ID。
+    """Compatibility wrapper for older product tests and local imports."""
 
-    从 root 节点开始遍历组织树，收集 member_worker_ids 中直接引用的 Worker，
-    以及所有子节点关联的 Worker（leader、member、individual）。
-    返回去重后的已启用 Worker ID 列表。
-    """
-    organization_tree = _optional_mapping(state.get("organization_tree"))
-    if organization_tree is None:
-        return []
-    nodes = _mapping(organization_tree.get("nodes"))
-    root_node_id = str(organization_tree.get("root_node_id", "root"))
-    root_node = _optional_mapping(nodes.get(root_node_id))
-    if root_node is None:
-        return []
-    worker_records = _mapping(state.get("worker_records"))
-
-    collected: list[str] = []
-    for worker_id in _list_value(root_node.get("member_worker_ids")):
-        if isinstance(worker_id, str) and worker_id and _worker_is_enabled(worker_records.get(worker_id)):
-            collected.append(worker_id)
-    for child_id in _list_value(root_node.get("child_ids")):
-        if not isinstance(child_id, str):
-            continue
-        child = _optional_mapping(nodes.get(child_id))
-        if child is None:
-            continue
-        child_workers = _department_worker_ids(child, nodes)
-        for worker_id in child_workers:
-            if _worker_is_enabled(worker_records.get(worker_id)):
-                collected.append(worker_id)
-    return list(dict.fromkeys(collected))
+    return collect_enabled_root_worker_ids(state)
 
 
 def _build_default_group_thread(

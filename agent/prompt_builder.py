@@ -1003,18 +1003,18 @@ def _skill_should_show(
 
 
 def build_worker_agents_prompt() -> str:
-    from hermes_cli.worker_agents_product import (
-        load_management_state,
-        _collect_root_workers,
+    from worker_agents.management.root_workers import (
         DEFAULT_GROUP_THREAD_ID,
+        collect_enabled_root_worker_ids,
+        load_worker_management_state,
     )
 
     try:
-        state = load_management_state()
+        state = load_worker_management_state()
     except Exception:
         return ""
 
-    worker_ids = _collect_root_workers(state)
+    worker_ids = collect_enabled_root_worker_ids(state)
     if not worker_ids:
         return ""
 
