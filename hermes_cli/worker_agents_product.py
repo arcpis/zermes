@@ -979,31 +979,64 @@ def _apply_delete_child_agent(
     state: dict[str, Any], kwargs: dict[str, Any], now: str, actor_id: str
 ) -> str:
     target_node_id = str(kwargs.get("target_node_id", ""))
+    requested_worker_id = kwargs.get("requested_worker_id")
     validate_single_path_segment(target_node_id, "target_node_id")
     if target_node_id == "root":
         raise ValueError("cannot delete the root node")
 
     organization_tree = _ensure_management_organization_tree(state, target_node_id, now)
     nodes = dict(_mapping(organization_tree.get("nodes")))
-    target_node = _optional_mapping(nodes.get(target_node_id))
+
+    delete_node_id = target_node_id
+    if isinstance(requested_worker_id, str) and requested_worker_id:
+        validate_single_path_segment(requested_worker_id, "requested_worker_id")
+        if requested_worker_id in nodes:
+            requested_node = _optional_mapping(nodes.get(requested_worker_id))
+            if requested_node is not None:
+                requested_parent = _optional_str(requested_node.get("parent_id"))
+                if requested_parent == target_node_id:
+                    delete_node_id = requested_worker_id
+
+    if delete_node_id == "root":
+        raise ValueError("cannot delete the root node")
+
+    target_node = _optional_mapping(nodes.get(delete_node_id))
     if target_node is None:
-        raise ValueError(f"target organization node does not exist: {target_node_id!r}")
+        raise ValueError(f"target organization node does not exist: {delete_node_id!r}")
+
+    target_children = _list_value(target_node.get("child_ids"))
+    if target_children:
+        raise ValueError(
+            f"cannot delete node {delete_node_id!r} with active children: "
+            f"{', '.join(str(c) for c in target_children)}. "
+            f"Delete or reassign children first."
+        )
 
     parent_id = _optional_str(target_node.get("parent_id"))
     if parent_id and parent_id in nodes:
         parent_node = dict(nodes[parent_id])
         parent_children = list(_list_value(parent_node.get("child_ids")))
-        if target_node_id in parent_children:
-            parent_children.remove(target_node_id)
+        if delete_node_id in parent_children:
+            parent_children.remove(delete_node_id)
         nodes[parent_id] = {**parent_node, "child_ids": parent_children}
 
-    del nodes[target_node_id]
+    del nodes[delete_node_id]
 
     worker_records = dict(_mapping(state.get("worker_records")))
     for worker_id in _list_value(target_node.get("member_worker_ids")):
         record = _optional_mapping(worker_records.get(worker_id))
         if record is not None:
             worker_records[worker_id] = {
+                **record,
+                "status": "disabled",
+                "updated_at": now,
+                "updated_by": actor_id,
+            }
+    individual_worker_id = _optional_str(target_node.get("individual_worker_id"))
+    if individual_worker_id:
+        record = _optional_mapping(worker_records.get(individual_worker_id))
+        if record is not None:
+            worker_records[individual_worker_id] = {
                 **record,
                 "status": "disabled",
                 "updated_at": now,
@@ -1018,7 +1051,7 @@ def _apply_delete_child_agent(
         "updated_at": now,
         "nodes": nodes,
     }
-    return target_node_id
+    return delete_node_id
 
 
 def _apply_merge_department(

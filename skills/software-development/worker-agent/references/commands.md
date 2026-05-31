@@ -47,10 +47,10 @@ zermes worker-agents evolution-draft \
 
 Additional flags by proposal type:
 
-- `delete_child_agent`: `--asset-disposition-ref <ref>` is required.
+- `create_child_agent`: `--requested-worker <WORKER_ID>` is required. `--target-node` is the parent node under which the worker is created.
+- `delete_child_agent`: `--asset-disposition-ref <ref>` is required. `--target-node` is the parent department node. `--requested-worker <WORKER_ID>` is the child node to delete (the org node whose `org_node_id` matches the worker id). If `--requested-worker` is omitted, `--target-node` itself is deleted.
 - `merge_department`: `--destination-node <id>` and `--rollback-plan-ref <ref>` are required.
 - `archive_node`: `--active-task-ref <ref>` should be supplied if active tasks exist; the draft will block if any are unresolved.
-- `create_child_agent`: `--requested-worker <WORKER_ID>` is required.
 
 Inspect the draft output before any approval or apply step:
 
@@ -79,8 +79,8 @@ Use the same operation parameters as the draft. Add `--dry-run` to validate exec
 
 Kind-specific requirements:
 
-- `create_child_agent`: `--requested-worker` is required.
-- `delete_child_agent`: removes the node and disables all member workers.
+- `create_child_agent`: `--requested-worker` is required. `--target-node` is the parent.
+- `delete_child_agent`: removes the node and disables all member workers. `--target-node` is the parent department. `--requested-worker` identifies the child node to delete. If omitted, `--target-node` itself is deleted. Nodes with active children cannot be deleted.
 - `merge_department`: `--destination-node` is required; children and members are merged into the destination.
 - `archive_node`: sets lifecycle to `archived` and disables all member workers.
 
@@ -228,6 +228,28 @@ Expected result: `qa-engineer` is visible under `engineering`, appears in worker
 ## Additional Operation Examples
 
 ### Delete a worker or department
+
+Delete a specific child worker under a parent department:
+
+```bash
+zermes worker-agents evolution-draft \
+  --proposal-kind delete_child_agent \
+  --actor main-agent \
+  --target-node <PARENT_NODE_ID> \
+  --requested-worker <CHILD_WORKER_ID> \
+  --asset-disposition-ref <REF> \
+  --reason "Remove deprecated worker" \
+  --json
+
+zermes worker-agents evolution-apply-draft \
+  --proposal-kind delete_child_agent \
+  --actor main-agent \
+  --target-node <PARENT_NODE_ID> \
+  --requested-worker <CHILD_WORKER_ID> \
+  --json
+```
+
+Delete a department node directly (no `--requested-worker`):
 
 ```bash
 zermes worker-agents evolution-draft \

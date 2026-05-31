@@ -1401,7 +1401,8 @@ def build_evolution_proposal_draft(
     if kind == EvolutionProposalKind.DELETE_CHILD_AGENT:
         if not wizard_input.asset_disposition_ref:
             blockers.append("asset disposition plan is required before deleting a child agent")
-        risks.append(_evolution_risk("destructive_change", "Child agent deletion is destructive", wizard_input.target_node_id))
+        effective_target = wizard_input.requested_worker_id or wizard_input.target_node_id
+        risks.append(_evolution_risk("destructive_change", "Child agent deletion is destructive", effective_target))
         user_approval_required = True
     elif kind == EvolutionProposalKind.MERGE_DEPARTMENT:
         if not wizard_input.destination_node_id:
