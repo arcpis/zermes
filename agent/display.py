@@ -1010,6 +1010,29 @@ def get_cute_tool_message(
         if tasks and isinstance(tasks, list):
             return _wrap(f"┊ 🔀 delegate  {len(tasks)} parallel tasks  {dur}")
         return _wrap(f"┊ 🔀 delegate  {_trunc(args.get('goal', ''), 35)}  {dur}")
+    if tool_name == "send_worker_message":
+        thread_id = args.get("thread_id", "thread-default-group")
+        thread_short = thread_id.replace("thread-", "") if thread_id.startswith("thread-") else thread_id
+        mentions = args.get("mention_worker_ids", [])
+        text = _trunc(args.get("text", ""), 30)
+        if mentions:
+            targets = ", ".join(str(m) for m in mentions[:3])
+            extra = f" +{len(mentions)-3}" if len(mentions) > 3 else ""
+            return _wrap(f"┊ 📨 send_worker_message  [{thread_short}] -> {targets}{extra}: {text}  {dur}")
+        return _wrap(f"┊ 📨 send_worker_message  [{thread_short}] -> all: {text}  {dur}")
+    if tool_name == "check_worker_replies":
+        thread_id = args.get("thread_id", "thread-default-group")
+        thread_short = thread_id.replace("thread-", "") if thread_id.startswith("thread-") else thread_id
+        return _wrap(f"┊ 📬 check_worker_replies  [{thread_short}]  {dur}")
+    if tool_name == "wait_for_worker_reply":
+        thread_id = args.get("thread_id", "thread-default-group")
+        thread_short = thread_id.replace("thread-", "") if thread_id.startswith("thread-") else thread_id
+        worker_ids = args.get("worker_ids", [])
+        timeout = args.get("timeout_seconds", 300)
+        if worker_ids:
+            targets = ", ".join(str(w) for w in worker_ids[:3])
+            return _wrap(f"┊ ⏳ wait_for_worker_reply  [{thread_short}] {targets} ({timeout}s)  {dur}")
+        return _wrap(f"┊ ⏳ wait_for_worker_reply  [{thread_short}] any ({timeout}s)  {dur}")
 
     preview = build_tool_preview(tool_name, args) or ""
     return _wrap(f"┊ ⚡ {tool_name[:9]:9} {_trunc(preview, 35)}  {dur}")
