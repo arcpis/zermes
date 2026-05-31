@@ -135,7 +135,7 @@ def test_ensure_department_chat_uses_direct_child_leaders_without_child_members(
     assert "Direct members: platform-lead" in thread["last_summary"]
 
 
-def test_ensure_department_chat_reuses_existing_thread_without_overwrite():
+def test_ensure_department_chat_rebuilds_existing_thread_with_current_participants():
     existing_thread = {
         "thread_id": "dept-engineering",
         "thread_type": "organization_group",
@@ -168,8 +168,15 @@ def test_ensure_department_chat_reuses_existing_thread_without_overwrite():
 
     result = product.ensure_department_chat(org_node_id="engineering")
 
-    assert result["updated_status"] == "existing"
-    assert product.load_management_state()["threads"] == [existing_thread]
+    assert result["updated_status"] == "updated"
+    threads = product.load_management_state()["threads"]
+    assert len(threads) == 1
+    worker_participants = [
+        p["participant_id"]
+        for p in threads[0]["participants"]
+        if p["kind"] == "worker"
+    ]
+    assert worker_participants == ["engineering-lead", "backend"]
 
 
 def test_apply_evolution_draft_creates_parent_department_chat_side_effect():
@@ -196,6 +203,58 @@ def test_apply_evolution_draft_creates_parent_department_chat_side_effect():
     assert result["department_chat"]["updated_status"] == "created"
     threads = product.load_management_state()["threads"]
     assert [thread["thread_id"] for thread in threads] == ["dept-engineering"]
+
+
+def test_apply_evolution_draft_adds_new_worker_to_existing_department_chat():
+    existing_thread = {
+        "thread_id": "dept-engineering",
+        "thread_type": "organization_group",
+        "participants": [
+            {"kind": "user", "participant_id": "user"},
+            {"kind": "main_agent", "participant_id": "zermes_main_agent"},
+            {"kind": "worker", "participant_id": "engineering-lead"},
+            {"kind": "worker", "participant_id": "backend"},
+        ],
+        "title": "Engineering",
+        "status": "active",
+        "last_summary": "historical summary",
+    }
+    product.write_management_state_for_tests(
+        _state(
+            nodes={
+                "engineering": _department_node(
+                    "engineering",
+                    leader_worker_id="engineering-lead",
+                    member_worker_ids=["engineering-lead", "backend"],
+                )
+            },
+            workers={
+                "engineering-lead": _worker("engineering-lead"),
+                "backend": _worker("backend"),
+            },
+            threads=[existing_thread],
+        )
+    )
+
+    result = product.apply_evolution_draft(
+        proposal_kind="create_child_agent",
+        actor_id="user",
+        target_node_id="engineering",
+        requested_worker_id="platform-lead",
+        reason="Own platform reliability",
+    )
+
+    assert result["department_chat"]["updated_status"] == "updated"
+    threads = product.load_management_state()["threads"]
+    assert len(threads) == 1
+    worker_participants = [
+        p["participant_id"]
+        for p in threads[0]["participants"]
+        if p["kind"] == "worker"
+    ]
+    assert "engineering-lead" in worker_participants
+    assert "backend" in worker_participants
+    assert "platform-lead" in worker_participants
 
 
 def test_materialize_and_persist_threads_writes_thread_metadata(tmp_path):

@@ -321,7 +321,7 @@ def ensure_department_chat(
         user_id=user_id,
         dry_run=dry_run,
     )
-    if response.get("updated_status") == "created" and not dry_run:
+    if response.get("updated_status") in ("created", "updated") and not dry_run:
         state["source_updated_at"] = _now_iso()
         write_management_state(state)
     return _sanitize_mapping(response)
@@ -1324,16 +1324,27 @@ def _thread_contract_dict(thread: Mapping[str, Any]) -> dict[str, Any]:
 def _state_with_materialized_department_chats(state: Mapping[str, Any]) -> dict[str, Any]:
     result = dict(state)
     existing_threads = [dict(thread) for thread in _sequence(result.get("threads"))]
-    existing_ids = {str(thread.get("thread_id", "")) for thread in existing_threads}
-    materialized = [
-        thread
-        for thread in _materialized_department_threads(result)
-        if str(thread.get("thread_id", "")) not in existing_ids
+    thread_order = [str(thread.get("thread_id", "")) for thread in existing_threads]
+    threads_by_id = {
+        str(thread.get("thread_id", "")): thread
+        for thread in existing_threads
+        if str(thread.get("thread_id", ""))
+    }
+    for thread in _materialized_department_threads(result):
+        thread_id = str(thread.get("thread_id", ""))
+        if not thread_id:
+            continue
+        existing = threads_by_id.get(thread_id)
+        if existing is not None:
+            thread["created_at"] = existing.get("created_at", thread.get("created_at", ""))
+        if thread_id not in thread_order:
+            thread_order.append(thread_id)
+        threads_by_id[thread_id] = thread
+    result["threads"] = [
+        threads_by_id[thread_id]
+        for thread_id in thread_order
+        if thread_id in threads_by_id
     ]
-    if materialized:
-        result["threads"] = [*existing_threads, *materialized]
-    else:
-        result["threads"] = existing_threads
     return result
 
 
@@ -1491,16 +1502,43 @@ def _ensure_department_chat_in_state(
     thread_id = _department_thread_id(org_node_id)
     existing = _find_thread_by_id(state, thread_id)
     if existing is not None:
+        worker_records = _mapping(state.get("worker_records"))
+        worker_ids = _department_worker_ids(node, nodes)
+        enabled_workers = [
+            worker_id
+            for worker_id in worker_ids
+            if _worker_is_enabled(worker_records.get(worker_id))
+        ]
+        if len(enabled_workers) < 2:
+            thread = _archived_department_thread(existing, node=node, node_id=org_node_id)
+            updated_status = "archived"
+        else:
+            thread = _build_department_thread(node, enabled_workers, user_id=user_id)
+            thread["created_at"] = existing.get("created_at", thread["created_at"])
+            updated_status = "updated"
+        if not dry_run:
+            threads = [dict(t) for t in _sequence(state.get("threads"))]
+            replaced = False
+            for i, t in enumerate(threads):
+                if t.get("thread_id") == thread_id:
+                    threads[i] = thread
+                    replaced = True
+                    break
+            if not replaced:
+                threads.append(thread)
+            state["threads"] = threads
         _log.info(
-            "Worker agents department chat thread already exists: thread_id=%s, org_node_id=%s",
+            "Worker agents department chat thread updated: thread_id=%s, org_node_id=%s, enabled_workers=%s, dry_run=%s",
             thread_id,
             org_node_id,
+            enabled_workers,
+            dry_run,
         )
         return {
             "action": "ensure_department_chat",
             "target_id": org_node_id,
-            "updated_status": "existing",
-            "thread": _thread_response(existing),
+            "updated_status": updated_status,
+            "thread": _thread_response(thread),
             "audit_ref": f"worker_agents/threads/{thread_id}",
             "next_required_action": "open_chat_thread",
         }
