@@ -37,6 +37,20 @@ Use this skill to execute organization changes, not to hand users command templa
 - Apply only after approval is satisfied. Draft output alone never means the worker exists.
 - Verify after each dependency wave before drafting children that depend on newly created parents.
 
+## Capability Boundaries
+
+Map user requests to these operations only. If a request has no matching operation, inform the user — do not guess or invent proposal kinds.
+
+| User intent | Command | Key parameters |
+| --- | --- | --- |
+| Create a worker/department | `evolution-draft --proposal-kind create_child_agent` | `--target-node` = parent, `--requested-worker` = new worker id |
+| Delete a worker/department | `evolution-draft --proposal-kind delete_child_agent` | `--target-node` = parent, `--requested-worker` = child to delete (omit to delete target itself), `--asset-disposition-ref` required |
+| Merge two departments | `evolution-draft --proposal-kind merge_department` | `--target-node` = source, `--destination-node` = target, `--rollback-plan-ref` required |
+| Archive a node | `evolution-draft --proposal-kind archive_node` | `--target-node` = node to archive |
+| Change display name | `worker-update <WORKER_ID> --display-name "<name>"` | Worker id is immutable; only display name changes |
+
+After drafting, approve and apply. See `references/commands.md` for full syntax.
+
 ## Command Reference
 
 Read `references/commands.md` when you need syntax, proposal kinds, approval commands, risk flags, or wave examples.

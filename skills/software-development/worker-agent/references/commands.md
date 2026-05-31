@@ -103,6 +103,16 @@ zermes worker-agents worker-update <WORKER_ID> \
 
 All fields are optional; only provided fields are updated. Comma-separate multiple values for `--responsibilities`, `--allowed-tools`, `--approval-required-tools`, and `--allowed-skills`. Add `--dry-run` to validate without mutation.
 
+### Change a worker display name
+
+Worker ids are immutable. Use `worker-update --display-name` to change the display name:
+
+```bash
+zermes worker-agents worker-update <WORKER_ID> \
+  --display-name "New Display Name" \
+  --json
+```
+
 ## Approval Commands
 
 Auto-approval is allowed only for `POLICY_APPROVED` and `MAIN_AGENT_APPROVAL`.
