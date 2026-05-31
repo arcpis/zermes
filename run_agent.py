@@ -150,6 +150,7 @@ from agent.prompt_builder import (
     CODE_MODIFICATION_TRIGGER_GUIDANCE,
     WORKER_AGENT_GUIDANCE,
     build_worker_agents_prompt,
+    build_worker_task_state_prompt,
     build_nous_subscription_prompt,
 )
 from agent.model_metadata import (
@@ -5352,6 +5353,9 @@ class AIAgent:
             _worker_prompt = build_worker_agents_prompt()
             if _worker_prompt:
                 prompt_parts.append(_worker_prompt)
+            _worker_task_prompt = build_worker_task_state_prompt()
+            if _worker_task_prompt:
+                prompt_parts.append(_worker_task_prompt)
 
         # Computer-use (macOS) — goes in as its own block rather than being
         # merged into tool_guidance because the content is multi-paragraph.

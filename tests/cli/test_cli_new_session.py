@@ -275,3 +275,30 @@ def test_new_session_with_duplicate_title_surfaces_error(capsys):
     captured = capsys.readouterr()
     assert "New session started: Dup" not in captured.out
     assert "New session started!" in captured.out
+
+
+def test_hermes_cli_worker_messaging_toolset_resumes_last_session():
+    db = SessionDB()
+    db.create_session(session_id="previous-worker-session", source="cli", model="test")
+
+    cli = _make_cli(toolsets=["hermes-cli"])
+
+    assert cli.session_id == "previous-worker-session"
+    assert cli._resumed is True
+
+
+def test_hermes_cli_worker_messaging_toolset_blocks_new_session(capsys):
+    cli = _make_cli(toolsets=["hermes-cli"])
+    old_session_id = cli.session_id
+    notices: list[str] = []
+    method_globals = cli.new_session.__globals__
+    original = method_globals["_cprint"]
+    method_globals["_cprint"] = lambda msg: notices.append(msg)
+
+    try:
+        cli.new_session()
+    finally:
+        method_globals["_cprint"] = original
+
+    assert cli.session_id == old_session_id
+    assert any("单会话模式" in item for item in notices)

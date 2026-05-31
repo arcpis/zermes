@@ -669,7 +669,7 @@ from model_tools import get_tool_definitions, get_toolset_for_tool
 # Extracted CLI modules (Phase 3)
 from hermes_cli.banner import build_welcome_banner
 from hermes_cli.commands import SlashCommandCompleter, SlashCommandAutoSuggest
-from toolsets import get_all_toolsets, get_toolset_info, validate_toolset
+from toolsets import get_all_toolsets, get_toolset_info, resolve_toolset, validate_toolset
 
 # Cron job system for scheduled tasks (execution is handled by the gateway)
 from cron import get_job
@@ -1059,6 +1059,26 @@ def _try_resolve_last_session(source: str = "cli") -> Optional[str]:
         return sessions[0]["id"] if sessions else None
     except Exception:
         return None
+
+
+def _toolsets_enable_tool(toolsets: Optional[List[str]], tool_name: str) -> bool:
+    """Return true when the configured toolsets resolve to a specific tool.
+
+    Composite toolsets such as ``hermes-cli`` include other toolsets.  Checking
+    only the raw names misses those included tools, which is exactly the shape
+    used by the default CLI worker-messaging configuration.
+    """
+    if not toolsets:
+        return False
+    for toolset_name in toolsets:
+        if toolset_name in {"all", "*"}:
+            return True
+        try:
+            if tool_name in resolve_toolset(toolset_name):
+                return True
+        except Exception:
+            continue
+    return False
 
 
 def _run_checkpoint_auto_maintenance() -> None:
@@ -2501,7 +2521,7 @@ class HermesCLI:
         if resume:
             self.session_id = resume
             self._resumed = True
-        elif "worker_messaging" in (self.enabled_toolsets or ()):
+        elif self._worker_messaging_enabled():
             _last_id = _try_resolve_last_session()
             if _last_id:
                 self.session_id = _last_id
@@ -5370,7 +5390,7 @@ class HermesCLI:
 
     def new_session(self, silent=False, title=None):
         """Start a fresh session with a new session ID and cleared agent state."""
-        if "worker_messaging" in (self.enabled_toolsets or ()):
+        if self._worker_messaging_enabled():
             _cprint(f"{_DIM}单会话模式，不支持创建新会话。当前会话将持续运行。{_RST}")
             return
         if self.agent and self.conversation_history:
@@ -5583,6 +5603,9 @@ class HermesCLI:
             )
         else:
             _cprint(f"  ↻ Resumed session {target_id}{title_part} — no messages, starting fresh.")
+
+    def _worker_messaging_enabled(self) -> bool:
+        return _toolsets_enable_tool(self.enabled_toolsets, "send_worker_message")
 
     def _handle_branch_command(self, cmd_original: str) -> None:
         """Handle /branch [name] — fork the current session into a new independent copy.

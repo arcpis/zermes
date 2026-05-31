@@ -1058,6 +1058,37 @@ def build_worker_agents_prompt() -> str:
     return "\n".join(lines)
 
 
+def build_worker_task_state_prompt() -> str:
+    """Build a compact structured view of currently pending Worker tasks.
+
+    The dispatch state lives outside conversation history so compression cannot
+    lose it.  This prompt block gives the model precise task ownership without
+    relying on semantic memory recall.
+    """
+    try:
+        from tools.worker_task_state import get_pending_tasks
+    except Exception:
+        return ""
+
+    pending = [task for task in get_pending_tasks() if task.status == "pending"]
+    if not pending:
+        return ""
+
+    lines = ["# Pending Worker Tasks", ""]
+    for task in pending:
+        worker_list = ", ".join(task.dispatched_to) or "unknown"
+        lines.append(
+            "- "
+            f"task_id={task.task_id}; "
+            f"thread_id={task.thread_id}; "
+            f"dispatched_to={worker_list}; "
+            f"dispatch_message_id={task.dispatch_message_id or 'unknown'}; "
+            f"summary={task.task_summary}; "
+            f"dispatched_at={task.dispatched_at}"
+        )
+    return "\n".join(lines)
+
+
 def build_skills_system_prompt(
     available_tools: "set[str] | None" = None,
     available_toolsets: "set[str] | None" = None,

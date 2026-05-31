@@ -19,6 +19,7 @@ from agent.prompt_builder import (
     build_nous_subscription_prompt,
     build_context_files_prompt,
     build_environment_hints,
+    build_worker_task_state_prompt,
     CONTEXT_FILE_MAX_CHARS,
     DEFAULT_AGENT_IDENTITY,
     TOOL_USE_ENFORCEMENT_GUIDANCE,
@@ -44,6 +45,24 @@ class TestGuidanceConstants:
         assert "session_search" in MEMORY_GUIDANCE
         assert "like a diary" not in MEMORY_GUIDANCE
         assert ">80%" not in MEMORY_GUIDANCE
+
+    def test_worker_task_state_prompt_lists_pending_tasks(self):
+        from tools.worker_task_state import add_pending_task
+
+        add_pending_task(
+            task_id="task-1",
+            thread_id="thread-default-group",
+            dispatched_to=("coder-agent",),
+            task_summary="Implement login page",
+            dispatch_message_id="msg-1",
+        )
+
+        prompt = build_worker_task_state_prompt()
+
+        assert "# Pending Worker Tasks" in prompt
+        assert "task_id=task-1" in prompt
+        assert "dispatched_to=coder-agent" in prompt
+        assert "summary=Implement login page" in prompt
 
     def test_session_search_guidance_is_simple_cross_session_recall(self):
         assert "relevant cross-session context exists" in SESSION_SEARCH_GUIDANCE
