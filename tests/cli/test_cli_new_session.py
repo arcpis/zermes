@@ -287,6 +287,42 @@ def test_hermes_cli_worker_messaging_toolset_resumes_last_session():
     assert cli._resumed is True
 
 
+def test_hermes_cli_worker_messaging_help_marks_new_session_commands():
+    cli = _make_cli(toolsets=["hermes-cli"])
+    output: list[str] = []
+    method_globals = cli.show_help.__globals__
+    original = method_globals["_cprint"]
+    method_globals["_cprint"] = lambda msg: output.append(msg)
+
+    try:
+        cli.show_help()
+    finally:
+        method_globals["_cprint"] = original
+
+    joined = "\n".join(output)
+    assert "/new" in joined
+    assert "/reset" in joined
+    assert "/clear" in joined
+    assert joined.count("[disabled:") >= 3
+
+
+def test_regular_cli_help_keeps_new_session_commands_enabled():
+    cli = _make_cli(toolsets=[])
+    output: list[str] = []
+    method_globals = cli.show_help.__globals__
+    original = method_globals["_cprint"]
+    method_globals["_cprint"] = lambda msg: output.append(msg)
+
+    try:
+        cli.show_help()
+    finally:
+        method_globals["_cprint"] = original
+
+    joined = "\n".join(output)
+    assert "/new" in joined
+    assert "disabled: single-session worker messaging mode" not in joined
+
+
 def test_hermes_cli_worker_messaging_toolset_blocks_new_session(capsys):
     cli = _make_cli(toolsets=["hermes-cli"])
     old_session_id = cli.session_id

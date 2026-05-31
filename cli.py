@@ -5008,6 +5008,14 @@ class HermesCLI:
             return self._fast_command_available()
         return True
 
+    def _help_description_for_command(self, slash_command: str, description: str) -> str:
+        if (
+            self._worker_messaging_enabled()
+            and slash_command in {"/new", "/reset", "/clear"}
+        ):
+            return f"{description} [disabled: single-session worker messaging mode]"
+        return description
+
     def show_help(self):
         """Display help information with categorized commands."""
         from hermes_cli.commands import COMMANDS_BY_CATEGORY
@@ -5030,6 +5038,7 @@ class HermesCLI:
             for cmd, desc in commands.items():
                 if not self._command_available(cmd):
                     continue
+                desc = self._help_description_for_command(cmd, desc)
                 ChatConsole().print(f"    [bold {_accent_hex()}]{cmd:<15}[/] [dim]-[/] {_escape(desc)}")
 
         if _skill_commands:
