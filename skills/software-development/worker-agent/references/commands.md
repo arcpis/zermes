@@ -29,8 +29,7 @@ zermes worker-agents workers --risk external_unhealthy --json
 | `create_child_agent` | Create a worker or department node under an existing parent. | `POLICY_APPROVED` |
 | `delete_child_agent` | Remove a child worker or node; destructive. | `MAIN_AGENT_APPROVAL` |
 | `merge_department` | Merge a source department into a destination department. | `USER_APPROVAL` |
-| `transfer_assets` | Move assets or ownership references between nodes. | `MAIN_AGENT_APPROVAL` |
-| `archive_org_node` | Archive an organization node without hard deletion. | `MAIN_AGENT_APPROVAL` |
+| `archive_node` | Archive an organization node without hard deletion. | `MAIN_AGENT_APPROVAL` |
 
 ## Draft Command
 
@@ -50,8 +49,8 @@ Additional flags by proposal type:
 
 - `delete_child_agent`: `--asset-disposition-ref <ref>` is required.
 - `merge_department`: `--destination-node <id>` and `--rollback-plan-ref <ref>` are required.
-- `transfer_assets`: `--destination-node <id>` is required.
-- `archive_org_node`: no extra flag is required unless draft output asks for one.
+- `archive_node`: `--active-task-ref <ref>` should be supplied if active tasks exist; the draft will block if any are unresolved.
+- `create_child_agent`: `--requested-worker <WORKER_ID>` is required.
 
 Inspect the draft output before any approval or apply step:
 
@@ -64,18 +63,18 @@ Inspect the draft output before any approval or apply step:
 
 ## Apply Command
 
-Apply executes an approved proposal and mutates managed state.
+Apply executes an approved proposal and mutates managed state. Currently only `create_child_agent` drafts can be applied; other proposal kinds must be handled through the organization evolution executor directly.
 
 ```bash
 zermes worker-agents evolution-apply-draft \
-  --proposal-kind <TYPE> \
+  --proposal-kind create_child_agent \
   --actor main-agent \
   --target-node <NODE_ID> \
   --requested-worker <WORKER_ID> \
   --json
 ```
 
-Use the same operation parameters as the draft. Add `--dry-run` only when validating execution readiness without mutation.
+Use the same operation parameters as the draft. Add `--dry-run` to validate execution readiness without mutation. The `--reason` flag is optional and records the business justification in the audit log.
 
 ## Approval Commands
 
