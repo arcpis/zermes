@@ -265,15 +265,21 @@ CODE_MODIFICATION_TRIGGER_GUIDANCE = (
 
 WORKER_AGENT_GUIDANCE = (
     "# Worker Agent task dispatch\n"
-    "- You have access to a team of specialized Worker Agents. "
-    "Use them to delegate coding, analysis, and other domain-specific tasks.\n"
-    "- Use `send_worker_message` to dispatch tasks to workers via the default group chat. "
-    "Mention specific workers with `mention_worker_ids` to target them. "
+    "- You have access to a team of specialized Worker Agents organized in departments. "
+    "When the user requests task implementation or when a task clearly falls within "
+    "a worker's responsibility domain, dispatch it through the default group chat "
+    "using `send_worker_message` rather than doing it yourself.\n"
+    "- The default group chat (`thread-default-group`) is the dispatch channel. "
+    "Use `send_worker_message` with `mention_worker_ids` to target specific workers. "
     "The task will be delivered asynchronously — you can continue other work while waiting.\n"
+    "- When a requirement spans multiple domains, split it into sub-tasks and dispatch "
+    "each sub-task to the appropriate worker with a separate `send_worker_message` call. "
+    "Each call should contain a clear, self-contained task description.\n"
     "- After dispatching, use `check_worker_replies` to check for completed results. "
     "Use `wait_for_worker_reply` when you need to block until a specific worker responds.\n"
     "- When no suitable worker exists for a task, handle it yourself.\n"
-    "- For simple conversations and general questions, respond directly without involving workers.\n"
+    "- For simple conversations and general questions that do not require implementation, "
+    "respond directly without involving workers.\n"
     "- Do not create new worker agents or modify the organization tree unless the user explicitly asks.\n"
 )
 
@@ -1019,13 +1025,38 @@ def build_worker_agents_prompt() -> str:
     if not isinstance(worker_records, dict):
         return ""
 
+    organization_tree = state.get("organization_tree")
+    nodes = {}
+    if isinstance(organization_tree, dict):
+        nodes = organization_tree.get("nodes", {})
+        if not isinstance(nodes, dict):
+            nodes = {}
+
+    worker_department_map: dict[str, str] = {}
+    for node_id, node in nodes.items():
+        if not isinstance(node, dict):
+            continue
+        node_type = str(node.get("node_type", "")).lower()
+        if node_type not in ("department", "team"):
+            continue
+        dept_name = str(node.get("name", node_id))
+        leader = node.get("leader")
+        if isinstance(leader, dict) and leader.get("kind") == "worker":
+            lid = leader.get("worker_id")
+            if isinstance(lid, str) and lid:
+                worker_department_map.setdefault(lid, dept_name)
+        for mid in node.get("member_worker_ids", []):
+            if isinstance(mid, str) and mid:
+                worker_department_map.setdefault(mid, dept_name)
+
     lines = [
         "# Available Worker Agents",
         "",
-        "You are the main agent. You can dispatch tasks to the following "
-        "worker agents via the default group chat. Use `send_worker_message` "
-        f"with `thread_id=\"{DEFAULT_GROUP_THREAD_ID}\"` and mention the "
-        "target worker in `mention_worker_ids`.",
+        "All task dispatch goes through the default group chat. "
+        f"Use `send_worker_message` with `thread_id=\"{DEFAULT_GROUP_THREAD_ID}\"` "
+        "and mention the target worker in `mention_worker_ids`. "
+        "This is the only dispatch channel — do not implement tasks yourself "
+        "when a suitable worker is listed below.",
         "",
     ]
 
@@ -1038,8 +1069,11 @@ def build_worker_agents_prompt() -> str:
         description = str(record.get("description", ""))
         if description == worker_id:
             description = ""
+        department = worker_department_map.get(worker_id, "")
 
         summary = f"- **{display_name}** (`{worker_id}`)"
+        if department:
+            summary += f" [{department}]"
         if role:
             summary += f" — {role}"
         if description:
@@ -1048,8 +1082,10 @@ def build_worker_agents_prompt() -> str:
 
     lines.append("")
     lines.append(
-        "For simple conversations and general questions, respond directly "
-        "without involving workers."
+        "When a requirement involves multiple domains, split it into "
+        "sub-tasks and dispatch each to the relevant worker. "
+        "For general questions that do not require implementation, "
+        "respond directly without involving workers."
     )
 
     return "\n".join(lines)
