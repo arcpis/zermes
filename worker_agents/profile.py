@@ -10,6 +10,24 @@ from typing import Any, Mapping
 WORKER_PROFILE_FILE_NAME = "worker.json"
 WORKER_PROFILE_SCHEMA_VERSION = 1
 
+DEFAULT_WORKER_TOOLS: tuple[str, ...] = (
+    "send_worker_message",
+    "check_worker_replies",
+    "wait_for_worker_reply",
+    "read_file",
+    "write_file",
+    "patch",
+    "search_files",
+    "terminal",
+    "execute_code",
+    "web_search",
+    "web_extract",
+    "todo",
+    "memory",
+    "session_search",
+    "clarify",
+)
+
 
 class WorkerProfileError(ValueError):
     """Raised when a worker profile violates the durable contract."""

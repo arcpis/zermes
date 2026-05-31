@@ -7,9 +7,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from ..profile import (
+    DEFAULT_WORKER_TOOLS,
     WORKER_PROFILE_FILE_NAME,
     WorkerAgentProfile,
     WorkerProfileError,
+    WorkerToolPolicy,
     dump_worker_profile_json,
     load_worker_profile_json,
     validate_worker_id,
@@ -101,4 +103,5 @@ class WorkerAgentProfileStore:
             display_name=display_name,
             description=description,
             role=role,
+            tools=WorkerToolPolicy(allowed_tools=DEFAULT_WORKER_TOOLS),
         )

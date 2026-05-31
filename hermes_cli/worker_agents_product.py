@@ -77,6 +77,7 @@ from worker_agents.message_mentions import (
 )
 from worker_agents.organization import MAIN_AGENT_ID, org_tree_from_dict, org_tree_to_dict
 from worker_agents.profile import (
+    DEFAULT_WORKER_TOOLS,
     WorkerAgentProfile,
     WorkerBudgetPolicy,
     WorkerCommunicationPolicy,
@@ -944,6 +945,7 @@ def _apply_create_child_agent(
         "role": "managed_worker",
         "runtime_type": "internal",
         "status": "enabled",
+        "allowed_tools": list(DEFAULT_WORKER_TOOLS),
         "default_model": str(kwargs.get("default_model", "")).strip() or None,
         "created_at": now,
         "updated_at": now,
@@ -1448,7 +1450,14 @@ def _worker_profile_from_management_record(record: Mapping[str, Any]) -> WorkerA
         ),
         tools=WorkerToolPolicy(
             allowed_tools=tuple(
-                str(item) for item in _list_value(record.get("allowed_tools")) if item
+                dict.fromkeys(
+                    DEFAULT_WORKER_TOOLS
+                    + tuple(
+                        str(item)
+                        for item in _list_value(record.get("allowed_tools"))
+                        if item
+                    )
+                )
             ),
             approval_required_tools=tuple(
                 str(item)

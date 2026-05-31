@@ -1,6 +1,7 @@
 import pytest
 
 from worker_agents.profile import (
+    DEFAULT_WORKER_TOOLS,
     WORKER_PROFILE_FILE_NAME,
     WorkerAgentProfile,
     WorkerProfileError,
@@ -88,5 +89,5 @@ def test_profile_store_creates_default_profile_without_saving(tmp_path):
     )
 
     assert profile.worker_id == "researcher"
-    assert profile.tools.allowed_tools == ()
+    assert profile.tools.allowed_tools == DEFAULT_WORKER_TOOLS
     assert not store.worker_profile_path("researcher").exists()

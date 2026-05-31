@@ -541,10 +541,15 @@ def _build_operating_instructions(
         "Use active_tasks and pending_reports as your cross-chat work memory before answering.",
     ]
     if direct_member_worker_ids:
+        member_list = ", ".join(direct_member_worker_ids)
         instructions.append(
-            "Delegate subtasks to direct member workers when the work is out of scope or parallelizable: "
-            + ", ".join(direct_member_worker_ids)
-            + "."
+            "You are a department leader with subordinate workers: "
+            + member_list
+            + ". When a task or sub-task falls within a subordinate's responsibility domain, "
+            "dispatch it through the group chat using `send_worker_message` "
+            "rather than doing it yourself. "
+            "When a requirement spans multiple domains, split it into sub-tasks and dispatch "
+            "each to the appropriate worker with a separate `send_worker_message` call."
         )
     if manager_worker_id:
         instructions.append(

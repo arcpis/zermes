@@ -100,6 +100,15 @@ def _build_system_message(invocation: AgentRuntimeInvocation) -> str:
         parts.append(f"Readable paths: {', '.join(invocation.workspace_read_roots)}")
     if invocation.workspace_write_roots:
         parts.append(f"Writable paths: {', '.join(invocation.workspace_write_roots)}")
+    if invocation.operating_instructions:
+        parts.append(
+            "Operating instructions:\n"
+            + "\n".join(f"- {instr}" for instr in invocation.operating_instructions)
+        )
+    if invocation.delegation_summary and invocation.delegation_summary.get(
+        "delegation_allowed"
+    ):
+        parts.append(_build_delegation_guidance(invocation.delegation_summary))
     guidance = _build_chat_reply_guidance(
         invocation.chat_message_type,
         invocation.thread_participants,
@@ -107,6 +116,37 @@ def _build_system_message(invocation: AgentRuntimeInvocation) -> str:
     if guidance:
         parts.append(guidance)
     return "\n\n".join(parts)
+
+
+def _build_delegation_guidance(delegation: dict[str, Any]) -> str:
+    targets = delegation.get("delegation_targets", ())
+    if not targets:
+        return ""
+    target_lines: list[str] = []
+    for target in targets:
+        if target.get("target_type") == "worker":
+            target_lines.append(f"- Worker `{target['worker_id']}`")
+        elif target.get("target_type") in ("department", "team"):
+            target_lines.append(
+                f"- {target['target_type'].title()} `{target.get('name', target.get('org_node_id', ''))}`"
+            )
+    lines = [
+        "# Task Delegation",
+        "You are a department leader with subordinate workers. "
+        "When a task or sub-task falls within a subordinate's responsibility domain, "
+        "dispatch it through the group chat using `send_worker_message` "
+        "rather than doing it yourself.",
+        "",
+        "Delegation targets:",
+    ]
+    lines.extend(target_lines)
+    lines.append("")
+    lines.append(
+        "When a requirement spans multiple domains, split it into sub-tasks and dispatch "
+        "each to the appropriate worker with a separate `send_worker_message` call. "
+        "Each call should contain a clear, self-contained task description."
+    )
+    return "\n".join(lines)
 
 
 def _extract_final_content(messages: list[dict[str, Any]]) -> str:

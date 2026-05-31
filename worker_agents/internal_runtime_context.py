@@ -23,6 +23,7 @@ from .task_service import WorkerTaskService
 from .task_state import WorkerTaskState, validate_task_id
 from .worker_prompt_summary import (
     build_worker_prompt_summary,
+    worker_delegation_prompt_summary_to_dict,
     worker_prompt_summary_to_dict,
 )
 
@@ -148,6 +149,10 @@ def build_internal_worker_runtime_context(
         relevant_excerpts=relevant_excerpts,
         chat_message_type=request.chat_message_type,
         thread_participants=request.thread_participants,
+        operating_instructions=prompt_summary.operating_instructions,
+        delegation_summary=worker_delegation_prompt_summary_to_dict(
+            prompt_summary.delegation
+        ),
     )
     return InternalWorkerRuntimeContext(
         worker_record=record,

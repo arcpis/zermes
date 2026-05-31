@@ -40,6 +40,8 @@ class AgentRuntimeInvocation:
     task_summary: str
     chat_message_type: str | None = None
     thread_participants: tuple[str, ...] = ()
+    operating_instructions: tuple[str, ...] = ()
+    delegation_summary: dict | None = None
 
 
 @dataclass(frozen=True)
@@ -155,6 +157,8 @@ class SharedAgentRuntimeFacade:
             task_summary=config.context.task_summary,
             chat_message_type=config.context.chat_message_type,
             thread_participants=config.context.thread_participants,
+            operating_instructions=config.context.operating_instructions,
+            delegation_summary=config.context.delegation_summary,
         )
 
     def run(self, config: AgentRuntimeSessionConfig) -> AgentRuntimeInvocation | AgentRuntimeExecution:
