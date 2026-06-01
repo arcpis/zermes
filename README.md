@@ -25,6 +25,8 @@ The preferred user-facing command is `zermes`. Hermes-compatible names and inter
 
    Best for: code-oriented AI agent projects that need continuous improvement while preserving approval, audit, and verification controls.
 
+   Guide: [代码自我进化使用指南](docs/code-self-evolution/guide.md) | Architecture: [架构参考](docs/code-self-evolution/architecture.md)
+
 2. **Managed worker agents**
 
    Capability: Zermes provides the backend contract and service layer for employee-style agents. A `WorkerAgent` is a long-lived professional identity with its own profile, lifecycle state, role boundary, permissions, task records, runtime adapter, model and budget policy, private memory boundary, skill usage policy, and organization placement. Private worker chats, department chats, project chats, `@` mentions, broadcasts, and organization trees all route through governed paths.
@@ -32,6 +34,8 @@ The preferred user-facing command is `zermes`. Hermes-compatible names and inter
    Advantage: This turns multi-agent collaboration from temporary, invisible subagent calls into user-present, permissioned, context-minimized, low-sensitivity, proposal-first teamwork. Internal WorkerAgents and external coding, media-generation, or research agents share runtime contracts and connect through adapters, making audits, handoffs, budget control, and governance extensions easier to manage.
 
    Best for: agent platforms that need long-lived role-based collaboration, department-level task ownership, external agent integration, organizational memory, and controlled team evolution. This capability currently covers the backend contract and service layer with focused tests under `tests/worker_agents`; a full end-user management UI is not yet shipped.
+
+   Guide: [Worker Agent 使用指南](docs/worker-agent/guide.md) | API: [API 参考](docs/worker-agent/apis.md) | Architecture: [架构参考](docs/worker-agent/architecture.md)
 
 ## Installation And Usage
 
