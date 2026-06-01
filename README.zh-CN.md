@@ -25,13 +25,13 @@ Zermes 是基于 Hermes Agent 修改而来的 AI Agent 项目，重点面向有�
 
    适用场景：适合需要长期维护 Agent 能力、持续吸收改进建议、但又要求审批、审计和验证闭环的代码型 AI Agent 项目。
 
-2. **受管 WorkerAgent 员工体系**
+2. **多级 Worker-Agent**
 
-   功能点：Zermes 提供“员工式 Agent”的后端 contract 与 service 层。`WorkerAgent` 是长期存在的专业身份，可拥有独立 profile、生命周期状态、职责边界、权限、任务记录、runtime adapter、模型与预算策略、私有记忆边界、skill 使用策略和组织归属；员工私聊、部门群聊、项目群聊、`@` 提及、广播和组织树管理统一通过受管链路处理。
+   功能点：公司架构管理——可动态调整的部门架构；部门群聊与跨群沟通——Worker-Agent 可跨群聊对话且记忆一致。
 
-   优势：它把多 Agent 协作从临时、不可见的子 Agent 调用，提升为用户在场、权限清晰、上下文最小化、结果低敏化、资产 proposal-first 的组织化协作模式。内部 WorkerAgent 与外部编码、媒体生成、研究等 Agent 通过统一 runtime contract 和 adapter 接入，便于审计、交接、预算控制和治理扩展。
+   优势：每个 Worker-Agent 拥有可迭代的独立记忆与 Skill，在实践中逐步成为领域专家；需求可逐级拆解、逐级调度，实现任务与资源的合理分配。
 
-   适用场景：适合需要多角色长期协作、部门化任务分工、外部 Agent 接入、组织记忆沉淀和受控团队演化的 Agent 平台。目前该能力已覆盖后端契约与服务层，并配有 `tests/worker_agents` 专项测试；完整终端用户管理 UI 仍待交付。
+   适用场景：需要组织化多 Agent 协作、部门化分工、跨团队记忆一致的 Agent 平台。
 
 ## 安装和使用
 

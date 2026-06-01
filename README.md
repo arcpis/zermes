@@ -27,13 +27,13 @@ The preferred user-facing command is `zermes`. Hermes-compatible names and inter
 
    Guide: [代码自我进化使用指南](docs/code-self-evolution/guide.md) | Architecture: [架构参考](docs/code-self-evolution/architecture.md)
 
-2. **Managed worker agents**
+2. **Multi-level Worker-Agent**
 
-   Capability: Zermes provides the backend contract and service layer for employee-style agents. A `WorkerAgent` is a long-lived professional identity with its own profile, lifecycle state, role boundary, permissions, task records, runtime adapter, model and budget policy, private memory boundary, skill usage policy, and organization placement. Private worker chats, department chats, project chats, `@` mentions, broadcasts, and organization trees all route through governed paths.
+   Capability: Company architecture management with dynamically adjustable department structures; department group chats and cross-group communication where Worker-Agents can converse across chats with consistent memory.
 
-   Advantage: This turns multi-agent collaboration from temporary, invisible subagent calls into user-present, permissioned, context-minimized, low-sensitivity, proposal-first teamwork. Internal WorkerAgents and external coding, media-generation, or research agents share runtime contracts and connect through adapters, making audits, handoffs, budget control, and governance extensions easier to manage.
+   Advantage: Each Worker-Agent owns iterable, independent memory and skills, progressively becoming a domain expert through practice. Requirements can be decomposed and dispatched level by level, achieving rational task and resource allocation.
 
-   Best for: agent platforms that need long-lived role-based collaboration, department-level task ownership, external agent integration, organizational memory, and controlled team evolution. This capability currently covers the backend contract and service layer with focused tests under `tests/worker_agents`; a full end-user management UI is not yet shipped.
+   Best for: Agent platforms that need organized multi-agent collaboration, departmental division of labor, and cross-team memory consistency.
 
    Guide: [Worker Agent 使用指南](docs/worker-agent/guide.md) | API: [API 参考](docs/worker-agent/apis.md) | Architecture: [架构参考](docs/worker-agent/architecture.md)
 
