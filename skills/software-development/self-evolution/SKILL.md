@@ -1,6 +1,6 @@
 ---
 name: self-evolution
-description: "Use when Zermes identifies, plans, executes, verifies, integrates, or applies governed self-code iteration: explicit code-change requests, read-only periodic improvement candidates, in-task discovered improvement points, approval plans, repository locks, verification records, task-branch commits, self-evolution/main integration, and runtime update/restart boundaries."
+description: "Use when the user asks to modify, fix, adjust, or improve Zermes's own code, configuration, or behavior — including indirect phrasing like 'modify your code', 'change your code', 'adjust your settings'. Also use for governed self-code iteration: approval planning, verification, task-branch commits, runtime updates, and scheduled improvement candidates."
 license: MIT
 metadata:
   hermes:
@@ -17,7 +17,7 @@ This skill is the Zermes self-code iteration procedure. Its purpose is not to ma
 Self-evolution can be triggered in three ways:
 
 1. Explicit user code-change intent.
-   Enter self-evolution identification and read-only analysis when the user asks to fix a Zermes defect, implement a Zermes feature, optimize tools, adjust self-evolution logic, modify a skill, or otherwise change Zermes code.
+   Enter self-evolution when the user asks to fix, modify, adjust, or improve Zermes's own code, configuration, or behavior. This covers both direct requests ("fix the logging bug") and indirect phrasing ("modify your code", "change your code", "adjust your settings", "change your behavior", or any request implying the agent should alter its own source code or runtime behavior).
 
 2. Scheduled analysis or capability assessment.
    During periodic self-checks, capability evaluations, or candidate improvement analysis, Zermes may discover potential defects or opportunities. This trigger is read-only by default. It may only write candidate reports and recommendations, and must wait for explicit user approval before entering execution.

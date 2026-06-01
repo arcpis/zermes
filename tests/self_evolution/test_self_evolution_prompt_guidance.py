@@ -60,3 +60,17 @@ def test_self_evolution_guidance_covers_clarification_and_non_trigger_cases():
     assert "ordinary Q&A" in prompt
     assert "read-only code explanation" in prompt
     assert "status checks" in prompt
+
+
+def test_self_evolution_guidance_covers_modify_your_code_phrases():
+    """The guidance must list common 'modify your code' phrases as triggers."""
+    agent = _build_agent_with_tools(["complete_code_task"])
+
+    prompt = agent._build_system_prompt()
+
+    assert "modify your code" in prompt
+    assert "change your code" in prompt
+    assert "adjust your settings" in prompt
+    assert "change your behavior" in prompt
+    assert "explicit code-change intent" in prompt
+    assert "alter its own source code" in prompt

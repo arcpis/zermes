@@ -248,9 +248,12 @@ KANBAN_GUIDANCE = (
 # planning tool is available in the current toolset.
 CODE_MODIFICATION_TRIGGER_GUIDANCE = (
     "# Self-evolution trigger guidance\n"
-    "- When the user asks to add a Hermes tool, fix a bug, optimize performance, "
-    "improve interaction flow, change tests, adjust configuration, or otherwise "
-    "modify this repository, use `complete_code_task`.\n"
+    "- When the user asks to modify, fix, adjust, or improve Zermes's own code, "
+    "configuration, or behavior — including indirect phrasing like \"modify your code\", "
+    "\"change your code\", \"adjust your settings\", \"change your behavior\" — "
+    "use `complete_code_task`.\n"
+    "- Any request that implies the agent should alter its own source code or runtime "
+    "behavior is an explicit code-change intent and must trigger this flow.\n"
     "- Before calling it, read only the focused files or docs needed to identify "
     "affected areas and summarize context.\n"
     "- `complete_code_task` creates an approval plan only. It must not modify "
