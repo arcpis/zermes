@@ -253,30 +253,6 @@ def _handle_send_worker_message(args: dict[str, Any]) -> str:
 
         if thread_id == PRODUCT_DEFAULT_GROUP_THREAD_ID:
             ensure_default_group_thread(user_id="user")
-        if mention_worker_ids:
-            state = load_management_state()
-            thread = next(
-                (
-                    item
-                    for item in state.get("threads", ())
-                    if isinstance(item, dict) and item.get("thread_id") == thread_id
-                ),
-                None,
-            )
-            participants = thread.get("participants", ()) if isinstance(thread, dict) else ()
-            worker_participants = {
-                item.get("participant_id")
-                for item in participants
-                if isinstance(item, dict)
-                and item.get("kind") == ChatParticipantKind.WORKER.value
-            }
-            missing = [
-                worker_id
-                for worker_id in mention_worker_ids
-                if worker_id not in worker_participants
-            ]
-            if missing:
-                raise ValueError(f"unknown worker mention target(s): {', '.join(missing)}")
         route_result = send_chat_message(
             thread_id=thread_id,
             sender_id=MAIN_AGENT_ID,
@@ -296,10 +272,16 @@ def _handle_send_worker_message(args: dict[str, Any]) -> str:
         )
     except Exception as exc:
         logger.warning("Worker message dispatch failed: %s", exc)
+        error_detail = str(exc)
+        hint = ""
+        if "chat thread does not exist" in error_detail:
+            hint = " Ensure the management state has a valid organization_tree and worker_records. Use apply_evolution_draft(proposal_kind='create_child_agent') to register workers."
+        elif "unknown worker mention target" in error_detail:
+            hint = " The mentioned worker is not a participant in the target thread. Ensure the worker is enabled and within the default group chat scope (root member or direct child leader/individual)."
         return json.dumps(
             {
                 "status": "error",
-                "error": str(exc),
+                "error": error_detail + hint,
             },
             ensure_ascii=False,
         )

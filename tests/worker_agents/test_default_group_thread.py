@@ -64,7 +64,7 @@ def test_ensure_default_group_thread_collects_enabled_root_workers_once():
         for item in participants
         if item["kind"] == ChatParticipantKind.WORKER.value
     ]
-    assert workers == ["worker-a", "worker-b"]
+    assert workers == ["worker-a"]
     assert result["thread"]["thread_id"] == product.DEFAULT_GROUP_THREAD_ID
 
 
@@ -75,8 +75,17 @@ def test_ensure_default_group_thread_refreshes_existing_participants():
 
     state = product.load_management_state()
     state["worker_records"]["worker-c"] = _worker("worker-c")
-    state["organization_tree"]["nodes"]["engineering"]["member_worker_ids"].append(
-        "worker-c"
+    state["organization_tree"]["nodes"]["sales"] = {
+        "org_node_id": "sales",
+        "name": "Sales",
+        "node_type": "department",
+        "lifecycle": "active",
+        "parent_id": "root",
+        "leader": {"kind": "worker", "worker_id": "worker-c"},
+        "member_worker_ids": [],
+    }
+    state["organization_tree"]["nodes"]["root"]["child_ids"].append(
+        "sales"
     )
     product.write_management_state(state)
 
@@ -93,4 +102,4 @@ def test_ensure_default_group_thread_refreshes_existing_participants():
         for item in thread["participants"]
         if item["kind"] == ChatParticipantKind.WORKER.value
     ]
-    assert workers == ["worker-a", "worker-b", "worker-c"]
+    assert workers == ["worker-a", "worker-c"]

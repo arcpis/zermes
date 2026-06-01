@@ -49,9 +49,6 @@ def test_collect_enabled_root_worker_ids_preserves_order_and_filters_disabled():
     assert collect_enabled_root_worker_ids(state) == [
         "root-worker",
         "dept-a-lead",
-        "dept-a-member",
-        "individual-worker",
-        "dept-b-member",
     ]
 
 

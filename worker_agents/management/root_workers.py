@@ -73,9 +73,9 @@ def collect_enabled_root_worker_ids(state: Mapping[str, Any]) -> list[str]:
         child = _optional_mapping(nodes.get(child_id))
         if child is None:
             continue
-        for worker_id in _department_worker_ids(child, nodes):
-            if _worker_is_enabled(worker_records.get(worker_id)):
-                collected.append(worker_id)
+        worker_id = _direct_child_worker_id(child)
+        if worker_id and _worker_is_enabled(worker_records.get(worker_id)):
+            collected.append(worker_id)
 
     return list(dict.fromkeys(collected))
 
@@ -107,36 +107,6 @@ def sanitize_worker_management_mapping(data: Mapping[str, Any]) -> dict[str, Any
             continue
         result[key_text] = _sanitize_value(value)
     return result
-
-
-def _department_worker_ids(
-    node: Mapping[str, Any],
-    nodes: Mapping[str, Any],
-) -> list[str]:
-    result: list[str] = []
-    leader = _optional_mapping(node.get("leader"))
-    if leader is not None and leader.get("kind") == "worker":
-        worker_id = leader.get("worker_id")
-        if isinstance(worker_id, str) and worker_id:
-            result.append(worker_id)
-
-    for worker_id in _list_value(node.get("member_worker_ids")):
-        if isinstance(worker_id, str) and worker_id:
-            result.append(worker_id)
-
-    # A root child contributes its direct child leads/individuals to the default
-    # group; deeper members remain scoped to their own department chat.
-    for child_id in _list_value(node.get("child_ids")):
-        if not isinstance(child_id, str):
-            continue
-        child = _optional_mapping(nodes.get(child_id))
-        if child is None:
-            continue
-        child_worker_id = _direct_child_worker_id(child)
-        if child_worker_id:
-            result.append(child_worker_id)
-
-    return list(dict.fromkeys(result))
 
 
 def _direct_child_worker_id(node: Mapping[str, Any]) -> str | None:

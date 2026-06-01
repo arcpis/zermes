@@ -40,7 +40,7 @@ def _state() -> dict:
                     "name": "Root",
                     "node_type": "root",
                     "lifecycle": "active",
-                    "child_ids": ["engineering"],
+                    "child_ids": ["engineering", "research"],
                     "leader": {"kind": "main_agent"},
                 },
                 "engineering": {
@@ -52,8 +52,18 @@ def _state() -> dict:
                     "leader": {"kind": "worker", "worker_id": "worker-a"},
                     "member_worker_ids": [
                         "worker-a",
-                        "worker-b",
                         "disabled-worker",
+                    ],
+                },
+                "research": {
+                    "org_node_id": "research",
+                    "name": "Research",
+                    "node_type": "department",
+                    "lifecycle": "active",
+                    "parent_id": "root",
+                    "leader": {"kind": "worker", "worker_id": "worker-b"},
+                    "member_worker_ids": [
+                        "worker-b",
                     ],
                 },
             },
@@ -144,6 +154,39 @@ def test_send_worker_message_routes_through_default_group_and_records_task(monke
     task = task_state.get_pending_tasks()[0]
     assert task.dispatch_message_id == result["message_id"]
     assert task.dispatched_to == ("worker-a",)
+
+
+def test_send_worker_message_initializes_empty_default_group_for_normal_message():
+    product.write_management_state_for_tests(
+        {
+            "worker_records": {},
+            "organization_tree": None,
+            "threads": [],
+            "department_summaries": [],
+            "mentions": [],
+            "broadcasts": [],
+        }
+    )
+
+    result = json.loads(
+        messaging._handle_send_worker_message(
+            {
+                "text": "Record this task in the default group.",
+            }
+        )
+    )
+
+    assert result["status"] == "dispatched"
+
+    management = product.load_management_state()
+    assert any(
+        thread.get("thread_id") == product.DEFAULT_GROUP_THREAD_ID
+        for thread in management["threads"]
+    )
+
+    messages = messaging._read_thread_messages(product.DEFAULT_GROUP_THREAD_ID)
+    assert messages[0].sender.kind == ChatParticipantKind.MAIN_AGENT
+    assert messages[0].body_preview == "Record this task in the default group."
 
 
 def test_send_worker_message_rejects_unknown_worker_without_pending_task():

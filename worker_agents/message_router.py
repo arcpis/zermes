@@ -792,9 +792,15 @@ def validate_message_route(
         raise MessageRouterError("message sender must be a thread participant")
 
     thread_participants = set(thread.participants)
-    for recipient in message.recipient_scope.participant_refs:
-        if recipient not in thread_participants:
-            raise MessageRouterError("message recipients must be thread participants")
+    non_participant_refs = [
+        recipient for recipient in message.recipient_scope.participant_refs
+        if recipient not in thread_participants
+    ]
+    if non_participant_refs:
+        ids = ", ".join(ref.participant_id for ref in non_participant_refs)
+        raise MessageRouterError(
+            f"message recipients must be thread participants: {ids}"
+        )
 
     if (
         thread.thread_type == ChatThreadType.DIRECT

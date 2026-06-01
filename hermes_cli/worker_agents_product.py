@@ -520,7 +520,16 @@ def send_chat_message(
 ) -> dict[str, Any]:
     state = load_management_state()
     routing_state = _state_with_materialized_department_chats(state)
-    thread = _require_thread_from_state(routing_state, thread_id)
+    thread = _find_thread_by_id(routing_state, thread_id)
+    if thread is None and thread_id == DEFAULT_GROUP_THREAD_ID:
+        _ensure_default_group_thread_in_state(state, user_id="user", dry_run=False)
+        state["source_updated_at"] = _now_iso()
+        write_management_state(state)
+        state = load_management_state()
+        routing_state = _state_with_materialized_department_chats(state)
+        thread = _find_thread_by_id(routing_state, thread_id)
+    if thread is None:
+        raise ValueError(f"chat thread does not exist: {thread_id!r}")
     _require_writable_thread(thread)
     thread_type = str(thread.get("thread_type", ""))
     chat_kind = "direct" if thread_type == "direct" else "group"
@@ -1973,16 +1982,23 @@ def _build_default_group_thread(
     user_id: str,
 ) -> dict[str, Any]:
     """构建默认群聊线程数据，包含所有顶层 Worker Agent。"""
+    worker_participants = tuple(
+        ChatParticipantRef(ChatParticipantKind.WORKER, worker_id)
+        for worker_id in worker_ids
+    )
+    org_node_participant = (
+        (ChatParticipantRef(ChatParticipantKind.ORGANIZATION_NODE, "root"),)
+        if not worker_participants
+        else ()
+    )
     thread = WorkerChatThread(
         thread_id=DEFAULT_GROUP_THREAD_ID,
         thread_type=ChatThreadType.ORGANIZATION_GROUP,
         participants=(
             ChatParticipantRef(ChatParticipantKind.USER, user_id),
             ChatParticipantRef(ChatParticipantKind.MAIN_AGENT, MAIN_AGENT_ID),
-            *(
-                ChatParticipantRef(ChatParticipantKind.WORKER, worker_id)
-                for worker_id in worker_ids
-            ),
+            *worker_participants,
+            *org_node_participant,
         ),
         title="默认群聊",
         created_at=_now_iso(),
