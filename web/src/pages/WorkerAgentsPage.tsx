@@ -58,6 +58,16 @@ interface MessageSender {
   participant_id: string;
 }
 
+interface ParticipantRef {
+  kind: string;
+  participant_id: string;
+}
+
+interface RecipientScope {
+  participant_refs: ParticipantRef[];
+  include_entire_thread: boolean;
+}
+
 interface MessageRow {
   message_id: string;
   thread_id: string;
@@ -67,6 +77,7 @@ interface MessageRow {
   body_preview: string;
   sensitive_flags: string[];
   sender?: MessageSender;
+  recipient_scope?: RecipientScope;
 }
 
 interface RiskBadge {
@@ -393,6 +404,29 @@ export default function WorkerAgentsPage() {
                       <span>{message.delivery_status}</span>
                       <span>{message.visibility}</span>
                     </div>
+                    {message.message_type === "mention" &&
+                      message.recipient_scope &&
+                      message.recipient_scope.participant_refs.length > 0 && (
+                        <div className="mt-1 flex flex-wrap items-center gap-1.5 text-xs">
+                          <span className="text-midground/55">@</span>
+                          {message.recipient_scope.participant_refs.map((ref) => {
+                            const member = threadMembers.find(
+                              (m) => m.worker_id === ref.participant_id,
+                            );
+                            const displayName =
+                              member?.display_name || ref.participant_id;
+                            return (
+                              <span
+                                key={ref.participant_id}
+                                className="inline-flex items-center gap-0.5 rounded-full bg-blue-600/20 px-2 py-0.5 text-blue-200 ring-1 ring-blue-400/40"
+                              >
+                                <span className="select-none">@</span>
+                                {displayName}
+                              </span>
+                            );
+                          })}
+                        </div>
+                      )}
                     <p className="mt-1 text-sm">{message.body_preview}</p>
                     {message.sensitive_flags.length > 0 && (
                       <p className="mt-1 text-xs text-yellow-200">
