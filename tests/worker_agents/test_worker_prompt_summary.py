@@ -233,3 +233,33 @@ def test_prompt_summary_includes_operating_instructions_and_active_work():
         "cross-chat work memory" in instruction
         for instruction in data["operating_instructions"]
     )
+
+
+def test_leader_with_subordinates_gets_task_delegation_skill_instructions():
+    summary = build_worker_prompt_summary(
+        profile=_profile("code-implementation", allow_delegation=True),
+        organization_tree=_tree(),
+        department_chat_bindings=_bindings(),
+    )
+    data = worker_prompt_summary_to_dict(summary)
+
+    instructions_text = " ".join(data["operating_instructions"])
+    assert "Task Delegation Workflow" in instructions_text
+    assert "send_worker_message" in instructions_text
+    assert "wait_for_worker_reply" in instructions_text
+    assert "check_worker_replies" in instructions_text
+    assert "Synchronous pattern" in instructions_text
+    assert "Asynchronous pattern" in instructions_text
+    assert "Dispatch rules" in instructions_text
+
+
+def test_child_worker_without_subordinates_does_not_get_task_delegation_skill():
+    summary = build_worker_prompt_summary(
+        profile=_profile("backend-implementation"),
+        organization_tree=_tree(),
+        department_chat_bindings=_bindings(),
+    )
+    data = worker_prompt_summary_to_dict(summary)
+
+    instructions_text = " ".join(data["operating_instructions"])
+    assert "Task Delegation Workflow" not in instructions_text

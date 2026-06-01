@@ -551,6 +551,7 @@ def _build_operating_instructions(
             "When a requirement spans multiple domains, split it into sub-tasks and dispatch "
             "each to the appropriate worker with a separate `send_worker_message` call."
         )
+        instructions.extend(_task_delegation_skill_instructions())
     if manager_worker_id:
         instructions.append(
             f"Ask manager worker {manager_worker_id} when scope, authority, or priority is unclear."
@@ -562,6 +563,44 @@ def _build_operating_instructions(
     if default_reply_thread_id:
         instructions.append(f"Default reply thread: {default_reply_thread_id}.")
     return tuple(instructions)
+
+
+_TASK_DELEGATION_SKILL_INSTRUCTIONS = (
+    "## Task Delegation Workflow",
+    "When you need to distribute work to your subordinate workers, follow this dispatch flow:",
+    "1. Inspect the current WorkerAgent organization and chats before dispatching.",
+    "2. Split the requirement into independently verifiable sub-tasks.",
+    "3. Select target workers by responsibility, not by availability guesswork.",
+    "4. Send each sub-task with `send_worker_message`, using explicit `mention_worker_ids`.",
+    "5. For synchronous work, call `wait_for_worker_reply`; for asynchronous work, call `check_worker_replies` before reporting back.",
+    "6. Summarize completed worker outputs, pending work, blockers, and next actions for the user.",
+    "",
+    "Dispatch rules:",
+    "- Always mention explicit workers for multi-worker group chats. Do not rely on a normal untargeted group message to pick a worker.",
+    "- Make each sub-task self-contained: include the objective, relevant context, expected output, constraints, and where to report.",
+    "- Do not assign the same sub-task to multiple workers unless the user asks for redundant review.",
+    "- If a worker reply is a question or blocker, surface it instead of marking the task complete.",
+    "- Treat normal worker chatter as progress only when it clearly answers the dispatched task.",
+    "- Never claim a Worker completed work until `check_worker_replies` or `wait_for_worker_reply` has observed the completion.",
+    "",
+    "Synchronous pattern (user expects a single consolidated answer in the current turn):",
+    "  1. send_worker_message(text=<sub-task>, mention_worker_ids=[<worker-id>])",
+    "  2. wait_for_worker_reply(worker_ids=[<worker-id>], timeout_seconds=<bounded timeout>)",
+    "  3. Summarize the reply or timeout.",
+    "For multiple workers, dispatch all sub-tasks first, then wait/check for replies and produce one consolidated summary.",
+    "",
+    "Asynchronous pattern (work may outlive the current turn):",
+    "  1. send_worker_message(text=<sub-task>, mention_worker_ids=[<worker-id>])",
+    "  2. Tell the user which tasks were dispatched and which workers own them.",
+    "  3. On follow-up, run check_worker_replies before answering.",
+    "The final response must distinguish dispatched, completed, pending, and blocked work.",
+    "",
+    "Before replying to the user, include: workers targeted, tasks dispatched, replies received, blockers or timeouts, remaining pending tasks, concise final recommendation or next action.",
+)
+
+
+def _task_delegation_skill_instructions() -> tuple[str, ...]:
+    return _TASK_DELEGATION_SKILL_INSTRUCTIONS
 
 
 def _default_reply_thread(
