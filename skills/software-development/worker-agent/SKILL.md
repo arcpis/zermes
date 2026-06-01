@@ -5,12 +5,14 @@ license: MIT
 metadata:
   hermes:
     tags: [worker-agents, organization, evolution, execution]
-    related_skills: [self-evolution]
+    related_skills: [self-evolution, worker-agent-task-delegation]
 ---
 
 # WorkerAgent Organization Executor
 
 Use this skill to execute organization changes, not to hand users command templates. Run the product CLI yourself, keep every change proposal-first, and report the final verified state.
+
+For task dispatch through existing workers, use `worker-agent-task-delegation` instead. Use this organization skill first only when a worker, department, profile, or chat binding change is required before dispatch.
 
 ## Execution Flow
 
@@ -40,6 +42,8 @@ Use this skill to execute organization changes, not to hand users command templa
 ## Capability Boundaries
 
 Map user requests to these operations only. If a request has no matching operation, inform the user — do not guess or invent proposal kinds.
+
+Task delegation is out of scope here. If the user asks to split requirements, send work to workers, wait for replies, or summarize WorkerAgent results, switch to `worker-agent-task-delegation`.
 
 | User intent | Command | Key parameters |
 | --- | --- | --- |

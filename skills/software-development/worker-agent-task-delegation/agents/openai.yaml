@@ -1,0 +1,4 @@
+interface:
+  display_name: "Worker Agent Task Delegation"
+  short_description: "Dispatch requirements to WorkerAgents and summarize replies."
+  default_prompt: "Use worker-agent-task-delegation to split this requirement, send explicit WorkerAgent tasks, wait or check for replies, and summarize the outcome."
