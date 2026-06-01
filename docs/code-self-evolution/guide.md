@@ -88,7 +88,7 @@
 ### 实例一：修复 Bug
 
 ```
-用户：hermes_cli/commands.py 里的 /help 命令在 Windows 上显示乱码，帮我修一下。
+用户：修改你的代码，hermes_cli/commands.py 里的 /help 命令在 Windows 上显示乱码，帮我修一下。
 
 主 Agent：我来分析这个问题并生成修改计划。
 → 调用 complete_code_task(requirement="修复 /help 命令在 Windows 上的乱码问题",
@@ -111,7 +111,7 @@
 ### 实例二：添加新功能
 
 ```
-用户：给 Worker Agent 的消息工具加一个消息优先级字段，支持 high/normal/low。
+用户：修改你的代码，给 Worker Agent 的消息工具加一个消息优先级字段，支持 high/normal/low。
 
 主 Agent：
 → 调用 complete_code_task(requirement="为 Worker Agent 消息工具添加优先级字段",
@@ -132,7 +132,7 @@
 除了被动接受需求，Zermes 还可以主动分析代码库，发现可改进之处。
 
 ```
-用户：让 Zermes 自己想想有什么可以改进的。
+用户：修改你的代码，想想有什么可以改进的。
 
 主 Agent：
 → 调用 self_evolution_thinking(action="run_once")

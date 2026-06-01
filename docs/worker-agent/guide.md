@@ -18,21 +18,11 @@ Worker Agent 是 Zermes 主 Agent 管理下的专职子 Agent。每个 Worker �
 ### 示例：创建一个编码 Agent
 
 ```
-用户：帮我创建一个叫 coder-agent 的 Worker，负责代码编写和修改。
+用户：帮我创建一个叫 coder-agent 的 worker agent，负责代码编写和修改，并为其创建两个员工分别负责代码编写和测试。
 
 主 Agent：好的，我来创建 coder-agent。
 → 调用 evolution-apply-draft(proposal_kind='create_child_agent', requested_worker='coder-agent')
 → 返回：coder-agent 已注册并启用
-```
-
-### 示例：创建一个研究 Agent
-
-```
-用户：我需要一个 researcher Agent 来做信息调研和总结。
-
-主 Agent：正在创建 researcher Worker。
-→ 调用 evolution-apply-draft(proposal_kind='create_child_agent', requested_worker='researcher')
-→ 返回：researcher 已注册
 ```
 
 ## 删除 Worker Agent
@@ -42,7 +32,7 @@ Worker Agent 是 Zermes 主 Agent 管理下的专职子 Agent。每个 Worker �
 ### 示例：删除一个 Worker
 
 ```
-用户：把 coder-agent 删掉，暂时不需要了。
+用户：把 coder-agent 的 worker agent 删掉，暂时不需要了。
 
 主 Agent：让我先检查 coder-agent 的状态……没有活跃任务，可以安全删除。
 → 调用 evolution-apply-draft(proposal_kind='delete_child_agent', target_node='coder-agent')
