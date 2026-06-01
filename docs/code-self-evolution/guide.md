@@ -158,9 +158,29 @@
 → 已启用，Zermes 会每周自动分析代码库并生成改进候选
 ```
 
+## Git 分支模型
+
+代码自我进化使用独立的分支命名空间，与产品的 `main` 分支完全隔离。
+
+| 分支 | 命名格式 | 用途 |
+|------|----------|------|
+| 开发分支 | `self-evolution/dev/<task_id>` | 单个任务的代码修改在此分支上进行 |
+| 集成分支 | `self-evolution/main` | 所有通过验证的任务分支合并到此分支 |
+
+## 代码仓库位置
+
+默认情况下，代码自我进化修改的是**当前安装使用的仓库**——从哪个仓库启动 Zermes，就在哪个仓库上操作。
+
+如果需要修改其他仓库，在 `~/.hermes/config.yaml` 中配置 `self_evolution.source_repo`：
+
+```yaml
+self_evolution:
+  source_repo: /path/to/your/development/hermes-repo
+```
+
 ## 审计文件
 
-每个自我进化任务在 `self-evolution/tasks/<task_id>/` 下生成审计文件：
+每个自我进化任务在审计工作区的 `tasks/<task_id>/` 下生成审计文件：
 
 ```
 plan.md              修改计划
