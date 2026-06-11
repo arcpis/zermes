@@ -28,13 +28,13 @@ def test_collect_structure_sources_uses_repository_documents(tmp_path):
     project_root = tmp_path / "hermes-agent"
     _write(project_root / "AGENTS.md", "# Rules\n")
     _write(project_root / "README.md", "# Hermes\n")
-    _write(project_root / "RELEASE_v1.0.0.md", "# Release\n")
+    _write(project_root / "docs" / "releases" / "v1.0.0.md", "# Release\n")
     _write(project_root / "toolsets.py", "CONFIGURABLE_TOOLSETS = {}\n")
 
     sources = collect_structure_sources(project_root)
     paths = {source.relative_path for source in sources}
 
-    assert {"AGENTS.md", "README.md", "RELEASE_v1.0.0.md", "toolsets.py"} <= paths
+    assert {"AGENTS.md", "README.md", "docs/releases/v1.0.0.md", "toolsets.py"} <= paths
 
 
 def test_build_analysis_context_writes_reusable_task_summaries(tmp_path):

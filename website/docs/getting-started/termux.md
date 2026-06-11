@@ -24,7 +24,7 @@ The tested Termux bundle installs:
 Concretely, it maps to:
 
 ```bash
-python -m pip install -e '.[termux]' -c constraints-termux.txt
+python -m pip install -e '.[termux]' -c docs/platforms/termux/constraints.txt
 ```
 
 ## What is not part of the tested path yet?
@@ -104,13 +104,13 @@ python -m pip install --upgrade pip setuptools wheel
 ### 4. Install the tested Termux bundle
 
 ```bash
-python -m pip install -e '.[termux]' -c constraints-termux.txt
+python -m pip install -e '.[termux]' -c docs/platforms/termux/constraints.txt
 ```
 
 If you only want the minimal core agent, this also works:
 
 ```bash
-python -m pip install -e '.' -c constraints-termux.txt
+python -m pip install -e '.' -c docs/platforms/termux/constraints.txt
 ```
 
 ### 5. Put `hermes` on your Termux PATH
@@ -174,7 +174,7 @@ Treat browser / WhatsApp tooling on Android as experimental until documented oth
 Use the tested Termux bundle instead:
 
 ```bash
-python -m pip install -e '.[termux]' -c constraints-termux.txt
+python -m pip install -e '.[termux]' -c docs/platforms/termux/constraints.txt
 ```
 
 The blocker is currently the `voice` extra:
@@ -191,7 +191,7 @@ python -m venv venv
 source venv/bin/activate
 export ANDROID_API_LEVEL="$(getprop ro.build.version.sdk)"
 python -m pip install --upgrade pip setuptools wheel
-python -m pip install -e '.[termux]' -c constraints-termux.txt
+python -m pip install -e '.[termux]' -c docs/platforms/termux/constraints.txt
 ```
 
 ### `jiter` / `maturin` complains about `ANDROID_API_LEVEL`
@@ -200,7 +200,7 @@ Set the API level explicitly before installing:
 
 ```bash
 export ANDROID_API_LEVEL="$(getprop ro.build.version.sdk)"
-python -m pip install -e '.[termux]' -c constraints-termux.txt
+python -m pip install -e '.[termux]' -c docs/platforms/termux/constraints.txt
 ```
 
 ### `hermes doctor` says ripgrep or Node is missing
@@ -222,7 +222,7 @@ pkg install clang rust make pkg-config libffi openssl
 Then retry:
 
 ```bash
-python -m pip install -e '.[termux]' -c constraints-termux.txt
+python -m pip install -e '.[termux]' -c docs/platforms/termux/constraints.txt
 ```
 
 ---

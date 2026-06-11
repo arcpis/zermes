@@ -152,7 +152,7 @@ Stage summary:
 - `runs/<context_run_id>/docs-summary.json` for cached documentation summaries.
 - `runs/<context_run_id>/context-state.json` for selected sources, skipped sources, and budget state.
 
-Do not use sibling workspaces, parent directories, or external files as stage 7 analysis input. Prefer repository documents such as `AGENTS.md`, `README.md`, `CONTRIBUTING.md`, `SECURITY.md`, `pyproject.toml`, and recent `RELEASE_v*.md` summaries before expanding code. When implementation changes user-visible behavior, tool schemas, configuration, testing instructions, or self-evolution workflow, update the relevant repository documentation and refresh the task summary.
+Do not use sibling workspaces, parent directories, or external files as stage 7 analysis input. Prefer repository documents such as `AGENTS.md`, `README.md`, `docs/governance/contributing.md`, `docs/governance/security.md`, `pyproject.toml`, and recent `docs/releases/v*.md` summaries before expanding code. When implementation changes user-visible behavior, tool schemas, configuration, testing instructions, or self-evolution workflow, update the relevant repository documentation and refresh the task summary.
 
 ## Managed Worker Agents
 

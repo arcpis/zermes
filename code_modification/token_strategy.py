@@ -23,8 +23,10 @@ DEFAULT_RELEASE_SUMMARY_COUNT = 2
 DOCUMENTATION_PATHS = (
     "AGENTS.md",
     "README.md",
-    "CONTRIBUTING.md",
-    "SECURITY.md",
+    "CHANGELOG.md",
+    "docs/README.md",
+    "docs/governance/contributing.md",
+    "docs/governance/security.md",
     "pyproject.toml",
     "requirements.txt",
     "package.json",
@@ -357,7 +359,7 @@ def _documentation_candidates(root: Path, budget: AnalysisBudget) -> list[Source
         if path.exists() and _is_safe_text_path(path):
             priority = 95 if relative in {"AGENTS.md", "README.md"} else 55
             candidates.append(_source_candidate(root, path, "documentation", priority, "repository documentation"))
-    releases = sorted(root.glob("RELEASE_v*.md"), key=lambda item: item.stat().st_mtime_ns, reverse=True)
+    releases = sorted((root / "docs" / "releases").glob("v*.md"), key=lambda item: item.stat().st_mtime_ns, reverse=True)
     for path in releases[: budget.max_release_files]:
         if path.is_file() and _is_safe_text_path(path):
             candidates.append(_source_candidate(root, path, "documentation", 55, "recent release notes"))
@@ -561,7 +563,7 @@ def _documentation_category(relative_path: str) -> str:
         return "agent_instructions"
     if relative_path == "README.md":
         return "project_overview"
-    if relative_path.startswith("RELEASE_"):
+    if relative_path.startswith("docs/releases/"):
         return "release_notes"
     if relative_path in {"pyproject.toml", "requirements.txt", "package.json"}:
         return "project_metadata"
