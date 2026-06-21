@@ -7,9 +7,9 @@ from unittest.mock import patch
 import pytest
 
 import sys
-import tools.terminal_tool  # noqa: F401 -- ensure module is loaded
-_tt_mod = sys.modules["tools.terminal_tool"]
-from tools.terminal_tool import _parse_env_var
+import zermes.tools.terminal_tool  # noqa: F401 -- ensure module is loaded
+_tt_mod = sys.modules["zermes.tools.terminal_tool"]
+from zermes.tools.terminal_tool import _parse_env_var
 
 
 class TestParseEnvVar:

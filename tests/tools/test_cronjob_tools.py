@@ -4,7 +4,7 @@ import json
 import pytest
 from pathlib import Path
 
-from tools.cronjob_tools import (
+from zermes.tools.cronjob_tools import (
     _scan_cron_prompt,
     check_cronjob_requirements,
     cronjob,
@@ -101,9 +101,9 @@ class TestCronjobRequirements:
 class TestUnifiedCronjobTool:
     @pytest.fixture(autouse=True)
     def _setup_cron_dir(self, tmp_path, monkeypatch):
-        monkeypatch.setattr("cron.jobs.CRON_DIR", tmp_path / "cron")
-        monkeypatch.setattr("cron.jobs.JOBS_FILE", tmp_path / "cron" / "jobs.json")
-        monkeypatch.setattr("cron.jobs.OUTPUT_DIR", tmp_path / "cron" / "output")
+        monkeypatch.setattr("zermes.cron.jobs.CRON_DIR", tmp_path / "cron")
+        monkeypatch.setattr("zermes.cron.jobs.JOBS_FILE", tmp_path / "cron" / "jobs.json")
+        monkeypatch.setattr("zermes.cron.jobs.OUTPUT_DIR", tmp_path / "cron" / "output")
 
     def test_create_and_list(self):
         created = json.loads(
@@ -241,7 +241,7 @@ class TestUnifiedCronjobTool:
         string ``"['telegram']"`` as a platform, failing with
         "no delivery target resolved".
         """
-        from cron.jobs import get_job
+        from zermes.cron.jobs import get_job
 
         created = json.loads(
             cronjob(
@@ -257,7 +257,7 @@ class TestUnifiedCronjobTool:
 
     def test_create_normalizes_multi_element_list_deliver(self):
         """deliver=['telegram', 'discord'] is stored as 'telegram,discord'."""
-        from cron.jobs import get_job
+        from zermes.cron.jobs import get_job
 
         created = json.loads(
             cronjob(
@@ -273,7 +273,7 @@ class TestUnifiedCronjobTool:
 
     def test_update_normalizes_list_form_deliver(self):
         """update with deliver=['telegram'] stores the canonical string."""
-        from cron.jobs import get_job
+        from zermes.cron.jobs import get_job
 
         created = json.loads(
             cronjob(action="create", prompt="x", schedule="every 1h")

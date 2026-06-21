@@ -1,4 +1,4 @@
-"""Tests for the shell-hooks subprocess bridge (agent.shell_hooks).
+"""Tests for the shell-hooks subprocess bridge (zermes.agent.shell_hooks).
 
 These tests focus on the pure translation layer — JSON serialisation,
 JSON parsing, matcher behaviour, block-schema correctness, and the
@@ -16,7 +16,7 @@ from typing import Any, Dict
 
 import pytest
 
-from agent import shell_hooks
+from zermes.agent import shell_hooks
 
 
 # ── helpers ───────────────────────────────────────────────────────────────
@@ -283,8 +283,8 @@ class TestCallbackSubprocess:
     def test_block_aggregation_through_plugin_manager(self, tmp_path, monkeypatch):
         """Registering via register_from_config makes
         get_pre_tool_call_block_message surface the block — the real
-        end-to-end control flow used by run_agent._invoke_tool."""
-        from hermes_cli import plugins
+        end-to-end control flow used by zermes.run_agent._invoke_tool."""
+        from zermes.hermes_cli import plugins
 
         script = _write_script(
             tmp_path, "block.sh",
@@ -296,7 +296,7 @@ class TestCallbackSubprocess:
         monkeypatch.setenv("HERMES_ACCEPT_HOOKS", "1")
 
         # Fresh manager
-        plugins._plugin_manager = plugins.PluginManager()
+        zermes.plugins._plugin_manager = zermes.plugins.PluginManager()
 
         cfg = {
             "hooks": {
@@ -308,7 +308,7 @@ class TestCallbackSubprocess:
         registered = shell_hooks.register_from_config(cfg, accept_hooks=True)
         assert len(registered) == 1
 
-        msg = plugins.get_pre_tool_call_block_message(
+        msg = zermes.plugins.get_pre_tool_call_block_message(
             tool_name="terminal",
             args={"command": "rm"},
         )
@@ -490,14 +490,14 @@ class TestParseHooksBlock:
 
 class TestIdempotentRegistration:
     def test_double_call_registers_once(self, tmp_path, monkeypatch):
-        from hermes_cli import plugins
+        from zermes.hermes_cli import plugins
 
         script = _write_script(tmp_path, "h.sh",
                                "#!/usr/bin/env bash\nprintf '{}\\n'\n")
         monkeypatch.setenv("HERMES_HOME", str(tmp_path / "home"))
         monkeypatch.setenv("HERMES_ACCEPT_HOOKS", "1")
 
-        plugins._plugin_manager = plugins.PluginManager()
+        zermes.plugins._plugin_manager = zermes.plugins.PluginManager()
 
         cfg = {"hooks": {"on_session_start": [{"command": str(script)}]}}
 
@@ -506,7 +506,7 @@ class TestIdempotentRegistration:
         assert len(first) == 1
         assert second == []
         # Only one callback on the manager
-        mgr = plugins.get_plugin_manager()
+        mgr = zermes.plugins.get_plugin_manager()
         assert len(mgr._hooks.get("on_session_start", [])) == 1
 
     def test_same_command_different_matcher_registers_both(
@@ -514,14 +514,14 @@ class TestIdempotentRegistration:
     ):
         """Same script used for different matchers under one event must
         register both callbacks — dedupe keys on (event, matcher, command)."""
-        from hermes_cli import plugins
+        from zermes.hermes_cli import plugins
 
         script = _write_script(tmp_path, "h.sh",
                                "#!/usr/bin/env bash\nprintf '{}\\n'\n")
         monkeypatch.setenv("HERMES_HOME", str(tmp_path / "home"))
         monkeypatch.setenv("HERMES_ACCEPT_HOOKS", "1")
 
-        plugins._plugin_manager = plugins.PluginManager()
+        zermes.plugins._plugin_manager = zermes.plugins.PluginManager()
 
         cfg = {
             "hooks": {
@@ -534,7 +534,7 @@ class TestIdempotentRegistration:
 
         registered = shell_hooks.register_from_config(cfg, accept_hooks=True)
         assert len(registered) == 2
-        mgr = plugins.get_plugin_manager()
+        mgr = zermes.plugins.get_plugin_manager()
         assert len(mgr._hooks.get("pre_tool_call", [])) == 2
 
 

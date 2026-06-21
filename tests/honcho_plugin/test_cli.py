@@ -7,20 +7,20 @@ class TestResolveApiKey:
     """Test _resolve_api_key with various config shapes."""
 
     def test_returns_api_key_from_root(self, monkeypatch):
-        import plugins.memory.honcho.cli as honcho_cli
+        import zermes.plugins.memory.honcho.cli as honcho_cli
         monkeypatch.setattr(honcho_cli, "_host_key", lambda: "hermes")
         monkeypatch.delenv("HONCHO_API_KEY", raising=False)
         assert honcho_cli._resolve_api_key({"apiKey": "root-key"}) == "root-key"
 
     def test_returns_api_key_from_host_block(self, monkeypatch):
-        import plugins.memory.honcho.cli as honcho_cli
+        import zermes.plugins.memory.honcho.cli as honcho_cli
         monkeypatch.setattr(honcho_cli, "_host_key", lambda: "hermes")
         monkeypatch.delenv("HONCHO_API_KEY", raising=False)
         cfg = {"hosts": {"hermes": {"apiKey": "host-key"}}, "apiKey": "root-key"}
         assert honcho_cli._resolve_api_key(cfg) == "host-key"
 
     def test_returns_local_for_base_url_without_api_key(self, monkeypatch):
-        import plugins.memory.honcho.cli as honcho_cli
+        import zermes.plugins.memory.honcho.cli as honcho_cli
         monkeypatch.setattr(honcho_cli, "_host_key", lambda: "hermes")
         monkeypatch.delenv("HONCHO_API_KEY", raising=False)
         monkeypatch.delenv("HONCHO_BASE_URL", raising=False)
@@ -28,14 +28,14 @@ class TestResolveApiKey:
         assert honcho_cli._resolve_api_key(cfg) == "local"
 
     def test_returns_local_for_base_url_env_var(self, monkeypatch):
-        import plugins.memory.honcho.cli as honcho_cli
+        import zermes.plugins.memory.honcho.cli as honcho_cli
         monkeypatch.setattr(honcho_cli, "_host_key", lambda: "hermes")
         monkeypatch.delenv("HONCHO_API_KEY", raising=False)
         monkeypatch.setenv("HONCHO_BASE_URL", "http://10.0.0.5:8000")
         assert honcho_cli._resolve_api_key({}) == "local"
 
     def test_returns_empty_when_nothing_configured(self, monkeypatch):
-        import plugins.memory.honcho.cli as honcho_cli
+        import zermes.plugins.memory.honcho.cli as honcho_cli
         monkeypatch.setattr(honcho_cli, "_host_key", lambda: "hermes")
         monkeypatch.delenv("HONCHO_API_KEY", raising=False)
         monkeypatch.delenv("HONCHO_BASE_URL", raising=False)
@@ -43,7 +43,7 @@ class TestResolveApiKey:
 
     def test_rejects_garbage_base_url_without_scheme(self, monkeypatch):
         """Obvious non-URL literals in baseUrl (typos) must not pass the guard."""
-        import plugins.memory.honcho.cli as honcho_cli
+        import zermes.plugins.memory.honcho.cli as honcho_cli
         monkeypatch.setattr(honcho_cli, "_host_key", lambda: "hermes")
         monkeypatch.delenv("HONCHO_API_KEY", raising=False)
         monkeypatch.delenv("HONCHO_BASE_URL", raising=False)
@@ -63,7 +63,7 @@ class TestResolveApiKey:
         needed later, extend the lowered-literal blocklist or check the
         parsed scheme explicitly.
         """
-        import plugins.memory.honcho.cli as honcho_cli
+        import zermes.plugins.memory.honcho.cli as honcho_cli
         monkeypatch.setattr(honcho_cli, "_host_key", lambda: "hermes")
         monkeypatch.delenv("HONCHO_API_KEY", raising=False)
         monkeypatch.delenv("HONCHO_BASE_URL", raising=False)
@@ -76,7 +76,7 @@ class TestResolveApiKey:
         # intentionally lenient: SDK errors out with clearer message.
 
     def test_accepts_https_base_url(self, monkeypatch):
-        import plugins.memory.honcho.cli as honcho_cli
+        import zermes.plugins.memory.honcho.cli as honcho_cli
         monkeypatch.setattr(honcho_cli, "_host_key", lambda: "hermes")
         monkeypatch.delenv("HONCHO_API_KEY", raising=False)
         monkeypatch.delenv("HONCHO_BASE_URL", raising=False)
@@ -91,7 +91,7 @@ class TestResolveApiKey:
         older configs don't see spurious "no API key configured" errors.
         The SDK itself still rejects malformed URLs at connect time.
         """
-        import plugins.memory.honcho.cli as honcho_cli
+        import zermes.plugins.memory.honcho.cli as honcho_cli
         monkeypatch.setattr(honcho_cli, "_host_key", lambda: "hermes")
         monkeypatch.delenv("HONCHO_API_KEY", raising=False)
         monkeypatch.delenv("HONCHO_BASE_URL", raising=False)
@@ -102,7 +102,7 @@ class TestResolveApiKey:
 
 class TestCmdStatus:
     def test_reports_connection_failure_when_session_setup_fails(self, monkeypatch, capsys, tmp_path):
-        import plugins.memory.honcho.cli as honcho_cli
+        import zermes.plugins.memory.honcho.cli as honcho_cli
 
         cfg_path = tmp_path / "honcho.json"
         cfg_path.write_text("{}")
@@ -135,11 +135,11 @@ class TestCmdStatus:
         monkeypatch.setattr(honcho_cli, "_local_config_path", lambda: cfg_path)
         monkeypatch.setattr(honcho_cli, "_active_profile_name", lambda: "default")
         monkeypatch.setattr(
-            "plugins.memory.honcho.client.HonchoClientConfig.from_global_config",
+            "zermes.plugins.memory.honcho.client.HonchoClientConfig.from_global_config",
             lambda host=None: FakeConfig(),
         )
         monkeypatch.setattr(
-            "plugins.memory.honcho.client.get_honcho_client",
+            "zermes.plugins.memory.honcho.client.get_honcho_client",
             lambda cfg: object(),
         )
 

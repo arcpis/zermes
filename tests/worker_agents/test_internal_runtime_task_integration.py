@@ -1,13 +1,13 @@
 import pytest
 
-from worker_agents.internal_runtime_task_integration import (
+from zermes.worker_agents.internal_runtime_task_integration import (
     finalize_internal_runtime_result,
     mark_internal_runtime_started,
     record_internal_runtime_event,
 )
-from worker_agents.profile import WorkerAgentProfile, WorkerBudgetPolicy
-from worker_agents.registry_service import WorkerRegistryService
-from worker_agents.runtime_contract import (
+from zermes.worker_agents.profile import WorkerAgentProfile, WorkerBudgetPolicy
+from zermes.worker_agents.registry_service import WorkerRegistryService
+from zermes.worker_agents.runtime_contract import (
     RuntimeArtifactRef,
     RuntimeErrorCode,
     RuntimeErrorInfo,
@@ -17,9 +17,9 @@ from worker_agents.runtime_contract import (
     RuntimeState,
     RuntimeType,
 )
-from worker_agents.storage import WorkerAgentProfileStore, WorkerAgentRuntimeDataStore
-from worker_agents.task_service import WorkerTaskService
-from worker_agents.task_state import WorkerTaskError, WorkerTaskStatus
+from zermes.worker_agents.storage import WorkerAgentProfileStore, WorkerAgentRuntimeDataStore
+from zermes.worker_agents.task_service import WorkerTaskService
+from zermes.worker_agents.task_state import WorkerTaskError, WorkerTaskStatus
 
 
 def _task_service(tmp_path):

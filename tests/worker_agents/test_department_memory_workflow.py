@@ -1,4 +1,4 @@
-from worker_agents.department_memory import (
+from zermes.worker_agents.department_memory import (
     DepartmentMemoryKind,
     DepartmentMemoryProposalStore,
     DepartmentMemoryReadRequest,
@@ -10,7 +10,7 @@ from worker_agents.department_memory import (
     DepartmentMemoryVisibility,
     proposal_from_private_asset_input,
 )
-from worker_agents.private_assets import (
+from zermes.worker_agents.private_assets import (
     PrivateAssetSensitivity,
     PrivateAssetShareStatus,
     PrivateMemoryRecord,

@@ -206,7 +206,7 @@ def test_filesystem_persistence():
 
 
 def test_environment_isolation():
-    """Test that different task_ids get isolated environments."""
+    """Test that different task_ids get isolated zermes.environments."""
     print("\n" + "=" * 60)
     print("TEST 6: Environment Isolation")
     print("=" * 60)

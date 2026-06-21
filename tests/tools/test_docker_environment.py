@@ -6,7 +6,7 @@ import types
 
 import pytest
 
-from tools.environments import docker as docker_env
+from zermes.tools.environments import docker as docker_env
 
 
 def _mock_subprocess_run(monkeypatch):
@@ -294,13 +294,13 @@ def test_docker_env_appears_in_run_command(monkeypatch):
     monkeypatch.setattr(docker_env, "find_docker", lambda: "/usr/bin/docker")
     calls = _mock_subprocess_run(monkeypatch)
 
-    _make_dummy_env(env={"SSH_AUTH_SOCK": "/run/user/1000/ssh-agent.sock", "GNUPGHOME": "/root/.gnupg"})
+    _make_dummy_env(env={"SSH_AUTH_SOCK": "/run/user/1000/ssh-zermes.agent.sock", "GNUPGHOME": "/root/.gnupg"})
 
     run_calls = [c for c in calls if isinstance(c[0], list) and len(c[0]) >= 2 and c[0][1] == "run"]
     assert run_calls, "docker run should have been called"
     run_args = run_calls[0][0]
     run_args_str = " ".join(run_args)
-    assert "SSH_AUTH_SOCK=/run/user/1000/ssh-agent.sock" in run_args_str
+    assert "SSH_AUTH_SOCK=/run/user/1000/ssh-zermes.agent.sock" in run_args_str
     assert "GNUPGHOME=/root/.gnupg" in run_args_str
 
 
@@ -333,7 +333,7 @@ def test_forward_env_overrides_docker_env_in_init_args(monkeypatch):
 def test_docker_env_and_forward_env_merge_in_init_args(monkeypatch):
     """docker_env and docker_forward_env with different keys should both appear."""
     env = _make_execute_only_env(forward_env=["TOKEN"])
-    env._env = {"SSH_AUTH_SOCK": "/run/user/1000/agent.sock"}
+    env._env = {"SSH_AUTH_SOCK": "/run/user/1000/zermes.agent.sock"}
 
     monkeypatch.setenv("TOKEN", "secret123")
     monkeypatch.setattr(docker_env, "_load_hermes_env_vars", lambda: {})
@@ -341,7 +341,7 @@ def test_docker_env_and_forward_env_merge_in_init_args(monkeypatch):
     args = env._build_init_env_args()
     args_str = " ".join(args)
 
-    assert "SSH_AUTH_SOCK=/run/user/1000/agent.sock" in args_str
+    assert "SSH_AUTH_SOCK=/run/user/1000/zermes.agent.sock" in args_str
     assert "TOKEN=secret123" in args_str
 
 

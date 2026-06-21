@@ -19,7 +19,7 @@ try:
 except ImportError:
     pytest.skip("mautrix not installed", allow_module_level=True)
 
-from gateway.platforms.base import MessageType
+from zermes.gateway.platforms.base import MessageType
 
 
 # ---------------------------------------------------------------------------
@@ -28,8 +28,8 @@ from gateway.platforms.base import MessageType
 
 def _make_adapter():
     """Create a MatrixAdapter with mocked config."""
-    from gateway.platforms.matrix import MatrixAdapter
-    from gateway.config import PlatformConfig
+    from zermes.gateway.platforms.matrix import MatrixAdapter
+    from zermes.gateway.config import PlatformConfig
 
     config = PlatformConfig(
         enabled=True,

@@ -1,7 +1,7 @@
 """
-Tests for custom command-type TTS providers.
+Tests for custom command-type TTS zermes.providers.
 
-These tests cover the ``tts.providers.<name>`` registry: built-in
+These tests cover the ``tts.zermes.providers.<name>`` registry: built-in
 precedence, command resolution, placeholder rendering, shell-quote
 context handling, timeout / failure cleanup, voice_compatible opt-in,
 and max_text_length lookup.
@@ -22,7 +22,7 @@ from unittest.mock import patch
 
 import pytest
 
-from tools.tts_tool import (
+from zermes.tools.tts_tool import (
     BUILTIN_TTS_PROVIDERS,
     COMMAND_TTS_OUTPUT_FORMATS,
     DEFAULT_COMMAND_TTS_MAX_TEXT_LENGTH,
@@ -107,7 +107,7 @@ class TestResolveCommandProviderConfig:
 
     def test_native_piper_cannot_be_shadowed_by_command_entry(self):
         """Regression guard for PR that added native Piper as a built-in.
-        A user's ``tts.providers.piper`` must not override the built-in."""
+        A user's ``tts.zermes.providers.piper`` must not override the built-in."""
         cfg = {
             "providers": {
                 "piper": {"type": "command", "command": "some-script"},
@@ -444,7 +444,7 @@ class TestTextToSpeechToolWithCommandProvider:
         def fake_load():
             return cfg["tts"]
 
-        with patch("tools.tts_tool._load_tts_config", fake_load):
+        with patch("zermes.tools.tts_tool._load_tts_config", fake_load):
             result = text_to_speech_tool(text="hi", output_path=str(out))
         data = json.loads(result)
         assert data["success"] is True, data
@@ -468,7 +468,7 @@ class TestTextToSpeechToolWithCommandProvider:
         }
         out = tmp_path / "clip.ogg"
 
-        with patch("tools.tts_tool._load_tts_config", return_value=cfg):
+        with patch("zermes.tools.tts_tool._load_tts_config", return_value=cfg):
             result = text_to_speech_tool(text="hi", output_path=str(out))
         data = json.loads(result)
         assert data["success"] is True
@@ -485,16 +485,16 @@ class TestTextToSpeechToolWithCommandProvider:
                 "broken": {"type": "command", "command": "   "},
             },
         }
-        with patch("tools.tts_tool._load_tts_config", return_value=cfg):
+        with patch("zermes.tools.tts_tool._load_tts_config", return_value=cfg):
             result = text_to_speech_tool(text="hi", output_path=str(tmp_path / "x.mp3"))
         data = json.loads(result)
         # The response should not carry the command-provider error text.
         err = (data.get("error") or "").lower()
-        assert "tts.providers.broken.command is not configured" not in err
+        assert "tts.zermes.providers.broken.command is not configured" not in err
 
 
 class TestCheckTtsRequirements:
     def test_configured_command_provider_satisfies_requirement(self):
         cfg = {"providers": {"x": {"type": "command", "command": "echo x"}}}
-        with patch("tools.tts_tool._load_tts_config", return_value=cfg):
+        with patch("zermes.tools.tts_tool._load_tts_config", return_value=cfg):
             assert check_tts_requirements() is True

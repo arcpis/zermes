@@ -47,7 +47,7 @@ def _make_cli(env_overrides=None, config_overrides=None, **kwargs):
     }
     with patch.dict(sys.modules, prompt_toolkit_stubs), \
          patch.dict("os.environ", clean_env, clear=False):
-        import cli as _cli_mod
+        import zermes.cli as _cli_mod
         _cli_mod = importlib.reload(_cli_mod)
         with patch.object(_cli_mod, "get_tool_definitions", return_value=[]), \
              patch.dict(_cli_mod.__dict__, {"CLI_CONFIG": _clean_config}):
@@ -176,7 +176,7 @@ class TestPromptToolkitTerminalCompatibility:
         from unittest.mock import patch as _patch
         from prompt_toolkit.key_binding import KeyBindings
 
-        from cli import _bind_prompt_submit_keys
+        from zermes.cli import _bind_prompt_submit_keys
 
         def submit_handler(event):
             return None
@@ -199,7 +199,7 @@ class TestPromptToolkitTerminalCompatibility:
             assert ("c-j",) not in bindings
 
     def test_cpr_warning_callback_is_disabled(self):
-        from cli import _disable_prompt_toolkit_cpr_warning
+        from zermes.cli import _disable_prompt_toolkit_cpr_warning
 
         renderer = SimpleNamespace(cpr_not_supported_callback=lambda: None)
         app = SimpleNamespace(renderer=renderer)
@@ -326,7 +326,7 @@ class TestRootLevelProviderOverride:
             },
         }))
 
-        import cli
+        import zermes.cli as cli
         monkeypatch.setattr(cli, "_hermes_home", hermes_home)
         cfg = cli.load_cli_config()
 
@@ -349,7 +349,7 @@ class TestRootLevelProviderOverride:
             },
         }))
 
-        import cli
+        import zermes.cli as cli
         monkeypatch.setattr(cli, "_hermes_home", hermes_home)
         cfg = cli.load_cli_config()
 
@@ -373,7 +373,7 @@ class TestRootLevelProviderOverride:
             },
         }))
 
-        import cli
+        import zermes.cli as cli
         monkeypatch.setattr(cli, "_hermes_home", hermes_home)
         cfg = cli.load_cli_config()
 
@@ -382,7 +382,7 @@ class TestRootLevelProviderOverride:
 
     def test_normalize_root_model_keys_moves_to_model(self):
         """_normalize_root_model_keys migrates root keys into model section."""
-        from hermes_cli.config import _normalize_root_model_keys
+        from zermes.hermes_cli.config import _normalize_root_model_keys
 
         config = {
             "provider": "opencode-go",
@@ -401,7 +401,7 @@ class TestRootLevelProviderOverride:
 
     def test_normalize_root_model_keys_does_not_override_existing(self):
         """Existing model.provider is never overridden by root-level key."""
-        from hermes_cli.config import _normalize_root_model_keys
+        from zermes.hermes_cli.config import _normalize_root_model_keys
 
         config = {
             "provider": "stale-provider",
@@ -416,7 +416,7 @@ class TestRootLevelProviderOverride:
 
     def test_normalize_root_context_length_migrates_to_model(self):
         """Root-level context_length is migrated into the model section."""
-        from hermes_cli.config import _normalize_root_model_keys
+        from zermes.hermes_cli.config import _normalize_root_model_keys
 
         config = {
             "context_length": 128000,
@@ -430,7 +430,7 @@ class TestRootLevelProviderOverride:
 
     def test_normalize_root_context_length_does_not_override_existing(self):
         """Existing model.context_length is not overridden by root-level key."""
-        from hermes_cli.config import _normalize_root_model_keys
+        from zermes.hermes_cli.config import _normalize_root_model_keys
 
         config = {
             "context_length": 256000,
@@ -445,7 +445,7 @@ class TestRootLevelProviderOverride:
 
     def test_normalize_root_context_length_with_string_model(self):
         """Root-level context_length is migrated even when model is a string."""
-        from hermes_cli.config import _normalize_root_model_keys
+        from zermes.hermes_cli.config import _normalize_root_model_keys
 
         config = {
             "context_length": 128000,

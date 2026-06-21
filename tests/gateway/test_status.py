@@ -5,7 +5,7 @@ import os
 from pathlib import Path
 from types import SimpleNamespace
 
-from gateway import status
+from zermes.gateway import status
 
 
 class TestGatewayPidState:
@@ -14,7 +14,7 @@ class TestGatewayPidState:
 
         status.write_pid_file()
 
-        payload = json.loads((tmp_path / "gateway.pid").read_text())
+        payload = json.loads((tmp_path / "zermes.gateway.pid").read_text())
         assert payload["pid"] == os.getpid()
         assert payload["kind"] == "hermes-gateway"
         assert isinstance(payload["argv"], list)
@@ -24,7 +24,7 @@ class TestGatewayPidState:
         """Regression: two concurrent --replace invocations must not both win.
 
         Without O_CREAT|O_EXCL, two processes racing through start_gateway()'s
-        termination-wait would both write to gateway.pid, silently overwriting
+        termination-wait would both write to zermes.gateway.pid, silently overwriting
         each other and leaving multiple gateway instances alive (#11718).
         """
         import pytest
@@ -33,7 +33,7 @@ class TestGatewayPidState:
 
         # First write wins.
         status.write_pid_file()
-        assert (tmp_path / "gateway.pid").exists()
+        assert (tmp_path / "zermes.gateway.pid").exists()
 
         # Second write (simulating a racing --replace that missed the earlier
         # guards) must raise FileExistsError rather than clobber the record.
@@ -41,12 +41,12 @@ class TestGatewayPidState:
             status.write_pid_file()
 
         # Original record is preserved.
-        payload = json.loads((tmp_path / "gateway.pid").read_text())
+        payload = json.loads((tmp_path / "zermes.gateway.pid").read_text())
         assert payload["pid"] == os.getpid()
 
     def test_get_running_pid_rejects_live_non_gateway_pid(self, tmp_path, monkeypatch):
         monkeypatch.setenv("HERMES_HOME", str(tmp_path))
-        pid_path = tmp_path / "gateway.pid"
+        pid_path = tmp_path / "zermes.gateway.pid"
         pid_path.write_text(str(os.getpid()))
 
         assert status.get_running_pid() is None
@@ -58,12 +58,12 @@ class TestGatewayPidState:
         # able to unlink it so ``write_pid_file``'s O_EXCL create succeeds —
         # otherwise systemd's restart loop hits "PID file race lost" forever.
         monkeypatch.setenv("HERMES_HOME", str(tmp_path))
-        pid_path = tmp_path / "gateway.pid"
+        pid_path = tmp_path / "zermes.gateway.pid"
         dead_pid = 999999  # not our pid, and below we simulate it's dead
         pid_path.write_text(json.dumps({
             "pid": dead_pid,
             "kind": "hermes-gateway",
-            "argv": ["python", "-m", "hermes_cli.main", "gateway", "run"],
+            "argv": ["python", "-m", "zermes.hermes_cli.main", "gateway", "run"],
             "start_time": 111,
         }))
 
@@ -77,11 +77,11 @@ class TestGatewayPidState:
 
     def test_get_running_pid_accepts_gateway_metadata_when_cmdline_unavailable(self, tmp_path, monkeypatch):
         monkeypatch.setenv("HERMES_HOME", str(tmp_path))
-        pid_path = tmp_path / "gateway.pid"
+        pid_path = tmp_path / "zermes.gateway.pid"
         pid_path.write_text(json.dumps({
             "pid": os.getpid(),
             "kind": "hermes-gateway",
-            "argv": ["python", "-m", "hermes_cli.main", "gateway"],
+            "argv": ["python", "-m", "zermes.hermes_cli.main", "gateway"],
             "start_time": 123,
         }))
 
@@ -97,7 +97,7 @@ class TestGatewayPidState:
 
     def test_get_running_pid_accepts_script_style_gateway_cmdline(self, tmp_path, monkeypatch):
         monkeypatch.setenv("HERMES_HOME", str(tmp_path))
-        pid_path = tmp_path / "gateway.pid"
+        pid_path = tmp_path / "zermes.gateway.pid"
         pid_path.write_text(json.dumps({
             "pid": os.getpid(),
             "kind": "hermes-gateway",
@@ -122,11 +122,11 @@ class TestGatewayPidState:
     def test_get_running_pid_accepts_explicit_pid_path_without_cleanup(self, tmp_path, monkeypatch):
         other_home = tmp_path / "profile-home"
         other_home.mkdir()
-        pid_path = other_home / "gateway.pid"
+        pid_path = other_home / "zermes.gateway.pid"
         pid_path.write_text(json.dumps({
             "pid": os.getpid(),
             "kind": "hermes-gateway",
-            "argv": ["python", "-m", "hermes_cli.main", "gateway"],
+            "argv": ["python", "-m", "zermes.hermes_cli.main", "gateway"],
             "start_time": 123,
         }))
 
@@ -134,11 +134,11 @@ class TestGatewayPidState:
         monkeypatch.setattr(status, "_get_process_start_time", lambda pid: 123)
         monkeypatch.setattr(status, "_read_process_cmdline", lambda pid: None)
 
-        lock_path = other_home / "gateway.lock"
+        lock_path = other_home / "zermes.gateway.lock"
         lock_path.write_text(json.dumps({
             "pid": os.getpid(),
             "kind": "hermes-gateway",
-            "argv": ["python", "-m", "hermes_cli.main", "gateway"],
+            "argv": ["python", "-m", "zermes.hermes_cli.main", "gateway"],
             "start_time": 123,
         }))
         monkeypatch.setattr(status, "is_gateway_runtime_lock_active", lambda lock_path=None: True)
@@ -159,11 +159,11 @@ class TestGatewayPidState:
 
     def test_get_running_pid_treats_pid_file_as_stale_without_runtime_lock(self, tmp_path, monkeypatch):
         monkeypatch.setenv("HERMES_HOME", str(tmp_path))
-        pid_path = tmp_path / "gateway.pid"
+        pid_path = tmp_path / "zermes.gateway.pid"
         pid_path.write_text(json.dumps({
             "pid": os.getpid(),
             "kind": "hermes-gateway",
-            "argv": ["python", "-m", "hermes_cli.main", "gateway"],
+            "argv": ["python", "-m", "zermes.hermes_cli.main", "gateway"],
             "start_time": 123,
         }))
 
@@ -183,8 +183,8 @@ class TestGatewayPidState:
         crashed-process PID files never get removed.
         """
         monkeypatch.setenv("HERMES_HOME", str(tmp_path))
-        pid_path = tmp_path / "gateway.pid"
-        lock_path = tmp_path / "gateway.lock"
+        pid_path = tmp_path / "zermes.gateway.pid"
+        lock_path = tmp_path / "zermes.gateway.lock"
 
         # PID that is guaranteed not alive and not our own.
         dead_foreign_pid = 999999
@@ -193,13 +193,13 @@ class TestGatewayPidState:
         pid_path.write_text(json.dumps({
             "pid": dead_foreign_pid,
             "kind": "hermes-gateway",
-            "argv": ["python", "-m", "hermes_cli.main", "gateway"],
+            "argv": ["python", "-m", "zermes.hermes_cli.main", "gateway"],
             "start_time": 123,
         }))
         lock_path.write_text(json.dumps({
             "pid": dead_foreign_pid,
             "kind": "hermes-gateway",
-            "argv": ["python", "-m", "hermes_cli.main", "gateway"],
+            "argv": ["python", "-m", "zermes.hermes_cli.main", "gateway"],
             "start_time": 123,
         }))
 
@@ -210,11 +210,11 @@ class TestGatewayPidState:
 
     def test_get_running_pid_falls_back_to_live_lock_record(self, tmp_path, monkeypatch):
         monkeypatch.setenv("HERMES_HOME", str(tmp_path))
-        pid_path = tmp_path / "gateway.pid"
+        pid_path = tmp_path / "zermes.gateway.pid"
         pid_path.write_text(json.dumps({
             "pid": 99999,
             "kind": "hermes-gateway",
-            "argv": ["python", "-m", "hermes_cli.main", "gateway"],
+            "argv": ["python", "-m", "zermes.hermes_cli.main", "gateway"],
             "start_time": 123,
         }))
 
@@ -226,7 +226,7 @@ class TestGatewayPidState:
             lambda: {
                 "pid": os.getpid(),
                 "kind": "hermes-gateway",
-                "argv": ["python", "-m", "hermes_cli.main", "gateway"],
+                "argv": ["python", "-m", "zermes.hermes_cli.main", "gateway"],
                 "start_time": 123,
             },
         )
@@ -372,7 +372,7 @@ class TestTerminatePid:
 
 class TestScopedLocks:
     def test_windows_file_lock_uses_high_offset(self, tmp_path, monkeypatch):
-        lock_path = tmp_path / "gateway.lock"
+        lock_path = tmp_path / "zermes.gateway.lock"
         handle = open(lock_path, "a+", encoding="utf-8")
         fd = handle.fileno()
         calls = []
@@ -411,7 +411,7 @@ class TestScopedLocks:
         }))
 
         # Post-#21561 the liveness probe routes through
-        # ``gateway.status._pid_exists`` (psutil-first, safe on Windows).
+        # ``zermes.gateway.status._pid_exists`` (psutil-first, safe on Windows).
         monkeypatch.setattr(status, "_pid_exists", lambda pid: True)
         monkeypatch.setattr(status, "_get_process_start_time", lambda pid: 123)
 

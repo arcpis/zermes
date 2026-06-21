@@ -1,9 +1,9 @@
 import pytest
 
-from gateway.config import GatewayConfig, Platform, PlatformConfig
-from gateway.platforms.base import MessageEvent
-from gateway.run import GatewayRunner
-from gateway.session import SessionSource
+from zermes.gateway.config import GatewayConfig, Platform, PlatformConfig
+from zermes.gateway.platforms.base import MessageEvent
+from zermes.gateway.run import GatewayRunner
+from zermes.gateway.session import SessionSource
 
 
 def _make_runner(config: GatewayConfig) -> GatewayRunner:

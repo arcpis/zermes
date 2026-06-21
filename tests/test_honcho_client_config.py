@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from plugins.memory.honcho.client import HonchoClientConfig
+from zermes.plugins.memory.honcho.client import HonchoClientConfig
 
 
 class TestHonchoClientConfigAutoEnable:

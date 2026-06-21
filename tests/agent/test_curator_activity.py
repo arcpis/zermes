@@ -23,8 +23,8 @@ def curator_modules(tmp_path, monkeypatch):
     monkeypatch.setenv("HERMES_HOME", str(home))
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
 
-    import tools.skill_usage as skill_usage
-    import agent.curator as curator
+    import zermes.tools.skill_usage as skill_usage
+    import zermes.agent.curator as curator
 
     importlib.reload(skill_usage)
     importlib.reload(curator)

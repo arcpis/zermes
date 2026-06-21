@@ -999,7 +999,7 @@ Delete the contents (or this file) to use the default personality.
             Write-Success "Skills synced to ~/.hermes/skills/"
         } catch {
             # Fallback: simple directory copy
-            $bundledSkills = "$InstallDir\skills"
+            $bundledSkills = "$InstallDir\resources\skills\bundled"
             $userSkills = "$HermesHome\skills"
             if ((Test-Path $bundledSkills) -and -not (Get-ChildItem $userSkills -Exclude '.bundled_manifest' -ErrorAction SilentlyContinue)) {
                 Copy-Item -Path "$bundledSkills\*" -Destination $userSkills -Recurse -Force -ErrorAction SilentlyContinue
@@ -1153,7 +1153,7 @@ function Install-NodeDeps {
     }
 
     # TUI
-    $tuiDir = "$InstallDir\ui-tui"
+    $tuiDir = "$InstallDir\apps\tui"
     if (Test-Path "$tuiDir\package.json") {
         Write-Info "Installing TUI dependencies..."
         $tuiLog = "$env:TEMP\hermes-npm-tui-$(Get-Random).log"
@@ -1284,9 +1284,9 @@ function Invoke-SetupWizard {
     
     # Run hermes setup using the venv Python directly (no activation needed)
     if (-not $NoVenv) {
-        & ".\venv\Scripts\python.exe" -m hermes_cli.main setup
+        & ".\venv\Scripts\python.exe" -m zermes.hermes_cli.main setup
     } else {
-        python -m hermes_cli.main setup
+        python -m zermes.hermes_cli.main setup
     }
     
     Pop-Location
@@ -1337,7 +1337,7 @@ function Start-GatewayIfConfigured {
     if ($response -eq "" -or $response -match "^[Yy]") {
         Write-Info "Starting gateway in background..."
         try {
-            $logFile = "$HermesHome\logs\gateway.log"
+            $logFile = "$HermesHome\logs\zermes.gateway.log"
             Start-Process -FilePath $hermesCmd -ArgumentList "gateway" `
                 -RedirectStandardOutput $logFile `
                 -RedirectStandardError "$HermesHome\logs\gateway-error.log" `
@@ -1346,7 +1346,7 @@ function Start-GatewayIfConfigured {
             Write-Info "Logs: $logFile"
             Write-Info "To stop: close the gateway process from Task Manager"
         } catch {
-            Write-Warn "Failed to start gateway. Run manually: hermes gateway"
+            Write-Warn "Failed to start zermes.gateway. Run manually: hermes gateway"
         }
     } else {
         Write-Info "Skipped. Start the gateway later with: hermes gateway"

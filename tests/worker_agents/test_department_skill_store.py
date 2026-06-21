@@ -1,6 +1,6 @@
 import pytest
 
-from worker_agents.department_skills import (
+from zermes.worker_agents.department_skills import (
     DepartmentSkillBindingProposal,
     DepartmentSkillBindingState,
     DepartmentSkillBindingStore,
@@ -15,7 +15,7 @@ from worker_agents.department_skills import (
     DepartmentSkillReviewerRole,
     proposal_from_skill_experience_input,
 )
-from worker_agents.private_skill_experience import SkillExperienceProposalInput
+from zermes.worker_agents.private_skill_experience import SkillExperienceProposalInput
 
 
 def _proposal(**overrides):

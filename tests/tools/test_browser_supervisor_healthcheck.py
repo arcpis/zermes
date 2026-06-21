@@ -12,7 +12,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from tools import browser_supervisor as bs
+from zermes.tools import browser_supervisor as bs
 
 
 class _FakeLoop:

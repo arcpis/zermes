@@ -10,7 +10,7 @@ import json
 import pytest
 from unittest.mock import patch, MagicMock
 
-from hermes_cli.config import load_env, save_env_value
+from zermes.hermes_cli.config import load_env, save_env_value
 
 
 class TestStaleOAuthTokenDetection:
@@ -30,7 +30,7 @@ class TestStaleOAuthTokenDetection:
 
         # No valid Claude Code credentials available (expired, no refresh token)
         monkeypatch.setattr(
-            "agent.anthropic_adapter.read_claude_code_credentials",
+            "zermes.agent.anthropic_adapter.read_claude_code_credentials",
             lambda: {
                 "accessToken": "expired-cc-token",
                 "refreshToken": "",          # No refresh — can't recover
@@ -39,16 +39,16 @@ class TestStaleOAuthTokenDetection:
             },
         )
         monkeypatch.setattr(
-            "agent.anthropic_adapter.is_claude_code_token_valid",
+            "zermes.agent.anthropic_adapter.is_claude_code_token_valid",
             lambda creds: False,             # Explicitly expired
         )
         monkeypatch.setattr(
-            "agent.anthropic_adapter._is_oauth_token",
+            "zermes.agent.anthropic_adapter._is_oauth_token",
             lambda key: key.startswith("sk-ant-"),
         )
         # _resolve_claude_code_token_from_credentials has no valid path
         monkeypatch.setattr(
-            "agent.anthropic_adapter._resolve_claude_code_token_from_credentials",
+            "zermes.agent.anthropic_adapter._resolve_claude_code_token_from_credentials",
             lambda creds=None: None,
         )
 
@@ -56,7 +56,7 @@ class TestStaleOAuthTokenDetection:
         monkeypatch.setattr("builtins.input", lambda _: "3")
         monkeypatch.setattr("getpass.getpass", lambda _: "")
 
-        from hermes_cli.main import _model_flow_anthropic
+        from zermes.hermes_cli.main import _model_flow_anthropic
         cfg = {}
 
         _model_flow_anthropic(cfg)
@@ -80,22 +80,22 @@ class TestStaleOAuthTokenDetection:
         save_env_value("ANTHROPIC_TOKEN", "")
 
         monkeypatch.setattr(
-            "agent.anthropic_adapter.read_claude_code_credentials",
+            "zermes.agent.anthropic_adapter.read_claude_code_credentials",
             lambda: None,   # No CC creds
         )
         monkeypatch.setattr(
-            "agent.anthropic_adapter.is_claude_code_token_valid",
+            "zermes.agent.anthropic_adapter.is_claude_code_token_valid",
             lambda creds: False,
         )
         monkeypatch.setattr(
-            "agent.anthropic_adapter._is_oauth_token",
+            "zermes.agent.anthropic_adapter._is_oauth_token",
             lambda key: key.startswith("sk-ant-") and "oat" in key,
         )
 
         # Simulate user picks "1" (use existing)
         monkeypatch.setattr("builtins.input", lambda _: "1")
 
-        from hermes_cli.main import _model_flow_anthropic
+        from zermes.hermes_cli.main import _model_flow_anthropic
         cfg = {}
 
         _model_flow_anthropic(cfg)
@@ -116,7 +116,7 @@ class TestStaleOAuthTokenDetection:
 
         # Valid Claude Code credentials with refresh token
         monkeypatch.setattr(
-            "agent.anthropic_adapter.read_claude_code_credentials",
+            "zermes.agent.anthropic_adapter.read_claude_code_credentials",
             lambda: {
                 "accessToken": "valid-cc-token",
                 "refreshToken": "valid-refresh",
@@ -124,22 +124,22 @@ class TestStaleOAuthTokenDetection:
             },
         )
         monkeypatch.setattr(
-            "agent.anthropic_adapter.is_claude_code_token_valid",
+            "zermes.agent.anthropic_adapter.is_claude_code_token_valid",
             lambda creds: True,
         )
         monkeypatch.setattr(
-            "agent.anthropic_adapter._is_oauth_token",
+            "zermes.agent.anthropic_adapter._is_oauth_token",
             lambda key: key.startswith("sk-ant-"),
         )
         monkeypatch.setattr(
-            "agent.anthropic_adapter._resolve_claude_code_token_from_credentials",
+            "zermes.agent.anthropic_adapter._resolve_claude_code_token_from_credentials",
             lambda creds=None: "valid-cc-token",
         )
 
         # Simulate user picks "1" (use existing)
         monkeypatch.setattr("builtins.input", lambda _: "1")
 
-        from hermes_cli.main import _model_flow_anthropic
+        from zermes.hermes_cli.main import _model_flow_anthropic
         cfg = {}
 
         _model_flow_anthropic(cfg)

@@ -1,4 +1,4 @@
-from worker_agents.organization import (
+from zermes.worker_agents.organization import (
     OrgLifecycleState,
     OrgLeaderKind,
     OrgLeaderRef,

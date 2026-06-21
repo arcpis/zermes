@@ -29,7 +29,7 @@ import unittest.mock as mock
 
 import pytest
 
-from tools.code_execution_tool import (
+from zermes.tools.code_execution_tool import (
     _SAFE_ENV_PREFIXES,
     _SECRET_SUBSTRINGS,
     _WINDOWS_ESSENTIAL_ENV_VARS,
@@ -441,7 +441,7 @@ class TestSandboxWritesUtf8:
     def test_stub_and_script_writes_specify_utf8(self):
         """Both ``hermes_tools.py`` and ``script.py`` writes in
         ``_execute_local`` must pass ``encoding="utf-8"``."""
-        import tools.code_execution_tool as cet
+        import zermes.tools.code_execution_tool as cet
         src = open(cet.__file__, encoding="utf-8").read()
 
         # There should be no ``open(path, "w")`` without encoding= for
@@ -462,7 +462,7 @@ class TestSandboxWritesUtf8:
         """The file-based RPC transport stub (used by remote backends)
         reads/writes JSON response files.  Those must also specify UTF-8
         so non-ASCII tool results survive the round-trip intact."""
-        from tools.code_execution_tool import generate_hermes_tools_module
+        from zermes.tools.code_execution_tool import generate_hermes_tools_module
         stub = generate_hermes_tools_module(["terminal"], transport="file")
         # The generated stub should open response + request files as UTF-8.
         assert 'encoding="utf-8"' in stub, (
@@ -476,7 +476,7 @@ class TestSandboxWritesUtf8:
         sandbox does, and it must succeed even when the stub contains
         em-dashes (which it does — check the transport-header docstring).
         """
-        from tools.code_execution_tool import generate_hermes_tools_module
+        from zermes.tools.code_execution_tool import generate_hermes_tools_module
         import tempfile, ast
         stub = generate_hermes_tools_module(
             ["terminal", "read_file", "write_file"], transport="uds"
@@ -516,7 +516,7 @@ class TestSandboxWritesUtf8:
         test ever starts failing (i.e. default write succeeds), it means
         Python's default encoding has changed and the explicit UTF-8
         requirement may be obsolete — reconsider the fix."""
-        from tools.code_execution_tool import generate_hermes_tools_module
+        from zermes.tools.code_execution_tool import generate_hermes_tools_module
         import tempfile
 
         stub = generate_hermes_tools_module(["terminal"], transport="uds")
@@ -593,7 +593,7 @@ class TestChildStdioIsUtf8:
     def test_popen_env_sets_pythonioencoding_utf8(self):
         """Source-level check: the Popen call site must set
         PYTHONIOENCODING=utf-8 in child_env."""
-        import tools.code_execution_tool as cet
+        import zermes.tools.code_execution_tool as cet
         src = open(cet.__file__, encoding="utf-8").read()
         assert 'child_env["PYTHONIOENCODING"] = "utf-8"' in src, (
             "PYTHONIOENCODING=utf-8 missing from child env — Windows "
@@ -604,7 +604,7 @@ class TestChildStdioIsUtf8:
     def test_popen_env_sets_pythonutf8_mode(self):
         """Source-level check: PYTHONUTF8=1 must be set too — it makes
         open()'s default encoding UTF-8 in user-written file I/O."""
-        import tools.code_execution_tool as cet
+        import zermes.tools.code_execution_tool as cet
         src = open(cet.__file__, encoding="utf-8").read()
         assert 'child_env["PYTHONUTF8"] = "1"' in src, (
             "PYTHONUTF8=1 missing from child env — user scripts that "
@@ -620,7 +620,7 @@ class TestChildStdioIsUtf8:
         usage.
 
         Runs on every OS — on POSIX the fix is belt-and-suspenders but
-        still load-bearing for C.ASCII locale environments.
+        still load-bearing for C.ASCII locale zermes.environments.
         """
         script = textwrap.dedent("""
             import sys

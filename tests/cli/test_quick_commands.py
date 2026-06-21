@@ -17,7 +17,7 @@ class TestCLIQuickCommands:
         return str(call_arg)
 
     def _make_cli(self, quick_commands):
-        from cli import HermesCLI
+        from zermes.cli import HermesCLI
         cli = HermesCLI.__new__(HermesCLI)
         cli.config = {"quick_commands": quick_commands}
         cli.console = MagicMock()
@@ -43,7 +43,7 @@ class TestCLIQuickCommands:
         cli._app = object()
         live_console = MagicMock()
 
-        with patch("cli.ChatConsole", return_value=live_console):
+        with patch("zermes.cli.ChatConsole", return_value=live_console):
             result = cli.process_command("/dn")
 
         assert result is True
@@ -105,7 +105,7 @@ class TestCLIQuickCommands:
     def test_quick_command_takes_priority_over_skill_commands(self):
         """Quick commands must be checked before skill slash commands."""
         cli = self._make_cli({"mygif": {"type": "exec", "command": "echo overridden"}})
-        with patch("cli._skill_commands", {"/mygif": {"name": "gif-search"}}):
+        with patch("zermes.cli._skill_commands", {"/mygif": {"name": "gif-search"}}):
             cli.process_command("/mygif")
         cli.console.print.assert_called_once()
         printed = self._printed_plain(cli.console.print.call_args[0][0])
@@ -113,7 +113,7 @@ class TestCLIQuickCommands:
 
     def test_unknown_command_still_shows_error(self):
         cli = self._make_cli({})
-        with patch("cli._cprint") as mock_cprint:
+        with patch("zermes.cli._cprint") as mock_cprint:
             cli.process_command("/nonexistent")
             mock_cprint.assert_called()
             printed = " ".join(str(c) for c in mock_cprint.call_args_list)
@@ -148,7 +148,7 @@ class TestGatewayQuickCommands:
 
     @pytest.mark.asyncio
     async def test_exec_command_returns_output(self):
-        from gateway.run import GatewayRunner
+        from zermes.gateway.run import GatewayRunner
         runner = GatewayRunner.__new__(GatewayRunner)
         runner.config = {"quick_commands": {"limits": {"type": "exec", "command": "echo ok"}}}
         runner._running_agents = {}
@@ -161,7 +161,7 @@ class TestGatewayQuickCommands:
 
     @pytest.mark.asyncio
     async def test_unsupported_type_returns_error(self):
-        from gateway.run import GatewayRunner
+        from zermes.gateway.run import GatewayRunner
         runner = GatewayRunner.__new__(GatewayRunner)
         runner.config = {"quick_commands": {"bad": {"type": "prompt", "command": "echo hi"}}}
         runner._running_agents = {}
@@ -175,7 +175,7 @@ class TestGatewayQuickCommands:
 
     @pytest.mark.asyncio
     async def test_timeout_returns_error(self):
-        from gateway.run import GatewayRunner
+        from zermes.gateway.run import GatewayRunner
         import asyncio
         runner = GatewayRunner.__new__(GatewayRunner)
         runner.config = {"quick_commands": {"slow": {"type": "exec", "command": "sleep 100"}}}
@@ -191,8 +191,8 @@ class TestGatewayQuickCommands:
 
     @pytest.mark.asyncio
     async def test_gateway_config_object_supports_quick_commands(self):
-        from gateway.config import GatewayConfig
-        from gateway.run import GatewayRunner
+        from zermes.gateway.config import GatewayConfig
+        from zermes.gateway.run import GatewayRunner
 
         runner = GatewayRunner.__new__(GatewayRunner)
         runner.config = GatewayConfig(

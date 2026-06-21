@@ -94,7 +94,7 @@ def _make_live_client():
 
 
 def _make_agent_for_message_building(model: str):
-    from run_agent import AIAgent
+    from zermes.run_agent import AIAgent
 
     agent = object.__new__(AIAgent)
     agent.provider = "deepseek"
@@ -207,7 +207,7 @@ def test_deepseek_v4_thinking_tool_call_replay_round_trip(live_model: str):
         },
     ]
 
-    from agent.transports.chat_completions import ChatCompletionsTransport
+    from zermes.agent.transports.chat_completions import ChatCompletionsTransport
 
     api_messages = ChatCompletionsTransport().convert_messages(messages)
     _print_trace(

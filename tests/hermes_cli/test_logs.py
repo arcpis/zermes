@@ -1,4 +1,4 @@
-"""Tests for hermes_cli.logs — log viewing and filtering."""
+"""Tests for zermes.hermes_cli.logs — log viewing and filtering."""
 
 import os
 from datetime import datetime, timedelta
@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from hermes_cli.logs import (
+from zermes.hermes_cli.logs import (
     LOG_FILES,
     _extract_level,
     _extract_logger_name,
@@ -56,7 +56,7 @@ class TestParseSince:
 
 class TestParseLineTimestamp:
     def test_standard_format(self):
-        ts = _parse_line_timestamp("2026-04-11 10:23:45 INFO gateway.run: msg")
+        ts = _parse_line_timestamp("2026-04-11 10:23:45 INFO zermes.gateway.run: msg")
         assert ts == datetime(2026, 4, 11, 10, 23, 45)
 
     def test_no_timestamp(self):
@@ -65,16 +65,16 @@ class TestParseLineTimestamp:
 
 class TestExtractLevel:
     def test_info(self):
-        assert _extract_level("2026-01-01 00:00:00 INFO gateway.run: msg") == "INFO"
+        assert _extract_level("2026-01-01 00:00:00 INFO zermes.gateway.run: msg") == "INFO"
 
     def test_warning(self):
-        assert _extract_level("2026-01-01 00:00:00 WARNING tools.file: msg") == "WARNING"
+        assert _extract_level("2026-01-01 00:00:00 WARNING zermes.tools.file: msg") == "WARNING"
 
     def test_error(self):
         assert _extract_level("2026-01-01 00:00:00 ERROR run_agent: msg") == "ERROR"
 
     def test_debug(self):
-        assert _extract_level("2026-01-01 00:00:00 DEBUG agent.aux: msg") == "DEBUG"
+        assert _extract_level("2026-01-01 00:00:00 DEBUG zermes.agent.aux: msg") == "DEBUG"
 
     def test_no_level(self):
         assert _extract_level("random text") is None
@@ -86,24 +86,24 @@ class TestExtractLevel:
 
 class TestExtractLoggerName:
     def test_standard_line(self):
-        line = "2026-04-11 10:23:45 INFO gateway.run: Starting gateway"
-        assert _extract_logger_name(line) == "gateway.run"
+        line = "2026-04-11 10:23:45 INFO zermes.gateway.run: Starting gateway"
+        assert _extract_logger_name(line) == "zermes.gateway.run"
 
     def test_nested_logger(self):
-        line = "2026-04-11 10:23:45 INFO gateway.platforms.telegram: connected"
-        assert _extract_logger_name(line) == "gateway.platforms.telegram"
+        line = "2026-04-11 10:23:45 INFO zermes.gateway.platforms.telegram: connected"
+        assert _extract_logger_name(line) == "zermes.gateway.platforms.telegram"
 
     def test_warning_level(self):
-        line = "2026-04-11 10:23:45 WARNING tools.terminal_tool: timeout"
-        assert _extract_logger_name(line) == "tools.terminal_tool"
+        line = "2026-04-11 10:23:45 WARNING zermes.tools.terminal_tool: timeout"
+        assert _extract_logger_name(line) == "zermes.tools.terminal_tool"
 
     def test_with_session_tag(self):
-        line = "2026-04-11 10:23:45 INFO [abc123] tools.file_tools: reading file"
-        assert _extract_logger_name(line) == "tools.file_tools"
+        line = "2026-04-11 10:23:45 INFO [abc123] zermes.tools.file_tools: reading file"
+        assert _extract_logger_name(line) == "zermes.tools.file_tools"
 
     def test_with_session_tag_and_error(self):
-        line = "2026-04-11 10:23:45 ERROR [sess_xyz] agent.context_compressor: failed"
-        assert _extract_logger_name(line) == "agent.context_compressor"
+        line = "2026-04-11 10:23:45 ERROR [sess_xyz] zermes.agent.context_compressor: failed"
+        assert _extract_logger_name(line) == "zermes.agent.context_compressor"
 
     def test_top_level_module(self):
         line = "2026-04-11 10:23:45 INFO run_agent: starting conversation"
@@ -115,32 +115,32 @@ class TestExtractLoggerName:
 
 class TestLineMatchesComponent:
     def test_gateway_component(self):
-        line = "2026-04-11 10:23:45 INFO gateway.run: msg"
+        line = "2026-04-11 10:23:45 INFO zermes.gateway.run: msg"
         assert _line_matches_component(line, ("gateway",))
 
     def test_gateway_nested(self):
-        line = "2026-04-11 10:23:45 INFO gateway.platforms.telegram: msg"
+        line = "2026-04-11 10:23:45 INFO zermes.gateway.platforms.telegram: msg"
         assert _line_matches_component(line, ("gateway",))
 
     def test_tools_component(self):
-        line = "2026-04-11 10:23:45 INFO tools.terminal_tool: msg"
+        line = "2026-04-11 10:23:45 INFO zermes.tools.terminal_tool: msg"
         assert _line_matches_component(line, ("tools",))
 
     def test_agent_with_multiple_prefixes(self):
         prefixes = ("agent", "run_agent", "model_tools")
         assert _line_matches_component(
-            "2026-04-11 10:23:45 INFO agent.context_compressor: msg", prefixes)
+            "2026-04-11 10:23:45 INFO zermes.agent.context_compressor: msg", prefixes)
         assert _line_matches_component(
             "2026-04-11 10:23:45 INFO run_agent: msg", prefixes)
         assert _line_matches_component(
             "2026-04-11 10:23:45 INFO model_tools: msg", prefixes)
 
     def test_no_match(self):
-        line = "2026-04-11 10:23:45 INFO tools.browser: msg"
+        line = "2026-04-11 10:23:45 INFO zermes.tools.browser: msg"
         assert not _line_matches_component(line, ("gateway",))
 
     def test_with_session_tag(self):
-        line = "2026-04-11 10:23:45 INFO [abc] gateway.run: msg"
+        line = "2026-04-11 10:23:45 INFO [abc] zermes.gateway.run: msg"
         assert _line_matches_component(line, ("gateway",))
 
     def test_unparseable_line(self):
@@ -169,15 +169,15 @@ class TestMatchesFilters:
 
     def test_component_filter(self):
         assert _matches_filters(
-            "2026-01-01 00:00:00 INFO gateway.run: msg",
+            "2026-01-01 00:00:00 INFO zermes.gateway.run: msg",
             component_prefixes=("gateway",))
         assert not _matches_filters(
-            "2026-01-01 00:00:00 INFO tools.file: msg",
+            "2026-01-01 00:00:00 INFO zermes.tools.file: msg",
             component_prefixes=("gateway",))
 
     def test_combined_filters(self):
         """All filters must pass for a line to match."""
-        line = "2026-04-11 10:00:00 WARNING [sess_1] gateway.run: connection lost"
+        line = "2026-04-11 10:00:00 WARNING [sess_1] zermes.gateway.run: connection lost"
         assert _matches_filters(
             line,
             min_level="WARNING",
@@ -221,10 +221,10 @@ class TestReadTail:
     def test_read_with_component_filter(self, tmp_path):
         log_file = tmp_path / "test.log"
         lines = [
-            "2026-01-01 00:00:00 INFO gateway.run: gw msg\n",
-            "2026-01-01 00:00:01 INFO tools.file: tool msg\n",
-            "2026-01-01 00:00:02 INFO gateway.session: session msg\n",
-            "2026-01-01 00:00:03 INFO agent.compressor: agent msg\n",
+            "2026-01-01 00:00:00 INFO zermes.gateway.run: gw msg\n",
+            "2026-01-01 00:00:01 INFO zermes.tools.file: tool msg\n",
+            "2026-01-01 00:00:02 INFO zermes.gateway.session: session msg\n",
+            "2026-01-01 00:00:03 INFO zermes.agent.compressor: agent msg\n",
         ]
         log_file.write_text("".join(lines))
 

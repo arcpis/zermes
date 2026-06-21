@@ -1,6 +1,6 @@
 import pytest
 
-from worker_agents.result_routing import (
+from zermes.worker_agents.result_routing import (
     ResultRouteItem,
     ResultRouteItemKind,
     ResultRouteVisibility,
@@ -11,7 +11,7 @@ from worker_agents.result_routing import (
     proposal_and_manifest_route_to_dict,
     route_pending_proposals_and_manifests,
 )
-from worker_agents.runtime_contract import (
+from zermes.worker_agents.runtime_contract import (
     RuntimeArtifactRef,
     RuntimeMemoryProposal,
     RuntimeResult,

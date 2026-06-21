@@ -2,7 +2,7 @@
 
 import json
 
-from tools.todo_tool import TodoStore, todo_tool
+from zermes.tools.todo_tool import TodoStore, todo_tool
 
 
 class TestWriteAndRead:

@@ -1,6 +1,6 @@
 import json
 
-from tools import worker_task_state as state_mod
+from zermes.tools import worker_task_state as state_mod
 
 
 def test_task_state_records_dispatch_and_completion():

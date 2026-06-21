@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Test script to verify checkpoint behavior in batch_runner.py
+Test script to verify checkpoint behavior in zermes.batch_runner.py
 
 This script simulates batch processing with intentional failures to test:
 1. Whether checkpoints are saved incrementally during processing
@@ -135,7 +135,7 @@ def test_current_implementation():
         shutil.rmtree(output_dir)
     
     # Import here to avoid issues if module changes
-    from batch_runner import BatchRunner
+    from zermes.batch_runner import BatchRunner
     
     checkpoint_file = output_dir / "checkpoint.json"
     
@@ -229,7 +229,7 @@ def test_interruption_and_resume():
     if output_dir.exists():
         shutil.rmtree(output_dir)
     
-    from batch_runner import BatchRunner
+    from zermes.batch_runner import BatchRunner
     
     checkpoint_file = output_dir / "checkpoint.json"
     
@@ -373,7 +373,7 @@ Risk: Bugs in multiprocessing lock/manager code
 📋 TESTING STRATEGY
 -------------------
 1. Run test_current_implementation() - Confirm bug exists
-2. Apply fix to batch_runner.py
+2. Apply fix to zermes.batch_runner.py
 3. Run test_current_implementation() again - Should see incremental updates
 4. Run test_interruption_and_resume() - Verify resume works
 5. Manual test: Start run, kill process mid-batch, resume

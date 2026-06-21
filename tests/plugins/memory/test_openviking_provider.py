@@ -4,7 +4,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from plugins.memory.openviking import OpenVikingMemoryProvider, _VikingClient
+from zermes.plugins.memory.openviking import OpenVikingMemoryProvider, _VikingClient
 
 
 def test_tool_search_sorts_by_raw_score_across_buckets():

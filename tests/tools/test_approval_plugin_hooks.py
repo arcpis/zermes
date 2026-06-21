@@ -10,8 +10,8 @@ from unittest.mock import patch
 
 import pytest
 
-import tools.approval as approval_module
-from tools.approval import (
+import zermes.tools.approval as approval_module
+from zermes.tools.approval import (
     check_all_command_guards,
     register_gateway_notify,
     unregister_gateway_notify,
@@ -62,7 +62,7 @@ class TestCliPathFiresHooks:
         def cb(command, description, *, allow_permanent=True):
             return "once"
 
-        with patch("hermes_cli.plugins.invoke_hook", side_effect=fake_invoke_hook):
+        with patch("zermes.hermes_cli.plugins.invoke_hook", side_effect=fake_invoke_hook):
             result = check_all_command_guards(
                 "rm -rf /tmp/test-hook", "local", approval_callback=cb,
             )
@@ -101,7 +101,7 @@ class TestCliPathFiresHooks:
         def cb(command, description, *, allow_permanent=True):
             return "deny"
 
-        with patch("hermes_cli.plugins.invoke_hook", side_effect=fake_invoke_hook):
+        with patch("zermes.hermes_cli.plugins.invoke_hook", side_effect=fake_invoke_hook):
             result = check_all_command_guards(
                 "rm -rf /tmp/test-deny", "local", approval_callback=cb,
             )
@@ -127,7 +127,7 @@ class TestCliPathFiresHooks:
         def cb(command, description, *, allow_permanent=True):
             return "once"
 
-        with patch("hermes_cli.plugins.invoke_hook", side_effect=boom):
+        with patch("zermes.hermes_cli.plugins.invoke_hook", side_effect=boom):
             result = check_all_command_guards(
                 "rm -rf /tmp/test-crash", "local", approval_callback=cb,
             )

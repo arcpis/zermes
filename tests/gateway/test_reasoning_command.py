@@ -9,10 +9,10 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 import yaml
 
-import gateway.run as gateway_run
-from gateway.config import Platform
-from gateway.platforms.base import MessageEvent
-from gateway.session import SessionSource
+import zermes.gateway.run as gateway_run
+from zermes.gateway.config import Platform
+from zermes.gateway.platforms.base import MessageEvent
+from zermes.gateway.session import SessionSource
 
 
 def _make_event(text="/reasoning", platform=Platform.TELEGRAM, user_id="12345", chat_id="67890"):

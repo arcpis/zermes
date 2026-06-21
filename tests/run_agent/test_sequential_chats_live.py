@@ -56,7 +56,7 @@ LIVE_MODEL = "google/gemini-2.5-flash"
 
 
 def _make_live_agent():
-    from run_agent import AIAgent
+    from zermes.run_agent import AIAgent
 
     return AIAgent(
         model=LIVE_MODEL,
@@ -68,7 +68,7 @@ def _make_live_agent():
         skip_context_files=True,
         skip_memory=True,
         # All toolsets off so the agent just produces a single text reply
-        # per turn — we want to test the HTTP client lifecycle, not tools.
+        # per turn — we want to test the HTTP client lifecycle, not zermes.tools.
         disabled_toolsets=["*"],
     )
 

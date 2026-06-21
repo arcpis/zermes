@@ -1,6 +1,6 @@
 import pytest
 
-from worker_agents.external_adapters import (
+from zermes.worker_agents.external_adapters import (
     ExternalAdapterCapability,
     ExternalAdapterDefinition,
     ExternalAdapterError,
@@ -14,7 +14,7 @@ from worker_agents.external_adapters import (
     external_adapter_definition_to_dict,
     validate_external_adapter_request,
 )
-from worker_agents.runtime_contract import (
+from zermes.worker_agents.runtime_contract import (
     RuntimeExecutionBudget,
     RuntimeRequest,
     RuntimeRequestContext,

@@ -2,7 +2,7 @@
 
 import json
 
-from agent.tool_guardrails import (
+from zermes.agent.tool_guardrails import (
     ToolCallGuardrailConfig,
     ToolCallGuardrailController,
     ToolCallSignature,

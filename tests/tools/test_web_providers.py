@@ -23,19 +23,19 @@ class TestWebProviderABCs:
     """The ABCs enforce the interface contract."""
 
     def test_cannot_instantiate_search_provider(self):
-        from tools.web_providers.base import WebSearchProvider
+        from zermes.tools.web_providers.base import WebSearchProvider
 
         with pytest.raises(TypeError):
             WebSearchProvider()  # type: ignore[abstract]
 
     def test_cannot_instantiate_extract_provider(self):
-        from tools.web_providers.base import WebExtractProvider
+        from zermes.tools.web_providers.base import WebExtractProvider
 
         with pytest.raises(TypeError):
             WebExtractProvider()  # type: ignore[abstract]
 
     def test_concrete_search_provider_works(self):
-        from tools.web_providers.base import WebSearchProvider
+        from zermes.tools.web_providers.base import WebSearchProvider
 
         class Dummy(WebSearchProvider):
             def provider_name(self) -> str:
@@ -51,7 +51,7 @@ class TestWebProviderABCs:
         assert d.search("test")["success"] is True
 
     def test_concrete_extract_provider_works(self):
-        from tools.web_providers.base import WebExtractProvider
+        from zermes.tools.web_providers.base import WebExtractProvider
 
         class Dummy(WebExtractProvider):
             def provider_name(self) -> str:
@@ -75,7 +75,7 @@ class TestPerCapabilityBackendSelection:
     """_get_search_backend and _get_extract_backend read per-capability config."""
 
     def test_search_backend_overrides_generic(self, monkeypatch):
-        from tools import web_tools
+        from zermes.tools import web_tools
 
         monkeypatch.setattr(web_tools, "_load_web_config", lambda: {
             "backend": "firecrawl",
@@ -85,7 +85,7 @@ class TestPerCapabilityBackendSelection:
         assert web_tools._get_search_backend() == "tavily"
 
     def test_extract_backend_overrides_generic(self, monkeypatch):
-        from tools import web_tools
+        from zermes.tools import web_tools
 
         monkeypatch.setattr(web_tools, "_load_web_config", lambda: {
             "backend": "tavily",
@@ -95,7 +95,7 @@ class TestPerCapabilityBackendSelection:
         assert web_tools._get_extract_backend() == "exa"
 
     def test_falls_back_to_generic_backend_when_search_backend_empty(self, monkeypatch):
-        from tools import web_tools
+        from zermes.tools import web_tools
 
         monkeypatch.setattr(web_tools, "_load_web_config", lambda: {
             "backend": "tavily",
@@ -105,7 +105,7 @@ class TestPerCapabilityBackendSelection:
         assert web_tools._get_search_backend() == "tavily"
 
     def test_falls_back_to_generic_backend_when_extract_backend_empty(self, monkeypatch):
-        from tools import web_tools
+        from zermes.tools import web_tools
 
         monkeypatch.setattr(web_tools, "_load_web_config", lambda: {
             "backend": "parallel",
@@ -115,7 +115,7 @@ class TestPerCapabilityBackendSelection:
         assert web_tools._get_extract_backend() == "parallel"
 
     def test_search_backend_ignored_when_not_available(self, monkeypatch):
-        from tools import web_tools
+        from zermes.tools import web_tools
 
         monkeypatch.setattr(web_tools, "_load_web_config", lambda: {
             "backend": "firecrawl",
@@ -127,7 +127,7 @@ class TestPerCapabilityBackendSelection:
         assert web_tools._get_search_backend() == "firecrawl"
 
     def test_fully_backward_compatible_with_web_backend_only(self, monkeypatch):
-        from tools import web_tools
+        from zermes.tools import web_tools
 
         monkeypatch.setattr(web_tools, "_load_web_config", lambda: {
             "backend": "tavily",
@@ -147,7 +147,7 @@ class TestDefaultConfig:
     """The web section exists in DEFAULT_CONFIG with per-capability keys."""
 
     def test_web_section_in_default_config(self):
-        from hermes_cli.config import DEFAULT_CONFIG
+        from zermes.hermes_cli.config import DEFAULT_CONFIG
 
         assert "web" in DEFAULT_CONFIG
         web = DEFAULT_CONFIG["web"]
@@ -169,7 +169,7 @@ class TestWebSearchUsesSearchBackend:
     """web_search_tool dispatches through _get_search_backend not _get_backend."""
 
     def test_search_tool_calls_search_backend(self, monkeypatch):
-        from tools import web_tools
+        from zermes.tools import web_tools
 
         called_with = []
         original_get_search = web_tools._get_search_backend

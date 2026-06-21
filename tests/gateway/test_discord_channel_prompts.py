@@ -28,10 +28,10 @@ def _ensure_discord_mock():
     sys.modules.setdefault("discord.ext.commands", commands_mod)
 
 
-import gateway.run as gateway_run
-from gateway.config import Platform
-from gateway.platforms.base import MessageEvent
-from gateway.session import SessionSource
+import zermes.gateway.run as gateway_run
+from zermes.gateway.config import Platform
+from zermes.gateway.platforms.base import MessageEvent
+from zermes.gateway.session import SessionSource
 
 
 class _CapturingAgent:
@@ -58,7 +58,7 @@ def _install_fake_agent(monkeypatch):
 
 def _make_adapter():
     _ensure_discord_mock()
-    from gateway.platforms.discord import DiscordAdapter
+    from zermes.gateway.platforms.discord import DiscordAdapter
 
     adapter = object.__new__(DiscordAdapter)
     adapter.config = MagicMock()
@@ -231,7 +231,7 @@ async def test_run_agent_appends_channel_prompt_to_ephemeral_system_prompt(monke
         },
     )
 
-    import hermes_cli.tools_config as tools_config
+    import zermes.hermes_cli.tools_config as tools_config
 
     monkeypatch.setattr(tools_config, "_get_platform_tools", lambda user_config, platform_key: {"core"})
 

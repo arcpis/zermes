@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import pytest
 
-from agent.moonshot_schema import (
+from zermes.agent.moonshot_schema import (
     is_moonshot_model,
     sanitize_moonshot_tool_parameters,
     sanitize_moonshot_tools,

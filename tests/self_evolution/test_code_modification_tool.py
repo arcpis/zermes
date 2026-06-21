@@ -2,10 +2,10 @@ import json
 import os
 from pathlib import Path
 
-from code_modification.approval import build_approval_plan, write_approval_documents
-from code_modification.executor import ExecutionState, commit_task_step, start_approved_task, write_state
-from code_modification.governance import build_task_record_layout
-from tools.code_modification_tool import (
+from zermes.code_modification.approval import build_approval_plan, write_approval_documents
+from zermes.code_modification.executor import ExecutionState, commit_task_step, start_approved_task, write_state
+from zermes.code_modification.governance import build_task_record_layout
+from zermes.tools.code_modification_tool import (
     COMMIT_CODE_TASK_STEP_SCHEMA,
     COMPLETE_CODE_TASK_SCHEMA,
     FINALIZE_CODE_TASK_BRANCH_SCHEMA,
@@ -939,7 +939,7 @@ def _init_git_repo(repo):
         text=True,
     )
     (repo / "README.md").write_text("initial\n", encoding="utf-8")
-    (repo / "cli.py").write_text(
+    (repo / "zermes.cli.py").write_text(
         "import argparse\nargparse.ArgumentParser().parse_args()\n",
         encoding="utf-8",
     )

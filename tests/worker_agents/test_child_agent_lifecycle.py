@@ -1,4 +1,4 @@
-from worker_agents.organization_evolution import (
+from zermes.worker_agents.organization_evolution import (
     CHILD_AGENT_LIFECYCLE_SCHEMA_VERSION,
     ChildAgentChatPolicy,
     ChildAgentDeleteBlockingCheck,
@@ -18,7 +18,7 @@ def _permission_boundary(**overrides):
         "requested_tools": ["read_file"],
         "parent_policy_allowed_tools": ["read_file", "search_docs"],
         "main_policy_allowed_tools": ["read_file", "search_docs", "open_issue"],
-        "policy_ref": "policies/platform-child-tools.json",
+        "policy_ref": "policies/platform-child-zermes.tools.json",
     }
     data.update(overrides)
     return data

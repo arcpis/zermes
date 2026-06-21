@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from worker_agents.storage import (
+from zermes.worker_agents.storage import (
     ORGANIZATION_ACTIVE_FILE_NAME,
     TASK_RUNTIME_FILES,
     WorkerAgentProfileStore,
@@ -20,7 +20,7 @@ from worker_agents.storage import (
     get_worker_agents_data_dir,
     get_worker_agents_home,
 )
-from worker_agents.storage.safe_paths import validate_single_path_segment
+from zermes.worker_agents.storage.safe_paths import validate_single_path_segment
 
 
 def test_worker_agents_home_follows_profile_home(monkeypatch, tmp_path):

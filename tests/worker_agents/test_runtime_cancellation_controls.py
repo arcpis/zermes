@@ -1,10 +1,10 @@
-from worker_agents.runtime_contract import (
+from zermes.worker_agents.runtime_contract import (
     RuntimeExecutionBudget,
     RuntimeRequest,
     RuntimeRequestContext,
     RuntimeState,
 )
-from worker_agents.runtime_resources import (
+from zermes.worker_agents.runtime_resources import (
     RuntimeBudgetPolicy,
     RuntimeBudgetSource,
     RuntimeCancellationReason,

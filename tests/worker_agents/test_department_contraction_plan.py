@@ -1,6 +1,6 @@
 import pytest
 
-from worker_agents.organization_evolution import (
+from zermes.worker_agents.organization_evolution import (
     DepartmentCollaborationSurface,
     DepartmentContractionMode,
     OrganizationEvolutionError,

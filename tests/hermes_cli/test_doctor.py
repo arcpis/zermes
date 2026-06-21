@@ -1,4 +1,4 @@
-"""Tests for hermes_cli.doctor."""
+"""Tests for zermes.hermes_cli.doctor."""
 
 import os
 import sys
@@ -10,10 +10,10 @@ from types import SimpleNamespace
 
 import pytest
 
-import hermes_cli.doctor as doctor
-import hermes_cli.gateway as gateway_cli
-from hermes_cli import doctor as doctor_mod
-from hermes_cli.doctor import _has_provider_env_config
+import zermes.hermes_cli.doctor as doctor
+import zermes.hermes_cli.gateway as gateway_cli
+from zermes.hermes_cli import doctor as doctor_mod
+from zermes.hermes_cli.doctor import _has_provider_env_config
 
 
 class TestDoctorPlatformHints:
@@ -173,7 +173,7 @@ class TestHonchoDoctorConfigDetection:
         fake_config = SimpleNamespace(enabled=True, api_key="***")
 
         monkeypatch.setattr(
-            "plugins.memory.honcho.client.HonchoClientConfig.from_global_config",
+            "zermes.plugins.memory.honcho.client.HonchoClientConfig.from_global_config",
             lambda: fake_config,
         )
 
@@ -183,7 +183,7 @@ class TestHonchoDoctorConfigDetection:
         fake_config = SimpleNamespace(enabled=True, api_key="")
 
         monkeypatch.setattr(
-            "plugins.memory.honcho.client.HonchoClientConfig.from_global_config",
+            "zermes.plugins.memory.honcho.client.HonchoClientConfig.from_global_config",
             lambda: fake_config,
         )
 
@@ -220,7 +220,7 @@ def test_run_doctor_sets_interactive_env_for_tool_checks(monkeypatch, tmp_path):
 
 
 def test_check_gateway_service_linger_warns_when_disabled(monkeypatch, tmp_path, capsys):
-    unit_path = tmp_path / "hermes-gateway.service"
+    unit_path = tmp_path / "hermes-zermes.gateway.service"
     unit_path.write_text("[Unit]\n")
 
     monkeypatch.setattr(gateway_cli, "is_linux", lambda: True)
@@ -317,7 +317,7 @@ class TestDoctorMemoryProviderSection:
 
         # Stub auth checks to avoid real API calls
         try:
-            from hermes_cli import auth as _auth_mod
+            from zermes.hermes_cli import auth as _auth_mod
             monkeypatch.setattr(_auth_mod, "get_nous_auth_status", lambda: {})
             monkeypatch.setattr(_auth_mod, "get_codex_auth_status", lambda: {})
         except Exception:
@@ -340,7 +340,7 @@ class TestDoctorMemoryProviderSection:
     def test_honcho_provider_not_installed_shows_fail(self, monkeypatch, tmp_path):
         # Make honcho import fail
         monkeypatch.setitem(
-            sys.modules, "plugins.memory.honcho.client", None
+            sys.modules, "zermes.plugins.memory.honcho.client", None
         )
         out = self._run_doctor_and_capture(monkeypatch, tmp_path, provider="honcho")
         assert "Memory Provider" in out
@@ -349,7 +349,7 @@ class TestDoctorMemoryProviderSection:
 
     def test_mem0_provider_not_installed_shows_fail(self, monkeypatch, tmp_path):
         # Make mem0 import fail
-        monkeypatch.setitem(sys.modules, "plugins.memory.mem0", None)
+        monkeypatch.setitem(sys.modules, "zermes.plugins.memory.mem0", None)
         out = self._run_doctor_and_capture(monkeypatch, tmp_path, provider="mem0")
         assert "Memory Provider" in out
         assert "Built-in memory active" not in out
@@ -423,7 +423,7 @@ def test_run_doctor_accepts_named_provider_from_providers_section(monkeypatch, t
     monkeypatch.setitem(sys.modules, "model_tools", fake_model_tools)
 
     try:
-        from hermes_cli import auth as _auth_mod
+        from zermes.hermes_cli import auth as _auth_mod
         monkeypatch.setattr(_auth_mod, "get_nous_auth_status", lambda: {})
         monkeypatch.setattr(_auth_mod, "get_codex_auth_status", lambda: {})
     except Exception:
@@ -460,7 +460,7 @@ def test_run_doctor_accepts_bare_custom_provider(monkeypatch, tmp_path):
     monkeypatch.setitem(sys.modules, "model_tools", fake_model_tools)
 
     try:
-        from hermes_cli import auth as _auth_mod
+        from zermes.hermes_cli import auth as _auth_mod
         monkeypatch.setattr(_auth_mod, "get_nous_auth_status", lambda: {})
         monkeypatch.setattr(_auth_mod, "get_codex_auth_status", lambda: {})
     except Exception:
@@ -507,7 +507,7 @@ def test_run_doctor_accepts_hermes_provider_ids_that_catalog_aliases(
     monkeypatch.setitem(sys.modules, "model_tools", fake_model_tools)
 
     try:
-        from hermes_cli import auth as _auth_mod
+        from zermes.hermes_cli import auth as _auth_mod
         monkeypatch.setattr(_auth_mod, "get_nous_auth_status", lambda: {})
         monkeypatch.setattr(_auth_mod, "get_codex_auth_status", lambda: {})
     except Exception:
@@ -552,7 +552,7 @@ def test_run_doctor_accepts_kimi_coding_cn_provider(monkeypatch, tmp_path):
     monkeypatch.setitem(sys.modules, "model_tools", fake_model_tools)
 
     try:
-        from hermes_cli import auth as _auth_mod
+        from zermes.hermes_cli import auth as _auth_mod
         monkeypatch.setattr(_auth_mod, "get_nous_auth_status", lambda: {})
         monkeypatch.setattr(_auth_mod, "get_codex_auth_status", lambda: {})
         monkeypatch.setattr(_auth_mod, "get_auth_status", lambda provider: {"logged_in": True})
@@ -591,7 +591,7 @@ def test_run_doctor_termux_does_not_mark_browser_available_without_agent_browser
     monkeypatch.setitem(sys.modules, "model_tools", fake_model_tools)
 
     try:
-        from hermes_cli import auth as _auth_mod
+        from zermes.hermes_cli import auth as _auth_mod
         monkeypatch.setattr(_auth_mod, "get_nous_auth_status", lambda: {})
         monkeypatch.setattr(_auth_mod, "get_codex_auth_status", lambda: {})
     except Exception:
@@ -630,7 +630,7 @@ def test_run_doctor_kimi_cn_env_is_detected_and_probe_is_null_safe(monkeypatch, 
     monkeypatch.setitem(sys.modules, "model_tools", fake_model_tools)
 
     try:
-        from hermes_cli import auth as _auth_mod
+        from zermes.hermes_cli import auth as _auth_mod
         monkeypatch.setattr(_auth_mod, "get_nous_auth_status", lambda: {})
         monkeypatch.setattr(_auth_mod, "get_codex_auth_status", lambda: {})
     except Exception:
@@ -678,7 +678,7 @@ def test_run_doctor_dashscope_retries_china_endpoint_after_intl_unauthorized(mon
     monkeypatch.setitem(sys.modules, "model_tools", fake_model_tools)
 
     try:
-        from hermes_cli import auth as _auth_mod
+        from zermes.hermes_cli import auth as _auth_mod
         monkeypatch.setattr(_auth_mod, "get_nous_auth_status", lambda: {})
         monkeypatch.setattr(_auth_mod, "get_codex_auth_status", lambda: {})
     except ImportError:
@@ -736,7 +736,7 @@ def test_run_doctor_opencode_go_skips_invalid_models_probe(monkeypatch, tmp_path
     monkeypatch.setitem(sys.modules, "model_tools", fake_model_tools)
 
     try:
-        from hermes_cli import auth as _auth_mod
+        from zermes.hermes_cli import auth as _auth_mod
         monkeypatch.setattr(_auth_mod, "get_nous_auth_status", lambda: {})
         monkeypatch.setattr(_auth_mod, "get_codex_auth_status", lambda: {})
     except ImportError:
@@ -774,7 +774,7 @@ class TestGitHubTokenCheck:
         monkeypatch.setenv("HERMES_HOME", str(home))
         monkeypatch.setenv("PATH", "/nonexistent")  # gh not found
 
-        from hermes_cli.doctor import run_doctor, _DHH
+        from zermes.hermes_cli.doctor import run_doctor, _DHH
         import io, contextlib
 
         buf = io.StringIO()
@@ -792,7 +792,7 @@ class TestGitHubTokenCheck:
         monkeypatch.setenv("GITHUB_TOKEN", "ghp_test123")
         monkeypatch.setenv("PATH", "/nonexistent")  # gh not found
 
-        from hermes_cli.doctor import run_doctor
+        from zermes.hermes_cli.doctor import run_doctor
         import io, contextlib
 
         buf = io.StringIO()
@@ -829,7 +829,7 @@ class TestGitHubTokenCheck:
         import subprocess
         monkeypatch.setattr(subprocess, "run", mock_run)
 
-        from hermes_cli.doctor import run_doctor
+        from zermes.hermes_cli.doctor import run_doctor
         import io, contextlib
 
         buf = io.StringIO()

@@ -1,6 +1,6 @@
 import pytest
 
-from worker_agents.management import (
+from zermes.worker_agents.management import (
     ApprovalActionRequest,
     approval_audit_record_to_dict,
     approval_queue_item_to_dict,

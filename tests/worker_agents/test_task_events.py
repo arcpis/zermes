@@ -1,13 +1,13 @@
 import pytest
 
-from worker_agents.storage import WorkerAgentProfileStore, WorkerAgentRuntimeDataStore
-from worker_agents.storage.task_store import WorkerTaskStore
-from worker_agents.task_records import (
+from zermes.worker_agents.storage import WorkerAgentProfileStore, WorkerAgentRuntimeDataStore
+from zermes.worker_agents.storage.task_store import WorkerTaskStore
+from zermes.worker_agents.task_records import (
     WorkerTaskEvent,
     WorkerTaskRequest,
     WorkerTaskResult,
 )
-from worker_agents.task_state import WorkerTaskError
+from zermes.worker_agents.task_state import WorkerTaskError
 
 
 def _store(tmp_path):

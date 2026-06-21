@@ -6,7 +6,7 @@ toolset. These tests avoid full agent initialization so they stay focused on
 prompt assembly behavior.
 """
 
-from run_agent import AIAgent
+from zermes.run_agent import AIAgent
 
 
 def _build_agent_with_tools(tool_names):
@@ -40,7 +40,7 @@ def test_self_evolution_guidance_is_injected_when_approval_tool_is_available():
 
 
 def test_self_evolution_guidance_is_not_injected_without_approval_tool():
-    """The prompt must not mention unavailable tools."""
+    """The prompt must not mention unavailable zermes.tools."""
     agent = _build_agent_with_tools(["read_file", "search_files"])
 
     prompt = agent._build_system_prompt()

@@ -39,7 +39,7 @@ def _fresh_import():
     runs again and the platform check re-evaluates.
     """
     sys.modules.pop("hermes_bootstrap", None)
-    import hermes_bootstrap  # noqa: WPS433
+    import zermes.hermes_bootstrap as hermes_bootstrap  # noqa: WPS433
     return hermes_bootstrap
 
 
@@ -242,11 +242,11 @@ class TestEntryPointsImportBootstrap:
     # import hermes_bootstrap before doing any file I/O or stdout writes.
     ENTRY_POINTS = [
         "hermes_cli/main.py",   # hermes CLI (console_script)
-        "run_agent.py",          # hermes-agent (console_script)
+        "zermes.run_agent.py",          # hermes-agent (console_script)
         "acp_adapter/entry.py",  # hermes-acp (console_script)
         "gateway/run.py",        # gateway
-        "batch_runner.py",       # batch mode
-        "cli.py",                # legacy direct-launch CLI
+        "zermes.batch_runner.py",       # batch mode
+        "zermes.cli.py",                # legacy direct-launch CLI
     ]
 
     @pytest.mark.parametrize("path", ENTRY_POINTS)

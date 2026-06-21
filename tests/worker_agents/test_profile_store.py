@@ -1,13 +1,13 @@
 import pytest
 
-from worker_agents.profile import (
+from zermes.worker_agents.profile import (
     DEFAULT_WORKER_TOOLS,
     WORKER_PROFILE_FILE_NAME,
     WorkerAgentProfile,
     WorkerProfileError,
     dump_worker_profile_json,
 )
-from worker_agents.storage import WorkerAgentProfileStore
+from zermes.worker_agents.storage import WorkerAgentProfileStore
 
 
 def test_profile_store_saves_and_loads_worker_profile(tmp_path):
@@ -89,5 +89,5 @@ def test_profile_store_creates_default_profile_without_saving(tmp_path):
     )
 
     assert profile.worker_id == "researcher"
-    assert profile.tools.allowed_tools == DEFAULT_WORKER_TOOLS
+    assert profile.zermes.tools.allowed_tools == DEFAULT_WORKER_TOOLS
     assert not store.worker_profile_path("researcher").exists()

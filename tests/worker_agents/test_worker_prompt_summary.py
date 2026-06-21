@@ -1,9 +1,9 @@
-from worker_agents.department_chats import (
+from zermes.worker_agents.department_chats import (
     DepartmentChatBinding,
     DepartmentChatBindingType,
     required_department_chat_participants,
 )
-from worker_agents.organization import (
+from zermes.worker_agents.organization import (
     OrgLeaderKind,
     OrgLeaderRef,
     OrgLifecycleState,
@@ -11,9 +11,9 @@ from worker_agents.organization import (
     OrgNodeType,
     OrgTree,
 )
-from worker_agents.profile import WorkerAgentProfile, WorkerDelegationPolicy
-from worker_agents.task_state import WorkerTaskState, WorkerTaskStatus
-from worker_agents.worker_prompt_summary import (
+from zermes.worker_agents.profile import WorkerAgentProfile, WorkerDelegationPolicy
+from zermes.worker_agents.task_state import WorkerTaskState, WorkerTaskStatus
+from zermes.worker_agents.worker_prompt_summary import (
     build_worker_prompt_summary,
     worker_prompt_summary_to_dict,
 )

@@ -1,23 +1,23 @@
 from dataclasses import dataclass
 
-from worker_agents.internal_runtime_context import InternalWorkerRuntimeContextRequest
-from worker_agents.internal_runtime_runner import (
+from zermes.worker_agents.internal_runtime_context import InternalWorkerRuntimeContextRequest
+from zermes.worker_agents.internal_runtime_runner import (
     InternalWorkerRuntimeRunner,
     prepare_internal_worker_runtime_run,
     run_internal_worker_runtime_task,
 )
-from worker_agents.profile import (
+from zermes.worker_agents.profile import (
     WorkerAgentProfile,
     WorkerBudgetPolicy,
     WorkerModelSettings,
     WorkerToolPolicy,
     WorkerWorkspacePolicy,
 )
-from worker_agents.registry_service import WorkerRegistryService
-from worker_agents.runtime_boundary import AgentRuntimeSessionConfig
-from worker_agents.runtime_contract import RuntimeType
-from worker_agents.storage import WorkerAgentProfileStore, WorkerAgentRuntimeDataStore
-from worker_agents.task_service import WorkerTaskService
+from zermes.worker_agents.registry_service import WorkerRegistryService
+from zermes.worker_agents.runtime_boundary import AgentRuntimeSessionConfig
+from zermes.worker_agents.runtime_contract import RuntimeType
+from zermes.worker_agents.storage import WorkerAgentProfileStore, WorkerAgentRuntimeDataStore
+from zermes.worker_agents.task_service import WorkerTaskService
 
 
 @dataclass

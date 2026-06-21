@@ -1,10 +1,10 @@
 import pytest
 from unittest.mock import AsyncMock
 
-from gateway.config import GatewayConfig, Platform, PlatformConfig
-from gateway.platforms.base import BasePlatformAdapter
-from gateway.run import GatewayRunner
-from gateway.status import read_runtime_status
+from zermes.gateway.config import GatewayConfig, Platform, PlatformConfig
+from zermes.gateway.platforms.base import BasePlatformAdapter
+from zermes.gateway.run import GatewayRunner
+from zermes.gateway.status import read_runtime_status
 
 
 class _RetryableFailureAdapter(BasePlatformAdapter):
@@ -150,13 +150,13 @@ async def test_start_gateway_verbosity_imports_redacting_formatter(monkeypatch, 
         async def stop(self):
             return None
 
-    monkeypatch.setattr("gateway.status.get_running_pid", lambda: None)
-    monkeypatch.setattr("tools.skills_sync.sync_skills", lambda quiet=True: None)
-    monkeypatch.setattr("hermes_logging.setup_logging", lambda hermes_home, mode: tmp_path)
-    monkeypatch.setattr("hermes_logging._add_rotating_handler", lambda *args, **kwargs: None)
-    monkeypatch.setattr("gateway.run.GatewayRunner", _CleanExitRunner)
+    monkeypatch.setattr("zermes.gateway.status.get_running_pid", lambda: None)
+    monkeypatch.setattr("zermes.tools.skills_sync.sync_skills", lambda quiet=True: None)
+    monkeypatch.setattr("zermes.hermes_logging.setup_logging", lambda hermes_home, mode: tmp_path)
+    monkeypatch.setattr("zermes.hermes_logging._add_rotating_handler", lambda *args, **kwargs: None)
+    monkeypatch.setattr("zermes.gateway.run.GatewayRunner", _CleanExitRunner)
 
-    from gateway.run import start_gateway
+    from zermes.gateway.run import start_gateway
 
     # verbosity=1 triggers the code path that uses RedactingFormatter.
     # Before the fix this raised NameError.
@@ -191,22 +191,22 @@ async def test_start_gateway_replace_force_uses_terminate_pid(monkeypatch, tmp_p
         return 42 if _pid_state["alive"] else None
     def _mock_remove_pid_file():
         _pid_state["alive"] = False
-    monkeypatch.setattr("gateway.status.get_running_pid", _mock_get_running_pid)
-    monkeypatch.setattr("gateway.status.remove_pid_file", _mock_remove_pid_file)
+    monkeypatch.setattr("zermes.gateway.status.get_running_pid", _mock_get_running_pid)
+    monkeypatch.setattr("zermes.gateway.status.remove_pid_file", _mock_remove_pid_file)
     monkeypatch.setattr(
-        "gateway.status.release_all_scoped_locks",
+        "zermes.gateway.status.release_all_scoped_locks",
         lambda **kwargs: 0,
     )
-    monkeypatch.setattr("gateway.status.terminate_pid", lambda pid, force=False: calls.append((pid, force)))
-    monkeypatch.setattr("gateway.run.os.getpid", lambda: 100)
-    monkeypatch.setattr("gateway.run.os.kill", lambda pid, sig: None)
+    monkeypatch.setattr("zermes.gateway.status.terminate_pid", lambda pid, force=False: calls.append((pid, force)))
+    monkeypatch.setattr("zermes.gateway.run.os.getpid", lambda: 100)
+    monkeypatch.setattr("zermes.gateway.run.os.kill", lambda pid, sig: None)
     monkeypatch.setattr("time.sleep", lambda _: None)
-    monkeypatch.setattr("tools.skills_sync.sync_skills", lambda quiet=True: None)
-    monkeypatch.setattr("hermes_logging.setup_logging", lambda hermes_home, mode: tmp_path)
-    monkeypatch.setattr("hermes_logging._add_rotating_handler", lambda *args, **kwargs: None)
-    monkeypatch.setattr("gateway.run.GatewayRunner", _CleanExitRunner)
+    monkeypatch.setattr("zermes.tools.skills_sync.sync_skills", lambda quiet=True: None)
+    monkeypatch.setattr("zermes.hermes_logging.setup_logging", lambda hermes_home, mode: tmp_path)
+    monkeypatch.setattr("zermes.hermes_logging._add_rotating_handler", lambda *args, **kwargs: None)
+    monkeypatch.setattr("zermes.gateway.run.GatewayRunner", _CleanExitRunner)
 
-    from gateway.run import start_gateway
+    from zermes.gateway.run import start_gateway
 
     ok = await start_gateway(config=GatewayConfig(), replace=True, verbosity=None)
 
@@ -238,7 +238,7 @@ async def test_start_gateway_replace_writes_takeover_marker_before_sigterm(
             (tmp_path / ".gateway-takeover.json").exists() is False  # not yet
         )
         # Actually write the marker so we can verify cleanup later
-        from gateway.status import _get_takeover_marker_path, _write_json_file, _get_process_start_time
+        from zermes.gateway.status import _get_takeover_marker_path, _write_json_file, _get_process_start_time
         _write_json_file(_get_takeover_marker_path(), {
             "target_pid": target_pid,
             "target_start_time": 0,
@@ -268,27 +268,27 @@ async def test_start_gateway_replace_writes_takeover_marker_before_sigterm(
         return 42 if _pid_state["alive"] else None
     def _mock_remove_pid_file():
         _pid_state["alive"] = False
-    monkeypatch.setattr("gateway.status.get_running_pid", _mock_get_running_pid)
-    monkeypatch.setattr("gateway.status.remove_pid_file", _mock_remove_pid_file)
+    monkeypatch.setattr("zermes.gateway.status.get_running_pid", _mock_get_running_pid)
+    monkeypatch.setattr("zermes.gateway.status.remove_pid_file", _mock_remove_pid_file)
     monkeypatch.setattr(
-        "gateway.status.release_all_scoped_locks",
+        "zermes.gateway.status.release_all_scoped_locks",
         lambda **kwargs: 0,
     )
-    monkeypatch.setattr("gateway.status.write_takeover_marker", record_write_marker)
-    monkeypatch.setattr("gateway.status.terminate_pid", record_terminate)
-    monkeypatch.setattr("gateway.run.os.getpid", lambda: 100)
+    monkeypatch.setattr("zermes.gateway.status.write_takeover_marker", record_write_marker)
+    monkeypatch.setattr("zermes.gateway.status.terminate_pid", record_terminate)
+    monkeypatch.setattr("zermes.gateway.run.os.getpid", lambda: 100)
     # Simulate old process exiting on first check so we don't loop into force-kill
     monkeypatch.setattr(
-        "gateway.run.os.kill",
+        "zermes.gateway.run.os.kill",
         lambda pid, sig: (_ for _ in ()).throw(ProcessLookupError()),
     )
     monkeypatch.setattr("time.sleep", lambda _: None)
-    monkeypatch.setattr("tools.skills_sync.sync_skills", lambda quiet=True: None)
-    monkeypatch.setattr("hermes_logging.setup_logging", lambda hermes_home, mode: tmp_path)
-    monkeypatch.setattr("hermes_logging._add_rotating_handler", lambda *args, **kwargs: None)
-    monkeypatch.setattr("gateway.run.GatewayRunner", _CleanExitRunner)
+    monkeypatch.setattr("zermes.tools.skills_sync.sync_skills", lambda quiet=True: None)
+    monkeypatch.setattr("zermes.hermes_logging.setup_logging", lambda hermes_home, mode: tmp_path)
+    monkeypatch.setattr("zermes.hermes_logging._add_rotating_handler", lambda *args, **kwargs: None)
+    monkeypatch.setattr("zermes.gateway.run.GatewayRunner", _CleanExitRunner)
 
-    from gateway.run import start_gateway
+    from zermes.gateway.run import start_gateway
 
     ok = await start_gateway(config=GatewayConfig(), replace=True, verbosity=None)
 
@@ -309,7 +309,7 @@ async def test_start_gateway_replace_clears_marker_on_permission_denied(
     monkeypatch.setenv("HERMES_HOME", str(tmp_path))
 
     def write_marker(target_pid: int) -> bool:
-        from gateway.status import _get_takeover_marker_path, _write_json_file
+        from zermes.gateway.status import _get_takeover_marker_path, _write_json_file
         _write_json_file(_get_takeover_marker_path(), {
             "target_pid": target_pid,
             "target_start_time": 0,
@@ -321,15 +321,15 @@ async def test_start_gateway_replace_clears_marker_on_permission_denied(
     def raise_permission(pid, force=False):
         raise PermissionError("simulated EPERM")
 
-    monkeypatch.setattr("gateway.status.get_running_pid", lambda: 42)
-    monkeypatch.setattr("gateway.status.write_takeover_marker", write_marker)
-    monkeypatch.setattr("gateway.status.terminate_pid", raise_permission)
-    monkeypatch.setattr("gateway.run.os.getpid", lambda: 100)
-    monkeypatch.setattr("tools.skills_sync.sync_skills", lambda quiet=True: None)
-    monkeypatch.setattr("hermes_logging.setup_logging", lambda hermes_home, mode: tmp_path)
-    monkeypatch.setattr("hermes_logging._add_rotating_handler", lambda *args, **kwargs: None)
+    monkeypatch.setattr("zermes.gateway.status.get_running_pid", lambda: 42)
+    monkeypatch.setattr("zermes.gateway.status.write_takeover_marker", write_marker)
+    monkeypatch.setattr("zermes.gateway.status.terminate_pid", raise_permission)
+    monkeypatch.setattr("zermes.gateway.run.os.getpid", lambda: 100)
+    monkeypatch.setattr("zermes.tools.skills_sync.sync_skills", lambda quiet=True: None)
+    monkeypatch.setattr("zermes.hermes_logging.setup_logging", lambda hermes_home, mode: tmp_path)
+    monkeypatch.setattr("zermes.hermes_logging._add_rotating_handler", lambda *args, **kwargs: None)
 
-    from gateway.run import start_gateway
+    from zermes.gateway.run import start_gateway
 
     # Should return False due to permission error
     ok = await start_gateway(config=GatewayConfig(), replace=True, verbosity=None)

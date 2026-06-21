@@ -3,16 +3,16 @@ import json
 
 import pytest
 
-from worker_agents.external_adapter_runner import (
+from zermes.worker_agents.external_adapter_runner import (
     ExternalAdapterBackendState,
     ExternalAdapterRunner,
     FakeExternalAdapterBackend,
 )
-from worker_agents.external_adapters import (
+from zermes.worker_agents.external_adapters import (
     ExternalAdapterRegistry,
     build_fake_external_adapter_definition,
 )
-from worker_agents.profile import (
+from zermes.worker_agents.profile import (
     WorkerAgentProfile,
     WorkerBudgetPolicy,
     WorkerDelegationPolicy,
@@ -21,16 +21,16 @@ from worker_agents.profile import (
     WorkerToolPolicy,
     WorkerWorkspacePolicy,
 )
-from worker_agents.runtime_boundary import AgentRuntimeSessionConfig
-from worker_agents.runtime_contract import RuntimeResult, RuntimeState, RuntimeType
-from worker_agents.storage import WorkerAgentRuntimeDataStore
-from worker_agents.temporary_subagent_runner import (
+from zermes.worker_agents.runtime_boundary import AgentRuntimeSessionConfig
+from zermes.worker_agents.runtime_contract import RuntimeResult, RuntimeState, RuntimeType
+from zermes.worker_agents.storage import WorkerAgentRuntimeDataStore
+from zermes.worker_agents.temporary_subagent_runner import (
     TemporarySubagentRunner,
     TemporarySubagentRunnerError,
     run_temporary_subagent,
     temporary_subagent_run_to_dict,
 )
-from worker_agents.temporary_subagents import (
+from zermes.worker_agents.temporary_subagents import (
     TemporarySubagentProfileOverlay,
     TemporarySubagentRequest,
     TemporarySubagentResultReturnPolicy,

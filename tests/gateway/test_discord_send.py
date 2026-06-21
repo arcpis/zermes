@@ -4,7 +4,7 @@ import sys
 
 import pytest
 
-from gateway.config import PlatformConfig
+from zermes.gateway.config import PlatformConfig
 
 
 def _ensure_discord_mock():
@@ -41,7 +41,7 @@ def _ensure_discord_mock():
 
 _ensure_discord_mock()
 
-from gateway.platforms.discord import DiscordAdapter  # noqa: E402
+from zermes.gateway.platforms.discord import DiscordAdapter  # noqa: E402
 
 
 @pytest.mark.asyncio

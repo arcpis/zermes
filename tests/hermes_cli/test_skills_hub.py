@@ -4,8 +4,8 @@ from unittest.mock import patch
 import pytest
 from rich.console import Console
 
-from cli import ChatConsole
-from hermes_cli.skills_hub import do_check, do_install, do_list, do_update, handle_skills_slash
+from zermes.cli import ChatConsole
+from zermes.hermes_cli.skills_hub import do_check, do_install, do_list, do_update, handle_skills_slash
 
 
 class _DummyLockFile:
@@ -19,7 +19,7 @@ class _DummyLockFile:
 @pytest.fixture()
 def hub_env(monkeypatch, tmp_path):
     """Set up isolated hub directory paths and return (monkeypatch, tmp_path)."""
-    import tools.skills_hub as hub
+    import zermes.tools.skills_hub as hub
 
     hub_dir = tmp_path / "skills" / ".hub"
     monkeypatch.setattr(hub, "SKILLS_DIR", tmp_path / "skills")
@@ -51,9 +51,9 @@ _BUILTIN_MANIFEST = {"builtin-skill": "abc123"}
 @pytest.fixture()
 def three_source_env(monkeypatch, hub_env):
     """Populate hub/builtin/local skills for source-classification tests."""
-    import tools.skills_hub as hub
-    import tools.skills_sync as skills_sync
-    import tools.skills_tool as skills_tool
+    import zermes.tools.skills_hub as hub
+    import zermes.tools.skills_sync as skills_sync
+    import zermes.tools.skills_tool as skills_tool
 
     monkeypatch.setattr(hub, "HubLockFile", lambda: _DummyLockFile([_HUB_ENTRY]))
     monkeypatch.setattr(skills_tool, "_find_all_skills", lambda **_kwargs: list(_ALL_THREE_SKILLS))
@@ -71,7 +71,7 @@ def _capture(source_filter: str = "all") -> str:
 
 
 def _capture_check(monkeypatch, results, name=None) -> str:
-    import tools.skills_hub as hub
+    import zermes.tools.skills_hub as hub
 
     sink = StringIO()
     console = Console(file=sink, force_terminal=False, color_system=None)
@@ -81,8 +81,8 @@ def _capture_check(monkeypatch, results, name=None) -> str:
 
 
 def _capture_update(monkeypatch, results) -> tuple[str, list[tuple[str, str, bool]]]:
-    import tools.skills_hub as hub
-    import hermes_cli.skills_hub as cli_hub
+    import zermes.tools.skills_hub as hub
+    import zermes.hermes_cli.skills_hub as cli_hub
 
     sink = StringIO()
     console = Console(file=sink, force_terminal=False, color_system=None)
@@ -104,8 +104,8 @@ def _capture_update(monkeypatch, results) -> tuple[str, list[tuple[str, str, boo
 
 
 def test_do_list_initializes_hub_dir(monkeypatch, hub_env):
-    import tools.skills_sync as skills_sync
-    import tools.skills_tool as skills_tool
+    import zermes.tools.skills_sync as skills_sync
+    import zermes.tools.skills_tool as skills_tool
 
     monkeypatch.setattr(skills_tool, "_find_all_skills", lambda **_kwargs: [])
     monkeypatch.setattr(skills_sync, "_read_manifest", lambda: {})
@@ -157,7 +157,7 @@ def test_do_list_filter_builtin(three_source_env):
 def test_do_list_renders_status_column(three_source_env, monkeypatch):
     """Every list row should carry an enabled/disabled status (new in PR that
     answered Mr Mochizuki's 'I just want to see what's live' question)."""
-    from agent import skill_utils
+    from zermes.agent import skill_utils
 
     monkeypatch.setattr(skill_utils, "get_disabled_skill_names", lambda platform=None: set())
     output = _capture()
@@ -169,7 +169,7 @@ def test_do_list_renders_status_column(three_source_env, monkeypatch):
 
 
 def test_do_list_marks_disabled_skills(three_source_env, monkeypatch):
-    from agent import skill_utils
+    from zermes.agent import skill_utils
 
     # Simulate `skills.disabled: [hub-skill]` in config.
     monkeypatch.setattr(
@@ -185,7 +185,7 @@ def test_do_list_marks_disabled_skills(three_source_env, monkeypatch):
 
 
 def test_do_list_enabled_only_hides_disabled(three_source_env, monkeypatch):
-    from agent import skill_utils
+    from zermes.agent import skill_utils
 
     monkeypatch.setattr(
         skill_utils, "get_disabled_skill_names",
@@ -208,7 +208,7 @@ def test_do_list_platform_env_is_ignored(three_source_env, monkeypatch):
     HERMES_HOME (swapped by -p), so it must NOT pass a platform arg to
     ``get_disabled_skill_names`` — otherwise per-platform overrides
     would silently leak in from HERMES_PLATFORM env."""
-    from agent import skill_utils
+    from zermes.agent import skill_utils
 
     seen = {}
 
@@ -258,15 +258,15 @@ def test_handle_skills_slash_search_accepts_chatconsole_without_status_errors():
         "identifier": "skills-sh/example/kubernetes",
     })()]
 
-    with patch("tools.skills_hub.unified_search", return_value=results), \
-         patch("tools.skills_hub.create_source_router", return_value={}), \
-         patch("tools.skills_hub.GitHubAuth"):
+    with patch("zermes.tools.skills_hub.unified_search", return_value=results), \
+         patch("zermes.tools.skills_hub.create_source_router", return_value={}), \
+         patch("zermes.tools.skills_hub.GitHubAuth"):
         handle_skills_slash("/skills search kubernetes", console=ChatConsole())
 
 
 def test_do_install_scans_with_resolved_identifier(monkeypatch, tmp_path, hub_env):
-    import tools.skills_guard as guard
-    import tools.skills_hub as hub
+    import zermes.tools.skills_guard as guard
+    import zermes.tools.skills_hub as hub
 
     canonical_identifier = "skills-sh/anthropics/skills/frontend-design"
 
@@ -352,8 +352,8 @@ def _make_url_bundle_fetcher(name="", awaiting_name=True, url="https://example.c
 
 def _install_mocks(monkeypatch, tmp_path, source_factory, category_hint=""):
     """Wire the minimum set of monkeypatches for a do_install dry run."""
-    import tools.skills_hub as hub
-    import tools.skills_guard as guard
+    import zermes.tools.skills_hub as hub
+    import zermes.tools.skills_guard as guard
 
     q_path = tmp_path / "skills" / ".hub" / "quarantine" / "pending"
     q_path.mkdir(parents=True)
@@ -450,7 +450,7 @@ def test_url_install_prompts_interactively_when_tty(monkeypatch, tmp_path, hub_e
 
 
 def test_url_install_prompts_category_and_uses_typed_value(monkeypatch, tmp_path, hub_env):
-    import tools.skills_hub as hub
+    import zermes.tools.skills_hub as hub
     installs = _install_mocks(
         monkeypatch, tmp_path,
         _make_url_bundle_fetcher(name="sharethis-chat", awaiting_name=False),
@@ -496,8 +496,8 @@ def test_url_install_cancel_name_prompt_aborts(monkeypatch, tmp_path, hub_env):
 
 
 def test_existing_categories_skips_top_level_skills(monkeypatch, tmp_path, hub_env):
-    import tools.skills_hub as hub
-    from hermes_cli.skills_hub import _existing_categories
+    import zermes.tools.skills_hub as hub
+    from zermes.hermes_cli.skills_hub import _existing_categories
 
     # Category bucket with nested skill.
     (hub.SKILLS_DIR / "productivity" / "notion").mkdir(parents=True)
@@ -519,8 +519,8 @@ def test_existing_categories_skips_top_level_skills(monkeypatch, tmp_path, hub_e
 
 def test_existing_categories_returns_empty_when_skills_dir_missing(monkeypatch, tmp_path, hub_env):
     # hub_env creates tmp_path/skills/.hub — we point SKILLS_DIR at a missing sibling.
-    import tools.skills_hub as hub
+    import zermes.tools.skills_hub as hub
     monkeypatch.setattr(hub, "SKILLS_DIR", tmp_path / "does-not-exist")
 
-    from hermes_cli.skills_hub import _existing_categories
+    from zermes.hermes_cli.skills_hub import _existing_categories
     assert _existing_categories() == []

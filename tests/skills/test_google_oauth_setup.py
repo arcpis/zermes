@@ -319,6 +319,6 @@ class TestHermesConstantsFallback:
         module = importlib.util.module_from_spec(spec)
         assert spec.loader is not None
         spec.loader.exec_module(module)
-        import hermes_constants
-        assert module.get_hermes_home is hermes_constants.get_hermes_home
-        assert module.display_hermes_home is hermes_constants.display_hermes_home
+        import zermes.hermes_constants as hermes_constants
+        assert module.get_hermes_home is zermes.hermes_constants.get_hermes_home
+        assert module.display_hermes_home is zermes.hermes_constants.display_hermes_home

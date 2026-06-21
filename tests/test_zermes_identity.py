@@ -1,7 +1,7 @@
 from pathlib import Path
 
-from hermes_constants import get_default_hermes_root, get_hermes_home
-from toolsets import resolve_toolset, validate_toolset
+from zermes.hermes_constants import get_default_hermes_root, get_hermes_home
+from zermes.toolsets import resolve_toolset, validate_toolset
 
 
 def test_zermes_home_is_default(monkeypatch, tmp_path):

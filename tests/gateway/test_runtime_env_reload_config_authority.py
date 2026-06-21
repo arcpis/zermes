@@ -1,6 +1,6 @@
 """Regression tests for gateway per-turn env reload preserving config authority.
 
-Issue #19158: startup bridges config.yaml agent.max_turns into
+Issue #19158: startup bridges config.yaml zermes.agent.max_turns into
 HERMES_MAX_ITERATIONS, but a later per-turn load_dotenv(..., override=True)
 can restore a stale .env HERMES_MAX_ITERATIONS value before the next turn.
 """
@@ -12,7 +12,7 @@ from pathlib import Path
 
 import yaml
 
-from gateway import run as gateway_run
+from zermes.gateway import run as gateway_run
 
 
 def test_reload_runtime_env_preserves_config_max_turns(tmp_path: Path, monkeypatch) -> None:

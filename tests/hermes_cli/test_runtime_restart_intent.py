@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from hermes_cli import main as hermes_main
+from zermes.hermes_cli import main as hermes_main
 
 
 def test_runtime_restart_intent_path_requires_managed_prefix(monkeypatch):

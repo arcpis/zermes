@@ -11,8 +11,8 @@ import json
 
 import pytest
 
-from agent.memory_manager import MemoryManager
-from agent.memory_provider import MemoryProvider
+from zermes.agent.memory_manager import MemoryManager
+from zermes.agent.memory_provider import MemoryProvider
 
 
 class _RecordingProvider(MemoryProvider):
@@ -135,7 +135,7 @@ def test_manager_ignores_empty_session_id():
 
 
 def test_manager_isolates_provider_failures():
-    """A provider that raises must not block other providers."""
+    """A provider that raises must not block other zermes.providers."""
 
     class _Broken(_RecordingProvider):
         def on_session_switch(self, *args, **kwargs):  # type: ignore[override]
@@ -170,7 +170,7 @@ def test_manager_reset_flag_preserved():
 
 
 def test_sync_all_propagates_session_id_to_providers():
-    """run_agent.py's sync_all call must pass session_id through to providers.
+    """zermes.run_agent.py's sync_all call must pass session_id through to zermes.providers.
 
     Without this, a provider that updates _session_id defensively in
     sync_turn (as Hindsight does at hindsight/__init__.py:1199) never
@@ -206,7 +206,7 @@ def _make_hindsight_provider():
     reads/writes. This keeps the test hermetic.
     """
     import threading
-    hindsight_mod = pytest.importorskip("plugins.memory.hindsight")
+    hindsight_mod = pytest.importorskip("zermes.plugins.memory.hindsight")
     provider = object.__new__(hindsight_mod.HindsightMemoryProvider)
     provider._session_id = "old-sid"
     provider._parent_session_id = ""

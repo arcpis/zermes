@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from worker_agents.registry import (
+from zermes.worker_agents.registry import (
     WORKER_REGISTRY_SCHEMA_VERSION,
     WorkerLifecycleStatus,
     WorkerRegistryError,

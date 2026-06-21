@@ -12,13 +12,13 @@ import pytest
 
 
 class TestStepCallbackNormalization:
-    """The gateway's _step_callback_sync normalizes prev_tools from run_agent."""
+    """The gateway's _step_callback_sync normalizes prev_tools from zermes.run_agent."""
 
     def _extract_step_callback(self):
         """Build a minimal _step_callback_sync using the same logic as gateway/run.py.
 
         We replicate the closure so we can test normalisation in isolation
-        without spinning up the full gateway.
+        without spinning up the full zermes.gateway.
         """
         captured_events = []
 
@@ -51,7 +51,7 @@ class TestStepCallbackNormalization:
         """When prev_tools is list[dict], tool_names should be list[str]."""
         cb, events, loop = self._extract_step_callback()
 
-        # Simulate the enriched format from run_agent.py
+        # Simulate the enriched format from zermes.run_agent.py
         prev_tools = [
             {"name": "terminal", "result": '{"output": "hello"}'},
             {"name": "read_file", "result": '{"content": "..."}'},

@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
-from hermes_cli.model_switch import ModelSwitchResult
+from zermes.hermes_cli.model_switch import ModelSwitchResult
 
 
 class _FakeModelInfo:
@@ -44,7 +44,7 @@ class _StubCLI:
 
 
 def _run_display(monkeypatch, result):
-    import cli as cli_mod
+    import zermes.cli as cli_mod
 
     captured: list[str] = []
     monkeypatch.setattr(cli_mod, "_cprint", lambda s, *a, **k: captured.append(str(s)))
@@ -74,7 +74,7 @@ def test_picker_path_uses_provider_aware_context_on_codex(monkeypatch):
         is_global=False,
     )
     with patch(
-        "agent.model_metadata.get_model_context_length",
+        "zermes.agent.model_metadata.get_model_context_length",
         return_value=272_000,
     ):
         lines = _run_display(monkeypatch, result)
@@ -109,7 +109,7 @@ def test_picker_path_shows_vendor_value_when_no_provider_cap(monkeypatch):
         is_global=False,
     )
     with patch(
-        "agent.model_metadata.get_model_context_length",
+        "zermes.agent.model_metadata.get_model_context_length",
         return_value=1_050_000,
     ):
         lines = _run_display(monkeypatch, result)
@@ -141,7 +141,7 @@ def test_picker_path_falls_back_to_model_info_when_resolver_empty(monkeypatch):
         is_global=False,
     )
     with patch(
-        "agent.model_metadata.get_model_context_length",
+        "zermes.agent.model_metadata.get_model_context_length",
         return_value=None,
     ):
         lines = _run_display(monkeypatch, result)

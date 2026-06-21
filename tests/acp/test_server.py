@@ -1,4 +1,4 @@
-"""Tests for acp_adapter.server — HermesACPAgent ACP server."""
+"""Tests for zermes.acp_adapter.server — HermesACPAgent ACP server."""
 
 import asyncio
 import os
@@ -33,9 +33,9 @@ from acp.schema import (
     UsageUpdate,
     UserMessageChunk,
 )
-from acp_adapter.server import HermesACPAgent, HERMES_VERSION
-from acp_adapter.session import SessionManager
-from hermes_state import SessionDB
+from zermes.acp_adapter.server import HermesACPAgent, HERMES_VERSION
+from zermes.acp_adapter.session import SessionManager
+from zermes.hermes_state import SessionDB
 
 
 @pytest.fixture()
@@ -102,7 +102,7 @@ class TestAuthenticate:
     @pytest.mark.asyncio
     async def test_authenticate_with_matching_method_id(self, agent, monkeypatch):
         monkeypatch.setattr(
-            "acp_adapter.server.detect_provider",
+            "zermes.acp_adapter.server.detect_provider",
             lambda: "openrouter",
         )
         resp = await agent.authenticate(method_id="openrouter")
@@ -111,7 +111,7 @@ class TestAuthenticate:
     @pytest.mark.asyncio
     async def test_authenticate_is_case_insensitive(self, agent, monkeypatch):
         monkeypatch.setattr(
-            "acp_adapter.server.detect_provider",
+            "zermes.acp_adapter.server.detect_provider",
             lambda: "openrouter",
         )
         resp = await agent.authenticate(method_id="OpenRouter")
@@ -120,7 +120,7 @@ class TestAuthenticate:
     @pytest.mark.asyncio
     async def test_authenticate_rejects_mismatched_method_id(self, agent, monkeypatch):
         monkeypatch.setattr(
-            "acp_adapter.server.detect_provider",
+            "zermes.acp_adapter.server.detect_provider",
             lambda: "openrouter",
         )
         resp = await agent.authenticate(method_id="totally-invalid-method")
@@ -129,7 +129,7 @@ class TestAuthenticate:
     @pytest.mark.asyncio
     async def test_authenticate_without_provider(self, agent, monkeypatch):
         monkeypatch.setattr(
-            "acp_adapter.server.detect_provider",
+            "zermes.acp_adapter.server.detect_provider",
             lambda: None,
         )
         resp = await agent.authenticate(method_id="openrouter")
@@ -160,7 +160,7 @@ class TestSessionOps:
         acp_agent = HermesACPAgent(session_manager=manager)
 
         with patch(
-            "hermes_cli.models.curated_models_for_provider",
+            "zermes.hermes_cli.models.curated_models_for_provider",
             return_value=[("gpt-5.4", "recommended"), ("gpt-5.4-mini", "")],
         ):
             resp = await acp_agent.new_session(cwd="/tmp")
@@ -221,7 +221,7 @@ class TestSessionOps:
         state.agent.tools = [{"type": "function", "function": {"name": "demo"}}]
 
         with patch(
-            "agent.model_metadata.estimate_request_tokens_rough",
+            "zermes.agent.model_metadata.estimate_request_tokens_rough",
             return_value=25_000,
         ):
             update = agent._build_usage_update(state)
@@ -240,7 +240,7 @@ class TestSessionOps:
         agent._conn = mock_conn
 
         with patch(
-            "agent.model_metadata.estimate_request_tokens_rough",
+            "zermes.agent.model_metadata.estimate_request_tokens_rough",
             return_value=25_000,
         ):
             await agent._send_usage_update(state)
@@ -300,7 +300,7 @@ class TestSessionOps:
             {
                 "role": "tool",
                 "tool_call_id": "call_search_1",
-                "content": '{"total_count":1,"matches":[{"path":"cli.py","line":42,"content":"slash commands"}]}',
+                "content": '{"total_count":1,"matches":[{"path":"zermes.cli.py","line":42,"content":"slash commands"}]}',
             },
         ]
 
@@ -335,7 +335,7 @@ class TestSessionOps:
         assert isinstance(tool_updates[1], ToolCallProgress)
         assert tool_updates[1].tool_call_id == "call_search_1"
         assert "Search results" in tool_updates[1].content[0].content.text
-        assert "cli.py:42" in tool_updates[1].content[0].content.text
+        assert "zermes.cli.py:42" in tool_updates[1].content[0].content.text
 
     @pytest.mark.asyncio
     async def test_resume_session_replays_persisted_history_to_client(self, agent):
@@ -429,7 +429,7 @@ class TestListAndFork:
 
     @pytest.mark.asyncio
     async def test_list_sessions_pagination_first_page(self, agent):
-        from acp_adapter import server as acp_server
+        from zermes.acp_adapter import server as acp_server
 
         infos = [
             {"session_id": f"s{i}", "cwd": "/tmp", "title": None, "updated_at": 0.0}
@@ -555,16 +555,16 @@ class TestSessionConfiguration:
                 api_mode=kwargs.get("api_mode"),
             )
 
-        monkeypatch.setattr("hermes_cli.config.load_config", lambda: {
+        monkeypatch.setattr("zermes.hermes_cli.config.load_config", lambda: {
             "model": {"provider": "openrouter", "default": "openrouter/gpt-5"}
         })
         monkeypatch.setattr(
-            "hermes_cli.runtime_provider.resolve_runtime_provider",
+            "zermes.hermes_cli.runtime_provider.resolve_runtime_provider",
             fake_resolve_runtime_provider,
         )
         manager = SessionManager(db=SessionDB(tmp_path / "state.db"))
 
-        with patch("run_agent.AIAgent", side_effect=fake_agent):
+        with patch("zermes.run_agent.AIAgent", side_effect=fake_agent):
             acp_agent = HermesACPAgent(session_manager=manager)
             state = manager.create_session(cwd="/tmp")
             result = await acp_agent.set_session_model(
@@ -601,7 +601,7 @@ class TestPrompt:
 
     @pytest.mark.asyncio
     async def test_prompt_runs_agent(self, agent):
-        """The prompt method should call run_conversation on the agent."""
+        """The prompt method should call run_conversation on the zermes.agent."""
         new_resp = await agent.new_session(cwd=".")
         state = agent.session_manager.get_session(new_resp.session_id)
 
@@ -724,7 +724,7 @@ class TestPrompt:
         mock_conn.session_update = AsyncMock()
         agent._conn = mock_conn
 
-        with patch("agent.title_generator.maybe_auto_title") as mock_title:
+        with patch("zermes.agent.title_generator.maybe_auto_title") as mock_title:
             prompt = [TextContentBlock(type="text", text="fix the broken ACP history")]
             await agent.prompt(prompt=prompt, session_id=new_resp.session_id)
 
@@ -855,7 +855,7 @@ class TestSlashCommands:
         state.agent.tools = [{"type": "function", "function": {"name": "demo"}}]
 
         with patch(
-            "agent.model_metadata.estimate_request_tokens_rough",
+            "zermes.agent.model_metadata.estimate_request_tokens_rough",
             return_value=25_000,
         ):
             result = agent._handle_slash_command("/context", state)
@@ -873,7 +873,7 @@ class TestSlashCommands:
         )
 
         with patch(
-            "agent.model_metadata.estimate_request_tokens_rough",
+            "zermes.agent.model_metadata.estimate_request_tokens_rough",
             return_value=82_000,
         ):
             result = agent._handle_slash_command("/context", state)
@@ -920,7 +920,7 @@ class TestSlashCommands:
         with (
             patch.object(agent.session_manager, "save_session") as mock_save,
             patch(
-                "agent.model_metadata.estimate_request_tokens_rough",
+                "zermes.agent.model_metadata.estimate_request_tokens_rough",
                 side_effect=[40, 12],
             ),
         ):
@@ -1011,16 +1011,16 @@ class TestSlashCommands:
                 api_mode=kwargs.get("api_mode"),
             )
 
-        monkeypatch.setattr("hermes_cli.config.load_config", lambda: {
+        monkeypatch.setattr("zermes.hermes_cli.config.load_config", lambda: {
             "model": {"provider": "openrouter", "default": "openrouter/gpt-5"}
         })
         monkeypatch.setattr(
-            "hermes_cli.runtime_provider.resolve_runtime_provider",
+            "zermes.hermes_cli.runtime_provider.resolve_runtime_provider",
             fake_resolve_runtime_provider,
         )
         manager = SessionManager(db=SessionDB(tmp_path / "state.db"))
 
-        with patch("run_agent.AIAgent", side_effect=fake_agent):
+        with patch("zermes.run_agent.AIAgent", side_effect=fake_agent):
             acp_agent = HermesACPAgent(session_manager=manager)
             state = manager.create_session(cwd="/tmp")
             result = acp_agent._cmd_model("anthropic:claude-sonnet-4-6", state)
@@ -1071,8 +1071,8 @@ class TestRegisterSessionMcpServers:
             registered_config.update(config_map)
             return ["mcp_test_server_tool1"]
 
-        with patch("tools.mcp_tool.register_mcp_servers", side_effect=capture_register), \
-             patch("model_tools.get_tool_definitions", return_value=[]):
+        with patch("zermes.tools.mcp_tool.register_mcp_servers", side_effect=capture_register),\
+             patch("zermes.model_tools.get_tool_definitions", return_value=[]):
             await agent._register_session_mcp_servers(state, [server])
 
         assert "test-server" in registered_config
@@ -1103,8 +1103,8 @@ class TestRegisterSessionMcpServers:
             registered_config.update(config_map)
             return []
 
-        with patch("tools.mcp_tool.register_mcp_servers", side_effect=capture_register), \
-             patch("model_tools.get_tool_definitions", return_value=[]):
+        with patch("zermes.tools.mcp_tool.register_mcp_servers", side_effect=capture_register),\
+             patch("zermes.model_tools.get_tool_definitions", return_value=[]):
             await agent._register_session_mcp_servers(state, [server])
 
         assert "http-server" in registered_config
@@ -1114,7 +1114,7 @@ class TestRegisterSessionMcpServers:
 
     @pytest.mark.asyncio
     async def test_refreshes_agent_tool_surface(self, agent, mock_manager):
-        """After MCP registration, agent.tools and valid_tool_names are refreshed."""
+        """After MCP registration, zermes.agent.tools and valid_tool_names are refreshed."""
         from acp.schema import McpServerStdio
 
         state = mock_manager.create_session(cwd="/tmp")
@@ -1136,8 +1136,8 @@ class TestRegisterSessionMcpServers:
             {"function": {"name": "terminal"}},
         ]
 
-        with patch("tools.mcp_tool.register_mcp_servers", return_value=["mcp_srv_search"]), \
-             patch("model_tools.get_tool_definitions", return_value=fake_tools) as mock_defs:
+        with patch("zermes.tools.mcp_tool.register_mcp_servers", return_value=["mcp_srv_search"]),\
+             patch("zermes.model_tools.get_tool_definitions", return_value=fake_tools) as mock_defs:
             await agent._register_session_mcp_servers(state, [server])
 
         mock_defs.assert_called_once_with(
@@ -1164,6 +1164,6 @@ class TestRegisterSessionMcpServers:
             env=[],
         )
 
-        with patch("tools.mcp_tool.register_mcp_servers", side_effect=RuntimeError("boom")):
+        with patch("zermes.tools.mcp_tool.register_mcp_servers", side_effect=RuntimeError("boom")):
             # Should not raise
             await agent._register_session_mcp_servers(state, [server])

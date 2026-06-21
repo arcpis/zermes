@@ -4,14 +4,14 @@ Added to ``ContextEngine.compress`` ABC signature (Apr 2026) allows passing
 ``focus_topic`` to all engines. Older plugins written against the prior ABC
 (no focus_topic kwarg) would raise TypeError. _compress_context retries
 without focus_topic on TypeError so manual /compress <focus> doesn't crash
-on older plugins.
+on older zermes.plugins.
 """
 
 from unittest.mock import MagicMock
 
 import pytest
 
-from run_agent import AIAgent
+from zermes.run_agent import AIAgent
 
 
 def _make_agent_with_engine(engine):
@@ -71,5 +71,5 @@ def test_compress_context_falls_back_when_engine_rejects_focus_topic():
     # Fallback succeeded: engine was called once without focus_topic.
     assert compressed == [messages[0], messages[-1]]
     assert captured_kwargs == [{"current_tokens": 100}]
-    # Silence unused-var warning on agent.
+    # Silence unused-var warning on zermes.agent.
     assert agent.context_compressor is engine

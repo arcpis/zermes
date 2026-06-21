@@ -1,6 +1,6 @@
 import pytest
 
-from worker_agents.organization import (
+from zermes.worker_agents.organization import (
     OrgLifecycleState,
     OrgLeaderKind,
     OrgLeaderRef,
@@ -9,7 +9,7 @@ from worker_agents.organization import (
     OrgTree,
     OrganizationError,
 )
-from worker_agents.storage.organization_store import (
+from zermes.worker_agents.storage.organization_store import (
     OrganizationHistorySummary,
     OrganizationProposalStatus,
     OrganizationProposalSummary,

@@ -9,9 +9,9 @@ Without the strip, the SDK prepends its own ``/v1/messages`` path and
 requests hit ``https://opencode.ai/zen/go/v1/v1/messages`` — a double
 ``/v1`` that returns OpenCode's website 404 page with HTML body.
 
-``hermes_cli.runtime_provider.resolve_runtime_provider`` already strips
+``zermes.hermes_cli.runtime_provider.resolve_runtime_provider`` already strips
 ``/v1`` at fresh agent init (PR #4918), but the ``/model`` mid-session
-switch path in ``hermes_cli.model_switch.switch_model`` was missing the
+switch path in ``zermes.hermes_cli.model_switch.switch_model`` was missing the
 same logic — these tests guard against that regression.
 """
 
@@ -19,7 +19,7 @@ from unittest.mock import patch
 
 import pytest
 
-from hermes_cli.model_switch import switch_model
+from zermes.hermes_cli.model_switch import switch_model
 
 
 _MOCK_VALIDATION = {
@@ -46,10 +46,10 @@ def _run_opencode_switch(
     """
     effective_runtime_base = runtime_base_url or current_base_url
     with (
-        patch("hermes_cli.model_switch.resolve_alias", return_value=None),
-        patch("hermes_cli.model_switch.list_provider_models", return_value=[]),
+        patch("zermes.hermes_cli.model_switch.resolve_alias", return_value=None),
+        patch("zermes.hermes_cli.model_switch.list_provider_models", return_value=[]),
         patch(
-            "hermes_cli.runtime_provider.resolve_runtime_provider",
+            "zermes.hermes_cli.runtime_provider.resolve_runtime_provider",
             return_value={
                 "api_key": "sk-opencode-fake",
                 "base_url": effective_runtime_base,
@@ -57,12 +57,12 @@ def _run_opencode_switch(
             },
         ),
         patch(
-            "hermes_cli.models.validate_requested_model",
+            "zermes.hermes_cli.models.validate_requested_model",
             return_value=_MOCK_VALIDATION,
         ),
-        patch("hermes_cli.model_switch.get_model_info", return_value=None),
-        patch("hermes_cli.model_switch.get_model_capabilities", return_value=None),
-        patch("hermes_cli.models.detect_provider_for_model", return_value=None),
+        patch("zermes.hermes_cli.model_switch.get_model_info", return_value=None),
+        patch("zermes.hermes_cli.model_switch.get_model_capabilities", return_value=None),
+        patch("zermes.hermes_cli.models.detect_provider_for_model", return_value=None),
     ):
         return switch_model(
             raw_input=raw_input,
@@ -193,11 +193,11 @@ class TestOpenCodeZenV1Strip:
 
 
 class TestAgentSwitchModelDefenseInDepth:
-    """run_agent.AIAgent.switch_model() also strips /v1 as defense-in-depth."""
+    """zermes.run_agent.AIAgent.switch_model() also strips /v1 as defense-in-depth."""
 
     def test_agent_switch_model_strips_v1_for_anthropic_messages(self):
         """Even if a caller hands in a /v1 URL, the agent strips it."""
-        from run_agent import AIAgent
+        from zermes.run_agent import AIAgent
 
         # Build a bare agent instance without running __init__; we only want
         # to exercise switch_model's base_url normalization logic.
@@ -232,10 +232,10 @@ class TestAgentSwitchModelDefenseInDepth:
             raise _Sentinel("strip verified")
 
         with patch(
-            "agent.anthropic_adapter.build_anthropic_client",
+            "zermes.agent.anthropic_adapter.build_anthropic_client",
             side_effect=_raise_after_capture,
-        ), patch("agent.anthropic_adapter.resolve_anthropic_token", return_value=""), patch(
-            "agent.anthropic_adapter._is_oauth_token", return_value=False
+        ), patch("zermes.agent.anthropic_adapter.resolve_anthropic_token", return_value=""), patch(
+            "zermes.agent.anthropic_adapter._is_oauth_token", return_value=False
         ):
             with pytest.raises(_Sentinel):
                 agent.switch_model(
@@ -247,7 +247,7 @@ class TestAgentSwitchModelDefenseInDepth:
                 )
 
         assert captured.get("base_url") == "https://opencode.ai/zen/go", (
-            f"agent.switch_model did not strip /v1; passed {captured.get('base_url')} "
+            f"zermes.agent.switch_model did not strip /v1; passed {captured.get('base_url')} "
             "to build_anthropic_client"
         )
 
@@ -281,11 +281,11 @@ class TestStaleConfigDefaultDoesNotWedgeResolver:
         }))
 
         # Re-import with the new HERMES_HOME so config cache is fresh.
-        import hermes_cli.config as _cfg_mod
+        import zermes.hermes_cli.config as _cfg_mod
         importlib.reload(_cfg_mod)
-        import hermes_cli.runtime_provider as _rp_mod
+        import zermes.hermes_cli.runtime_provider as _rp_mod
         importlib.reload(_rp_mod)
-        import hermes_cli.model_switch as _ms_mod
+        import zermes.hermes_cli.model_switch as _ms_mod
         importlib.reload(_ms_mod)
 
         result = _ms_mod.switch_model(
@@ -317,11 +317,11 @@ class TestStaleConfigDefaultDoesNotWedgeResolver:
             "model": {"provider": "opencode-go", "default": "minimax-m2.7"},
         }))
 
-        import hermes_cli.config as _cfg_mod
+        import zermes.hermes_cli.config as _cfg_mod
         importlib.reload(_cfg_mod)
-        import hermes_cli.runtime_provider as _rp_mod
+        import zermes.hermes_cli.runtime_provider as _rp_mod
         importlib.reload(_rp_mod)
-        import hermes_cli.model_switch as _ms_mod
+        import zermes.hermes_cli.model_switch as _ms_mod
         importlib.reload(_ms_mod)
 
         result = _ms_mod.switch_model(
@@ -353,11 +353,11 @@ class TestStaleConfigDefaultDoesNotWedgeResolver:
             "model": {"provider": "opencode-zen", "default": "kimi-k2.6"},
         }))
 
-        import hermes_cli.config as _cfg_mod
+        import zermes.hermes_cli.config as _cfg_mod
         importlib.reload(_cfg_mod)
-        import hermes_cli.runtime_provider as _rp_mod
+        import zermes.hermes_cli.runtime_provider as _rp_mod
         importlib.reload(_rp_mod)
-        import hermes_cli.model_switch as _ms_mod
+        import zermes.hermes_cli.model_switch as _ms_mod
         importlib.reload(_ms_mod)
 
         result = _ms_mod.switch_model(

@@ -2,13 +2,13 @@ import json
 
 import pytest
 
-from worker_agents.organization_evolution import (
+from zermes.worker_agents.organization_evolution import (
     EVOLUTION_PROPOSAL_SCHEMA_VERSION,
     EvolutionProposalStatus,
     OrganizationEvolutionError,
     organization_evolution_proposal_from_dict,
 )
-from worker_agents.organization import (
+from zermes.worker_agents.organization import (
     OrgLifecycleState,
     OrgLeaderKind,
     OrgLeaderRef,
@@ -16,7 +16,7 @@ from worker_agents.organization import (
     OrgNodeType,
     OrgTree,
 )
-from worker_agents.organization_evolution_executor import (
+from zermes.worker_agents.organization_evolution_executor import (
     ControlledEvolutionOperation,
     ControlledEvolutionPlan,
     EvolutionExecutionAuditRecord,
@@ -33,12 +33,12 @@ from worker_agents.organization_evolution_executor import (
     mark_execution_failed,
     mark_execution_step_completed,
 )
-from worker_agents.registry import (
+from zermes.worker_agents.registry import (
     WorkerLifecycleStatus,
     WorkerRegistryRecord,
     WorkerRegistryStore,
 )
-from worker_agents.storage.organization_store import OrganizationStore
+from zermes.worker_agents.storage.organization_store import OrganizationStore
 
 
 NOW = "2026-05-26T00:00:00Z"

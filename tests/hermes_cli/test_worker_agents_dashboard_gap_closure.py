@@ -2,8 +2,8 @@ import json
 
 import pytest
 
-from hermes_cli.worker_agents_product import write_management_state_for_tests
-from worker_agents.organization import MAIN_AGENT_ID
+from zermes.hermes_cli.worker_agents_product import write_management_state_for_tests
+from zermes.worker_agents.organization import MAIN_AGENT_ID
 
 pytestmark = pytest.mark.timeout(120)
 
@@ -103,7 +103,7 @@ def client(monkeypatch, tmp_path):
     monkeypatch.setenv("ZERMES_HOME", str(tmp_path))
     write_management_state_for_tests(_dashboard_gap_state(), tmp_path)
 
-    from worker_agents.runtime_contract import RuntimeResult, RuntimeState
+    from zermes.worker_agents.runtime_contract import RuntimeResult, RuntimeState
 
     def _stub_runtime_reply_handler(request):
         return RuntimeResult(
@@ -118,14 +118,14 @@ def client(monkeypatch, tmp_path):
             internal_summary="Stub handler for testing",
         )
 
-    import hermes_cli.worker_agents_product as _product_mod
+    import zermes.hermes_cli.worker_agents_product as _product_mod
     monkeypatch.setattr(
         _product_mod,
         "build_worker_runtime_reply_handler",
         lambda: _stub_runtime_reply_handler,
     )
 
-    from hermes_cli.web_server import app, _SESSION_HEADER_NAME, _SESSION_TOKEN
+    from zermes.hermes_cli.web_server import app, _SESSION_HEADER_NAME, _SESSION_TOKEN
 
     test_client = TestClient(app)
     test_client.headers[_SESSION_HEADER_NAME] = _SESSION_TOKEN

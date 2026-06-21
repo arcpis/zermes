@@ -12,10 +12,10 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from gateway.config import Platform, PlatformConfig
-from gateway.platforms.base import BasePlatformAdapter, MessageEvent, MessageType, SendResult
-from gateway.run import GatewayRunner
-from gateway.session import SessionSource, build_session_key
+from zermes.gateway.config import Platform, PlatformConfig
+from zermes.gateway.platforms.base import BasePlatformAdapter, MessageEvent, MessageType, SendResult
+from zermes.gateway.run import GatewayRunner
+from zermes.gateway.session import SessionSource, build_session_key
 
 
 class _MediaRoutingAdapter(BasePlatformAdapter):

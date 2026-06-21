@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import pytest
 
-from agent.auxiliary_client import (
+from zermes.agent.auxiliary_client import (
     _compression_threshold_for_model,
     _fixed_temperature_for_model,
     _is_arcee_trinity_thinking,

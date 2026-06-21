@@ -8,8 +8,8 @@ Stale-generation registrations are rejected.
 """
 import pytest
 
-from gateway.config import Platform, PlatformConfig
-from gateway.platforms.base import BasePlatformAdapter, SendResult
+from zermes.gateway.config import Platform, PlatformConfig
+from zermes.gateway.platforms.base import BasePlatformAdapter, SendResult
 
 
 class _MinAdapter(BasePlatformAdapter):

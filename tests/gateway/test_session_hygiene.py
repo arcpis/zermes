@@ -1,7 +1,7 @@
 """Tests for gateway session hygiene — auto-compression of large sessions.
 
 Verifies that the gateway detects pathologically large transcripts and
-triggers auto-compression before running the agent.  (#628)
+triggers auto-compression before running the zermes.agent.  (#628)
 
 The hygiene system uses the SAME compression config as the agent:
   compression.threshold × model context length
@@ -17,10 +17,10 @@ from unittest.mock import patch, MagicMock, AsyncMock
 
 import pytest
 
-from agent.model_metadata import estimate_messages_tokens_rough
-from gateway.config import GatewayConfig, Platform, PlatformConfig
-from gateway.platforms.base import BasePlatformAdapter, MessageEvent, SendResult
-from gateway.session import SessionEntry, SessionSource
+from zermes.agent.model_metadata import estimate_messages_tokens_rough
+from zermes.gateway.config import GatewayConfig, Platform, PlatformConfig
+from zermes.gateway.platforms.base import BasePlatformAdapter, MessageEvent, SendResult
+from zermes.gateway.session import SessionEntry, SessionSource
 
 
 # ---------------------------------------------------------------------------
@@ -324,7 +324,7 @@ async def test_session_hygiene_messages_stay_in_originating_topic(monkeypatch, t
     fake_run_agent.AIAgent = FakeCompressAgent
     monkeypatch.setitem(sys.modules, "run_agent", fake_run_agent)
 
-    gateway_run = importlib.import_module("gateway.run")
+    gateway_run = importlib.import_module("zermes.gateway.run")
     GatewayRunner = gateway_run.GatewayRunner
 
     adapter = HygieneCaptureAdapter()
@@ -367,7 +367,7 @@ async def test_session_hygiene_messages_stay_in_originating_topic(monkeypatch, t
     monkeypatch.setattr(gateway_run, "_hermes_home", tmp_path)
     monkeypatch.setattr(gateway_run, "_resolve_runtime_agent_kwargs", lambda: {"api_key": "fake"})
     monkeypatch.setattr(
-        "agent.model_metadata.get_model_context_length",
+        "zermes.agent.model_metadata.get_model_context_length",
         lambda *_args, **_kwargs: 100,
     )
     monkeypatch.setenv("TELEGRAM_HOME_CHANNEL", "795544298")
@@ -431,7 +431,7 @@ async def test_session_hygiene_warns_user_when_summary_generation_fails(monkeypa
     fake_run_agent.AIAgent = FakeCompressAgentWithSummaryFailure
     monkeypatch.setitem(sys.modules, "run_agent", fake_run_agent)
 
-    gateway_run = importlib.import_module("gateway.run")
+    gateway_run = importlib.import_module("zermes.gateway.run")
     GatewayRunner = gateway_run.GatewayRunner
 
     adapter = HygieneCaptureAdapter()
@@ -474,7 +474,7 @@ async def test_session_hygiene_warns_user_when_summary_generation_fails(monkeypa
     monkeypatch.setattr(gateway_run, "_hermes_home", tmp_path)
     monkeypatch.setattr(gateway_run, "_resolve_runtime_agent_kwargs", lambda: {"api_key": "***"})
     monkeypatch.setattr(
-        "agent.model_metadata.get_model_context_length",
+        "zermes.agent.model_metadata.get_model_context_length",
         lambda *_args, **_kwargs: 100,
     )
     monkeypatch.setenv("TELEGRAM_HOME_CHANNEL", "795544298")
@@ -550,7 +550,7 @@ async def test_session_hygiene_informs_user_when_aux_model_fails_but_recovers(mo
     fake_run_agent.AIAgent = FakeCompressAgentWithAuxRecovery
     monkeypatch.setitem(sys.modules, "run_agent", fake_run_agent)
 
-    gateway_run = importlib.import_module("gateway.run")
+    gateway_run = importlib.import_module("zermes.gateway.run")
     GatewayRunner = gateway_run.GatewayRunner
 
     adapter = HygieneCaptureAdapter()
@@ -593,7 +593,7 @@ async def test_session_hygiene_informs_user_when_aux_model_fails_but_recovers(mo
     monkeypatch.setattr(gateway_run, "_hermes_home", tmp_path)
     monkeypatch.setattr(gateway_run, "_resolve_runtime_agent_kwargs", lambda: {"api_key": "***"})
     monkeypatch.setattr(
-        "agent.model_metadata.get_model_context_length",
+        "zermes.agent.model_metadata.get_model_context_length",
         lambda *_args, **_kwargs: 100,
     )
     monkeypatch.setenv("TELEGRAM_HOME_CHANNEL", "795544298")
@@ -677,7 +677,7 @@ async def test_session_hygiene_honors_configurable_hard_message_limit(
         "  hygiene_hard_message_limit: 10\n"
     )
 
-    gateway_run = importlib.import_module("gateway.run")
+    gateway_run = importlib.import_module("zermes.gateway.run")
     GatewayRunner = gateway_run.GatewayRunner
 
     adapter = HygieneCaptureAdapter()
@@ -727,7 +727,7 @@ async def test_session_hygiene_honors_configurable_hard_message_limit(
     # won't trigger for 12 short messages — hard-limit must be the ONLY
     # thing firing compression.
     monkeypatch.setattr(
-        "agent.model_metadata.get_model_context_length",
+        "zermes.agent.model_metadata.get_model_context_length",
         lambda *_args, **_kwargs: 1_000_000,
     )
 
@@ -782,7 +782,7 @@ async def test_session_hygiene_default_hard_message_limit_does_not_fire_at_12_me
     monkeypatch.setitem(sys.modules, "run_agent", fake_run_agent)
 
     # No config.yaml — use defaults (hard_limit=400)
-    gateway_run = importlib.import_module("gateway.run")
+    gateway_run = importlib.import_module("zermes.gateway.run")
     GatewayRunner = gateway_run.GatewayRunner
 
     adapter = HygieneCaptureAdapter()
@@ -827,7 +827,7 @@ async def test_session_hygiene_default_hard_message_limit_does_not_fire_at_12_me
         gateway_run, "_resolve_runtime_agent_kwargs", lambda: {"api_key": "fake"}
     )
     monkeypatch.setattr(
-        "agent.model_metadata.get_model_context_length",
+        "zermes.agent.model_metadata.get_model_context_length",
         lambda *_args, **_kwargs: 1_000_000,
     )
 

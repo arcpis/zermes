@@ -1,4 +1,4 @@
-from worker_agents.management import (
+from zermes.worker_agents.management import (
     EvolutionWizardInput,
     build_evolution_execution_view,
     build_evolution_proposal_draft,

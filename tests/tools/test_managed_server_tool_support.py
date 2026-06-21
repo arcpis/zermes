@@ -100,7 +100,7 @@ class TestParserCompatibility:
         ManagedServer expects parser.parse(text) -> (content, tool_calls)
         where tool_calls is a list of objects with .id, .function.name, .function.arguments
         """
-        from environments.tool_call_parsers import get_parser
+        from zermes.environments.tool_call_parsers import get_parser
 
         parser = get_parser("hermes")
         text = '<tool_call>{"name": "terminal", "arguments": {"command": "ls"}}</tool_call>'
@@ -118,7 +118,7 @@ class TestParserCompatibility:
 
     def test_parser_no_tools_returns_none(self):
         """ManagedServer checks `if parsed_tool_calls:` — None should be falsy."""
-        from environments.tool_call_parsers import get_parser
+        from zermes.environments.tool_call_parsers import get_parser
 
         parser = get_parser("hermes")
         content, tool_calls = parser.parse("Just text, no tools")
@@ -126,7 +126,7 @@ class TestParserCompatibility:
 
     def test_parser_content_is_string_or_none(self):
         """ManagedServer uses `parsed_content or ""` — must be str or None."""
-        from environments.tool_call_parsers import get_parser
+        from zermes.environments.tool_call_parsers import get_parser
 
         parser = get_parser("hermes")
 

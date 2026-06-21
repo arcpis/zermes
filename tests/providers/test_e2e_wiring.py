@@ -5,8 +5,8 @@ without importing run_agent (which would cause xdist worker contamination).
 """
 
 import pytest
-from agent.transports.chat_completions import ChatCompletionsTransport
-from providers import get_provider_profile
+from zermes.agent.transports.chat_completions import ChatCompletionsTransport
+from zermes.providers import get_provider_profile
 
 
 @pytest.fixture

@@ -17,9 +17,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from gateway.config import GatewayConfig, Platform, PlatformConfig
-from gateway.platforms.base import MessageEvent
-from gateway.session import SessionEntry, SessionSource, build_session_key
+from zermes.gateway.config import GatewayConfig, Platform, PlatformConfig
+from zermes.gateway.platforms.base import MessageEvent
+from zermes.gateway.session import SessionEntry, SessionSource, build_session_key
 
 
 def _make_source() -> SessionSource:
@@ -41,7 +41,7 @@ def _make_event(text: str) -> MessageEvent:
 
 
 def _make_runner():
-    from gateway.run import GatewayRunner
+    from zermes.gateway.run import GatewayRunner
 
     runner = object.__new__(GatewayRunner)
     runner.config = GatewayConfig(
@@ -69,7 +69,7 @@ def _make_runner():
 
 def _clear_approval_state():
     """Reset all module-level approval state between tests."""
-    from tools import approval as mod
+    from zermes.tools import approval as mod
     mod._gateway_queues.clear()
     mod._gateway_notify_cbs.clear()
     mod._session_approved.clear()
@@ -90,7 +90,7 @@ class TestBlockingGatewayApproval:
 
     def test_register_and_resolve_unblocks_entry(self):
         """resolve_gateway_approval signals the entry's event."""
-        from tools.approval import (
+        from zermes.tools.approval import (
             register_gateway_notify, unregister_gateway_notify,
             resolve_gateway_approval, has_blocking_approval,
             _ApprovalEntry, _gateway_queues,
@@ -119,12 +119,12 @@ class TestBlockingGatewayApproval:
         unregister_gateway_notify(session_key)
 
     def test_resolve_returns_zero_when_no_pending(self):
-        from tools.approval import resolve_gateway_approval
+        from zermes.tools.approval import resolve_gateway_approval
         assert resolve_gateway_approval("nonexistent", "once") == 0
 
     def test_resolve_all_unblocks_multiple_entries(self):
         """resolve_gateway_approval with resolve_all=True signals all entries."""
-        from tools.approval import (
+        from zermes.tools.approval import (
             resolve_gateway_approval, _ApprovalEntry, _gateway_queues,
         )
         session_key = "test-all"
@@ -140,7 +140,7 @@ class TestBlockingGatewayApproval:
 
     def test_resolve_single_pops_oldest_fifo(self):
         """resolve_gateway_approval without resolve_all resolves oldest first."""
-        from tools.approval import (
+        from zermes.tools.approval import (
             resolve_gateway_approval,
             _ApprovalEntry, _gateway_queues,
         )
@@ -158,7 +158,7 @@ class TestBlockingGatewayApproval:
 
     def test_unregister_signals_all_entries(self):
         """unregister_gateway_notify signals all waiting entries to prevent hangs."""
-        from tools.approval import (
+        from zermes.tools.approval import (
             register_gateway_notify, unregister_gateway_notify,
             _ApprovalEntry, _gateway_queues,
         )
@@ -175,7 +175,7 @@ class TestBlockingGatewayApproval:
 
     def test_clear_session_denies_and_signals_all_entries(self):
         """clear_session must wake blocked entries during boundary cleanup."""
-        from tools.approval import clear_session, _ApprovalEntry, _gateway_queues
+        from zermes.tools.approval import clear_session, _ApprovalEntry, _gateway_queues
 
         session_key = "test-boundary-cleanup"
         e1 = _ApprovalEntry({"command": "cmd1"})
@@ -204,7 +204,7 @@ class TestApproveCommand:
     @pytest.mark.asyncio
     async def test_approve_resolves_blocking_approval(self):
         """Basic /approve signals the oldest blocked agent thread."""
-        from tools.approval import _ApprovalEntry, _gateway_queues
+        from zermes.tools.approval import _ApprovalEntry, _gateway_queues
 
         runner = _make_runner()
         source = _make_source()
@@ -221,7 +221,7 @@ class TestApproveCommand:
     @pytest.mark.asyncio
     async def test_approve_all_resolves_multiple(self):
         """/approve all resolves all pending approvals."""
-        from tools.approval import _ApprovalEntry, _gateway_queues
+        from zermes.tools.approval import _ApprovalEntry, _gateway_queues
 
         runner = _make_runner()
         source = _make_source()
@@ -239,7 +239,7 @@ class TestApproveCommand:
     @pytest.mark.asyncio
     async def test_approve_all_session(self):
         """/approve all session resolves all with session scope."""
-        from tools.approval import _ApprovalEntry, _gateway_queues
+        from zermes.tools.approval import _ApprovalEntry, _gateway_queues
 
         runner = _make_runner()
         source = _make_source()
@@ -287,7 +287,7 @@ class TestDenyCommand:
     @pytest.mark.asyncio
     async def test_deny_resolves_blocking_approval(self):
         """/deny signals the oldest blocked agent thread with 'deny'."""
-        from tools.approval import _ApprovalEntry, _gateway_queues
+        from zermes.tools.approval import _ApprovalEntry, _gateway_queues
 
         runner = _make_runner()
         source = _make_source()
@@ -304,7 +304,7 @@ class TestDenyCommand:
     @pytest.mark.asyncio
     async def test_deny_all_resolves_all(self):
         """/deny all denies all pending approvals."""
-        from tools.approval import _ApprovalEntry, _gateway_queues
+        from zermes.tools.approval import _ApprovalEntry, _gateway_queues
 
         runner = _make_runner()
         source = _make_source()
@@ -339,7 +339,7 @@ class TestBareTextNoLongerApproves:
     @pytest.mark.asyncio
     async def test_yes_does_not_execute_pending_command(self):
         """Saying 'yes' must not trigger approval. Only /approve works."""
-        from tools.approval import _ApprovalEntry, _gateway_queues
+        from zermes.tools.approval import _ApprovalEntry, _gateway_queues
 
         runner = _make_runner()
         source = _make_source()
@@ -370,7 +370,7 @@ class TestBlockingApprovalE2E:
 
     def test_blocking_approval_approve_once(self):
         """check_all_command_guards blocks until resolve_gateway_approval is called."""
-        from tools.approval import (
+        from zermes.tools.approval import (
             register_gateway_notify, unregister_gateway_notify,
             resolve_gateway_approval, check_all_command_guards,
         )
@@ -383,7 +383,7 @@ class TestBlockingApprovalE2E:
         result_holder = [None]
 
         def agent_thread():
-            from tools.approval import reset_current_session_key, set_current_session_key
+            from zermes.tools.approval import reset_current_session_key, set_current_session_key
 
             token = set_current_session_key(session_key)
             os.environ["HERMES_GATEWAY_SESSION"] = "1"
@@ -419,7 +419,7 @@ class TestBlockingApprovalE2E:
 
     def test_blocking_approval_deny(self):
         """check_all_command_guards returns BLOCKED when denied."""
-        from tools.approval import (
+        from zermes.tools.approval import (
             register_gateway_notify, unregister_gateway_notify,
             resolve_gateway_approval, check_all_command_guards,
         )
@@ -431,7 +431,7 @@ class TestBlockingApprovalE2E:
         result_holder = [None]
 
         def agent_thread():
-            from tools.approval import reset_current_session_key, set_current_session_key
+            from zermes.tools.approval import reset_current_session_key, set_current_session_key
 
             token = set_current_session_key(session_key)
             os.environ["HERMES_GATEWAY_SESSION"] = "1"
@@ -463,7 +463,7 @@ class TestBlockingApprovalE2E:
 
     def test_blocking_approval_timeout(self):
         """check_all_command_guards returns BLOCKED on timeout."""
-        from tools.approval import (
+        from zermes.tools.approval import (
             register_gateway_notify, unregister_gateway_notify,
             check_all_command_guards,
         )
@@ -474,14 +474,14 @@ class TestBlockingApprovalE2E:
         result_holder = [None]
 
         def agent_thread():
-            from tools.approval import reset_current_session_key, set_current_session_key
+            from zermes.tools.approval import reset_current_session_key, set_current_session_key
 
             token = set_current_session_key(session_key)
             os.environ["HERMES_GATEWAY_SESSION"] = "1"
             os.environ["HERMES_EXEC_ASK"] = "1"
             os.environ["HERMES_SESSION_KEY"] = session_key
             try:
-                with patch("tools.approval._get_approval_config",
+                with patch("zermes.tools.approval._get_approval_config",
                            return_value={"gateway_timeout": 1}):
                     result_holder[0] = check_all_command_guards(
                         "rm -rf /important", "local"
@@ -502,7 +502,7 @@ class TestBlockingApprovalE2E:
 
     def test_parallel_subagent_approvals(self):
         """Multiple threads can block concurrently and be resolved independently."""
-        from tools.approval import (
+        from zermes.tools.approval import (
             register_gateway_notify, unregister_gateway_notify,
             resolve_gateway_approval, check_all_command_guards,
             _gateway_queues,
@@ -516,7 +516,7 @@ class TestBlockingApprovalE2E:
 
         def make_agent(idx, cmd):
             def run():
-                from tools.approval import reset_current_session_key, set_current_session_key
+                from zermes.tools.approval import reset_current_session_key, set_current_session_key
 
                 token = set_current_session_key(session_key)
                 os.environ["HERMES_GATEWAY_SESSION"] = "1"
@@ -561,7 +561,7 @@ class TestBlockingApprovalE2E:
 
     def test_parallel_mixed_approve_deny(self):
         """Approve some, deny others in a parallel batch."""
-        from tools.approval import (
+        from zermes.tools.approval import (
             register_gateway_notify, unregister_gateway_notify,
             resolve_gateway_approval, check_all_command_guards,
         )
@@ -573,7 +573,7 @@ class TestBlockingApprovalE2E:
 
         def make_agent(idx, cmd):
             def run():
-                from tools.approval import reset_current_session_key, set_current_session_key
+                from zermes.tools.approval import reset_current_session_key, set_current_session_key
 
                 token = set_current_session_key(session_key)
                 os.environ["HERMES_GATEWAY_SESSION"] = "1"
@@ -598,7 +598,7 @@ class TestBlockingApprovalE2E:
         # Wait for both threads to register pending approvals instead of
         # relying on a fixed sleep.  The approval module stores entries in
         # _gateway_queues[session_key] — poll until we see 2 entries.
-        from tools.approval import _gateway_queues
+        from zermes.tools.approval import _gateway_queues
         deadline = time.monotonic() + 5
         while time.monotonic() < deadline:
             if len(_gateway_queues.get(session_key, [])) >= 2:
@@ -630,7 +630,7 @@ class TestFallbackNoCallback:
 
     def test_no_callback_returns_approval_required(self):
         """Without a registered callback, the old approval_required path is used."""
-        from tools.approval import check_all_command_guards, _pending
+        from zermes.tools.approval import check_all_command_guards, _pending
 
         os.environ["HERMES_EXEC_ASK"] = "1"
         os.environ["HERMES_SESSION_KEY"] = "no-callback-test"

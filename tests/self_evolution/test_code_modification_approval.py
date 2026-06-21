@@ -1,6 +1,6 @@
 from datetime import UTC, datetime
 
-from code_modification.approval import (
+from zermes.code_modification.approval import (
     build_approval_plan,
     render_approval_markdown,
     render_plan_markdown,

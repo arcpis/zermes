@@ -22,7 +22,7 @@ from unittest.mock import patch
 
 import httpx
 
-from run_agent import AIAgent, _get_proxy_from_env, _get_proxy_for_base_url
+from zermes.run_agent import AIAgent, _get_proxy_from_env, _get_proxy_for_base_url
 
 
 def _make_agent():
@@ -75,7 +75,7 @@ def test_get_proxy_from_env_normalizes_socks_alias(monkeypatch):
     assert _get_proxy_from_env() == "socks5://127.0.0.1:1080/"
 
 
-@patch("run_agent.OpenAI")
+@patch("zermes.run_agent.OpenAI")
 def test_create_openai_client_routes_via_proxy_when_env_set(mock_openai, monkeypatch):
     """With HTTPS_PROXY set, the custom httpx.Client must mount an HTTPProxy pool.
 
@@ -115,7 +115,7 @@ def test_create_openai_client_routes_via_proxy_when_env_set(mock_openai, monkeyp
     http_client.close()
 
 
-@patch("run_agent.OpenAI")
+@patch("zermes.run_agent.OpenAI")
 def test_create_openai_client_no_proxy_when_env_unset(mock_openai, monkeypatch):
     """Without proxy env vars, the keepalive transport must still be installed
     and no HTTPProxy mount should exist."""
@@ -188,7 +188,7 @@ def test_get_proxy_for_base_url_returns_none_when_proxy_unset(monkeypatch):
     assert _get_proxy_for_base_url("https://api.openai.com/v1") is None
 
 
-@patch("run_agent.OpenAI")
+@patch("zermes.run_agent.OpenAI")
 def test_create_openai_client_bypasses_proxy_for_no_proxy_host(mock_openai, monkeypatch):
     """E2E: with HTTPS_PROXY + NO_PROXY=localhost, a local base_url gets a
     keepalive client with NO HTTPProxy mount."""

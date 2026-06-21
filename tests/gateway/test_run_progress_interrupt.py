@@ -1,4 +1,4 @@
-"""Tests for interrupt-aware tool-progress suppression in gateway.
+"""Tests for interrupt-aware tool-progress suppression in zermes.gateway.
 
 When a user sends `stop` while the agent is executing a batch of parallel
 tool calls, the gateway's progress_callback should stop queuing 🔍 bubbles
@@ -17,9 +17,9 @@ from types import SimpleNamespace
 
 import pytest
 
-from gateway.config import Platform, PlatformConfig
-from gateway.platforms.base import BasePlatformAdapter, SendResult
-from gateway.session import SessionSource
+from zermes.gateway.config import Platform, PlatformConfig
+from zermes.gateway.platforms.base import BasePlatformAdapter, SendResult
+from zermes.gateway.session import SessionSource
 
 
 class ProgressCaptureAdapter(BasePlatformAdapter):
@@ -108,7 +108,7 @@ class InterruptedAgent:
 
 
 def _make_runner(adapter):
-    gateway_run = importlib.import_module("gateway.run")
+    gateway_run = importlib.import_module("zermes.gateway.run")
     GatewayRunner = gateway_run.GatewayRunner
 
     runner = object.__new__(GatewayRunner)
@@ -144,7 +144,7 @@ async def _run_once(monkeypatch, tmp_path, agent_cls, session_id):
 
     adapter = ProgressCaptureAdapter()
     runner = _make_runner(adapter)
-    gateway_run = importlib.import_module("gateway.run")
+    gateway_run = importlib.import_module("zermes.gateway.run")
     monkeypatch.setattr(gateway_run, "_hermes_home", tmp_path)
     monkeypatch.setattr(
         gateway_run,

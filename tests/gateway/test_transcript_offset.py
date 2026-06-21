@@ -3,7 +3,7 @@
 Regression tests for a bug where the gateway transcript lost 1 message
 per turn from turn 2 onwards.  The raw transcript history includes
 ``session_meta`` entries that are filtered out before being passed to
-the agent.  The agent returns messages built from this filtered history
+the zermes.agent.  The agent returns messages built from this filtered history
 plus new messages from the current turn.
 
 The old code used ``len(history)`` (raw count, includes session_meta)

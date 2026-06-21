@@ -29,7 +29,7 @@ def test_manual_compress_reports_noop_without_success_banner(capsys):
         assert messages == history
         return 100
 
-    with patch("agent.model_metadata.estimate_request_tokens_rough", side_effect=_estimate):
+    with patch("zermes.agent.model_metadata.estimate_request_tokens_rough", side_effect=_estimate):
         shell._manual_compress()
 
     output = capsys.readouterr().out
@@ -61,7 +61,7 @@ def test_manual_compress_explains_when_token_estimate_rises(capsys):
             return 120
         raise AssertionError(f"unexpected transcript: {messages!r}")
 
-    with patch("agent.model_metadata.estimate_request_tokens_rough", side_effect=_estimate):
+    with patch("zermes.agent.model_metadata.estimate_request_tokens_rough", side_effect=_estimate):
         shell._manual_compress()
 
     output = capsys.readouterr().out
@@ -74,7 +74,7 @@ def test_manual_compress_syncs_session_id_after_split():
     """Regression for cli.session_id desync after /compress.
 
     _compress_context ends the parent session and creates a new child session,
-    mutating agent.session_id. Without syncing, cli.session_id still points
+    mutating zermes.agent.session_id. Without syncing, cli.session_id still points
     at the ended parent — causing /status, /resume, exit summary, and the
     next end_session() call (e.g. from /resume <id>) to target the wrong row.
     """
@@ -92,7 +92,7 @@ def test_manual_compress_syncs_session_id_after_split():
     shell.agent.compression_enabled = True
     shell.agent._cached_system_prompt = ""
     shell.agent.tools = None
-    # Simulate _compress_context mutating agent.session_id as a side effect.
+    # Simulate _compress_context mutating zermes.agent.session_id as a side effect.
     def _fake_compress(*args, **kwargs):
         shell.agent.session_id = new_child_id
         return (compressed, "")
@@ -100,7 +100,7 @@ def test_manual_compress_syncs_session_id_after_split():
     shell.agent.session_id = old_id  # starts in sync
     shell._pending_title = "stale title"
 
-    with patch("agent.model_metadata.estimate_request_tokens_rough", return_value=100):
+    with patch("zermes.agent.model_metadata.estimate_request_tokens_rough", return_value=100):
         shell._manual_compress()
 
     # CLI session_id must now point at the continuation child, not the parent.
@@ -140,7 +140,7 @@ def test_manual_compress_flushes_compressed_history_to_child_session_db():
 
     shell.agent._compress_context.side_effect = _fake_compress
 
-    with patch("agent.model_metadata.estimate_messages_tokens_rough", return_value=100):
+    with patch("zermes.agent.model_metadata.estimate_messages_tokens_rough", return_value=100):
         shell._manual_compress()
 
     shell.agent._flush_messages_to_session_db.assert_called_once_with(compressed, None)
@@ -156,14 +156,14 @@ def test_manual_compress_does_not_flush_full_history_when_session_id_unchanged()
     shell.agent.session_id = shell.session_id
     shell.agent._compress_context.return_value = (list(history), "")
 
-    with patch("agent.model_metadata.estimate_messages_tokens_rough", return_value=100):
+    with patch("zermes.agent.model_metadata.estimate_messages_tokens_rough", return_value=100):
         shell._manual_compress()
 
     shell.agent._flush_messages_to_session_db.assert_not_called()
 
 
 def test_manual_compress_no_sync_when_session_id_unchanged():
-    """If compression is a no-op (agent.session_id didn't change), the CLI
+    """If compression is a no-op (zermes.agent.session_id didn't change), the CLI
     must NOT clear _pending_title or otherwise disturb session state.
     """
     shell = _make_cli()
@@ -177,7 +177,7 @@ def test_manual_compress_no_sync_when_session_id_unchanged():
     shell.agent._compress_context.return_value = (list(history), "")
     shell._pending_title = "keep me"
 
-    with patch("agent.model_metadata.estimate_request_tokens_rough", return_value=100):
+    with patch("zermes.agent.model_metadata.estimate_request_tokens_rough", return_value=100):
         shell._manual_compress()
 
     # No split → pending title untouched.

@@ -3,8 +3,8 @@ from types import SimpleNamespace
 import pytest
 from acp.schema import TextContentBlock
 
-from acp_adapter.server import HermesACPAgent
-from acp_adapter.session import SessionManager
+from zermes.acp_adapter.server import HermesACPAgent
+from zermes.acp_adapter.session import SessionManager
 
 
 class FakeAgent:

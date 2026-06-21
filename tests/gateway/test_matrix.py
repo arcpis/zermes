@@ -8,8 +8,8 @@ import types
 import pytest
 from unittest.mock import MagicMock, patch, AsyncMock
 
-from gateway.config import Platform, PlatformConfig
-from gateway.platforms.base import MessageType
+from zermes.gateway.config import Platform, PlatformConfig
+from zermes.gateway.platforms.base import MessageType
 
 
 def _make_fake_mautrix():
@@ -249,7 +249,7 @@ class TestMatrixConfigLoading:
         monkeypatch.setenv("MATRIX_ACCESS_TOKEN", "syt_abc123")
         monkeypatch.setenv("MATRIX_HOMESERVER", "https://matrix.example.org")
 
-        from gateway.config import GatewayConfig, _apply_env_overrides
+        from zermes.gateway.config import GatewayConfig, _apply_env_overrides
         config = GatewayConfig()
         _apply_env_overrides(config)
 
@@ -265,7 +265,7 @@ class TestMatrixConfigLoading:
         monkeypatch.setenv("MATRIX_HOMESERVER", "https://matrix.example.org")
         monkeypatch.setenv("MATRIX_USER_ID", "@bot:example.org")
 
-        from gateway.config import GatewayConfig, _apply_env_overrides
+        from zermes.gateway.config import GatewayConfig, _apply_env_overrides
         config = GatewayConfig()
         _apply_env_overrides(config)
 
@@ -280,7 +280,7 @@ class TestMatrixConfigLoading:
         monkeypatch.delenv("MATRIX_PASSWORD", raising=False)
         monkeypatch.delenv("MATRIX_HOMESERVER", raising=False)
 
-        from gateway.config import GatewayConfig, _apply_env_overrides
+        from zermes.gateway.config import GatewayConfig, _apply_env_overrides
         config = GatewayConfig()
         _apply_env_overrides(config)
 
@@ -291,7 +291,7 @@ class TestMatrixConfigLoading:
         monkeypatch.setenv("MATRIX_HOMESERVER", "https://matrix.example.org")
         monkeypatch.setenv("MATRIX_ENCRYPTION", "true")
 
-        from gateway.config import GatewayConfig, _apply_env_overrides
+        from zermes.gateway.config import GatewayConfig, _apply_env_overrides
         config = GatewayConfig()
         _apply_env_overrides(config)
 
@@ -303,7 +303,7 @@ class TestMatrixConfigLoading:
         monkeypatch.setenv("MATRIX_HOMESERVER", "https://matrix.example.org")
         monkeypatch.delenv("MATRIX_ENCRYPTION", raising=False)
 
-        from gateway.config import GatewayConfig, _apply_env_overrides
+        from zermes.gateway.config import GatewayConfig, _apply_env_overrides
         config = GatewayConfig()
         _apply_env_overrides(config)
 
@@ -316,7 +316,7 @@ class TestMatrixConfigLoading:
         monkeypatch.setenv("MATRIX_HOME_ROOM", "!room123:example.org")
         monkeypatch.setenv("MATRIX_HOME_ROOM_NAME", "Bot Room")
 
-        from gateway.config import GatewayConfig, _apply_env_overrides
+        from zermes.gateway.config import GatewayConfig, _apply_env_overrides
         config = GatewayConfig()
         _apply_env_overrides(config)
 
@@ -330,7 +330,7 @@ class TestMatrixConfigLoading:
         monkeypatch.setenv("MATRIX_HOMESERVER", "https://matrix.example.org")
         monkeypatch.setenv("MATRIX_USER_ID", "@hermes:example.org")
 
-        from gateway.config import GatewayConfig, _apply_env_overrides
+        from zermes.gateway.config import GatewayConfig, _apply_env_overrides
         config = GatewayConfig()
         _apply_env_overrides(config)
 
@@ -344,7 +344,7 @@ class TestMatrixConfigLoading:
 
 def _make_adapter():
     """Create a MatrixAdapter with mocked config."""
-    from gateway.platforms.matrix import MatrixAdapter
+    from zermes.gateway.platforms.matrix import MatrixAdapter
     config = PlatformConfig(
         enabled=True,
         token="syt_test_token",
@@ -370,7 +370,7 @@ class TestMatrixTypingIndicator:
     @pytest.mark.asyncio
     async def test_stop_typing_clears_matrix_typing_state(self):
         """stop_typing() should send typing=false instead of waiting for timeout expiry."""
-        from gateway.platforms.matrix import RoomID
+        from zermes.gateway.platforms.matrix import RoomID
 
         await self.adapter.stop_typing("!room:example.org")
 
@@ -695,7 +695,7 @@ class TestMatrixDisplayName:
 
 class TestMatrixModuleImport:
     def test_module_importable_without_mautrix(self):
-        """gateway.platforms.matrix must be importable even when mautrix is
+        """zermes.gateway.platforms.matrix must be importable even when mautrix is
         not installed — otherwise the gateway crashes for ALL platforms.
 
         This test uses a subprocess to avoid polluting the current process's
@@ -716,7 +716,7 @@ class TestMatrixModuleImport:
                 "sys.meta_path.insert(0, _Blocker())\n"
                 "for k in list(sys.modules):\n"
                 "    if k.startswith('mautrix'): del sys.modules[k]\n"
-                "from gateway.platforms.matrix import check_matrix_requirements\n"
+                "from zermes.gateway.platforms.matrix import check_matrix_requirements\n"
                 "assert not check_matrix_requirements()\n"
                 "print('OK')\n"
             )],
@@ -732,7 +732,7 @@ class TestMatrixRequirements:
         monkeypatch.setenv("MATRIX_ACCESS_TOKEN", "syt_test")
         monkeypatch.setenv("MATRIX_HOMESERVER", "https://matrix.example.org")
         monkeypatch.delenv("MATRIX_ENCRYPTION", raising=False)
-        from gateway.platforms.matrix import check_matrix_requirements
+        from zermes.gateway.platforms.matrix import check_matrix_requirements
         try:
             import mautrix  # noqa: F401
             assert check_matrix_requirements() is True
@@ -743,13 +743,13 @@ class TestMatrixRequirements:
         monkeypatch.delenv("MATRIX_ACCESS_TOKEN", raising=False)
         monkeypatch.delenv("MATRIX_PASSWORD", raising=False)
         monkeypatch.delenv("MATRIX_HOMESERVER", raising=False)
-        from gateway.platforms.matrix import check_matrix_requirements
+        from zermes.gateway.platforms.matrix import check_matrix_requirements
         assert check_matrix_requirements() is False
 
     def test_check_requirements_without_homeserver(self, monkeypatch):
         monkeypatch.setenv("MATRIX_ACCESS_TOKEN", "syt_test")
         monkeypatch.delenv("MATRIX_HOMESERVER", raising=False)
-        from gateway.platforms.matrix import check_matrix_requirements
+        from zermes.gateway.platforms.matrix import check_matrix_requirements
         assert check_matrix_requirements() is False
 
     def test_check_requirements_encryption_true_no_e2ee_deps(self, monkeypatch):
@@ -758,7 +758,7 @@ class TestMatrixRequirements:
         monkeypatch.setenv("MATRIX_HOMESERVER", "https://matrix.example.org")
         monkeypatch.setenv("MATRIX_ENCRYPTION", "true")
 
-        from gateway.platforms import matrix as matrix_mod
+        from zermes.gateway.platforms import matrix as matrix_mod
         with patch.object(matrix_mod, "_check_e2ee_deps", return_value=False):
             assert matrix_mod.check_matrix_requirements() is False
 
@@ -768,7 +768,7 @@ class TestMatrixRequirements:
         monkeypatch.setenv("MATRIX_HOMESERVER", "https://matrix.example.org")
         monkeypatch.delenv("MATRIX_ENCRYPTION", raising=False)
 
-        from gateway.platforms import matrix as matrix_mod
+        from zermes.gateway.platforms import matrix as matrix_mod
         with patch.object(matrix_mod, "_check_e2ee_deps", return_value=False):
             # Still needs mautrix itself to be importable
             try:
@@ -783,7 +783,7 @@ class TestMatrixRequirements:
         monkeypatch.setenv("MATRIX_HOMESERVER", "https://matrix.example.org")
         monkeypatch.setenv("MATRIX_ENCRYPTION", "true")
 
-        from gateway.platforms import matrix as matrix_mod
+        from zermes.gateway.platforms import matrix as matrix_mod
         with patch.object(matrix_mod, "_check_e2ee_deps", return_value=True):
             try:
                 import mautrix  # noqa: F401
@@ -800,7 +800,7 @@ class TestMatrixAccessTokenAuth:
     @pytest.mark.asyncio
     async def test_connect_with_access_token_and_encryption(self):
         """connect() should call whoami, set user_id/device_id, set up crypto."""
-        from gateway.platforms.matrix import MatrixAdapter
+        from zermes.gateway.platforms.matrix import MatrixAdapter
 
         config = PlatformConfig(
             enabled=True,
@@ -854,7 +854,7 @@ class TestMatrixAccessTokenAuth:
         fake_mautrix_mods["mautrix.client"].Client = MagicMock(return_value=mock_client)
         fake_mautrix_mods["mautrix.crypto"].OlmMachine = MagicMock(return_value=mock_olm)
 
-        from gateway.platforms import matrix as matrix_mod
+        from zermes.gateway.platforms import matrix as matrix_mod
         with patch.object(matrix_mod, "_check_e2ee_deps", return_value=True):
             with patch.dict("sys.modules", fake_mautrix_mods):
                 with patch.object(adapter, "_refresh_dm_cache", AsyncMock()):
@@ -895,7 +895,7 @@ class TestDeviceKeyReVerification:
         mock_olm.account.identity_keys = {"ed25519": "local_new_key"}
         mock_olm.share_keys = AsyncMock()
 
-        from gateway.platforms.matrix import MatrixAdapter
+        from zermes.gateway.platforms.matrix import MatrixAdapter
         result = await adapter._verify_device_keys_on_server(mock_client, mock_olm)
 
         assert result is False
@@ -907,7 +907,7 @@ class TestMatrixE2EEHardFail:
 
     @pytest.mark.asyncio
     async def test_connect_fails_when_encryption_true_but_no_e2ee_deps(self):
-        from gateway.platforms.matrix import MatrixAdapter, _check_e2ee_deps
+        from zermes.gateway.platforms.matrix import MatrixAdapter, _check_e2ee_deps
 
         config = PlatformConfig(
             enabled=True,
@@ -934,7 +934,7 @@ class TestMatrixE2EEHardFail:
 
         fake_mautrix_mods["mautrix.client"].Client = MagicMock(return_value=mock_client)
 
-        from gateway.platforms import matrix as matrix_mod
+        from zermes.gateway.platforms import matrix as matrix_mod
         with patch.object(matrix_mod, "_check_e2ee_deps", return_value=False):
             with patch.dict("sys.modules", fake_mautrix_mods):
                 with patch.object(adapter, "_sync_loop", AsyncMock(return_value=None)):
@@ -945,7 +945,7 @@ class TestMatrixE2EEHardFail:
     @pytest.mark.asyncio
     async def test_connect_fails_when_crypto_setup_raises(self):
         """Even if _check_e2ee_deps passes, if OlmMachine raises, hard-fail."""
-        from gateway.platforms.matrix import MatrixAdapter
+        from zermes.gateway.platforms.matrix import MatrixAdapter
 
         config = PlatformConfig(
             enabled=True,
@@ -973,7 +973,7 @@ class TestMatrixE2EEHardFail:
         fake_mautrix_mods["mautrix.client"].Client = MagicMock(return_value=mock_client)
         fake_mautrix_mods["mautrix.crypto"].OlmMachine = MagicMock(side_effect=Exception("olm init failed"))
 
-        from gateway.platforms import matrix as matrix_mod
+        from zermes.gateway.platforms import matrix as matrix_mod
         with patch.object(matrix_mod, "_check_e2ee_deps", return_value=True):
             with patch.dict("sys.modules", fake_mautrix_mods):
                 result = await adapter.connect()
@@ -985,7 +985,7 @@ class TestMatrixDeviceId:
     """MATRIX_DEVICE_ID should be used for stable device identity."""
 
     def test_device_id_from_config_extra(self):
-        from gateway.platforms.matrix import MatrixAdapter
+        from zermes.gateway.platforms.matrix import MatrixAdapter
 
         config = PlatformConfig(
             enabled=True,
@@ -1001,7 +1001,7 @@ class TestMatrixDeviceId:
     def test_device_id_from_env(self, monkeypatch):
         monkeypatch.setenv("MATRIX_DEVICE_ID", "FROM_ENV")
 
-        from gateway.platforms.matrix import MatrixAdapter
+        from zermes.gateway.platforms.matrix import MatrixAdapter
 
         config = PlatformConfig(
             enabled=True,
@@ -1016,7 +1016,7 @@ class TestMatrixDeviceId:
     def test_device_id_config_takes_precedence_over_env(self, monkeypatch):
         monkeypatch.setenv("MATRIX_DEVICE_ID", "FROM_ENV")
 
-        from gateway.platforms.matrix import MatrixAdapter
+        from zermes.gateway.platforms.matrix import MatrixAdapter
 
         config = PlatformConfig(
             enabled=True,
@@ -1032,7 +1032,7 @@ class TestMatrixDeviceId:
     @pytest.mark.asyncio
     async def test_connect_uses_configured_device_id_over_whoami(self):
         """When MATRIX_DEVICE_ID is set, it should be used instead of whoami device_id."""
-        from gateway.platforms.matrix import MatrixAdapter
+        from zermes.gateway.platforms.matrix import MatrixAdapter
 
         config = PlatformConfig(
             enabled=True,
@@ -1079,7 +1079,7 @@ class TestMatrixDeviceId:
         fake_mautrix_mods["mautrix.client"].Client = MagicMock(return_value=mock_client)
         fake_mautrix_mods["mautrix.crypto"].OlmMachine = MagicMock(return_value=mock_olm)
 
-        from gateway.platforms import matrix as matrix_mod
+        from zermes.gateway.platforms import matrix as matrix_mod
         with patch.object(matrix_mod, "_check_e2ee_deps", return_value=True):
             with patch.dict("sys.modules", fake_mautrix_mods):
                 with patch.object(adapter, "_refresh_dm_cache", AsyncMock()):
@@ -1098,7 +1098,7 @@ class TestMatrixPasswordLoginDeviceId:
 
     @pytest.mark.asyncio
     async def test_password_login_uses_device_id(self):
-        from gateway.platforms.matrix import MatrixAdapter
+        from zermes.gateway.platforms.matrix import MatrixAdapter
 
         config = PlatformConfig(
             enabled=True,
@@ -1129,7 +1129,7 @@ class TestMatrixPasswordLoginDeviceId:
 
         fake_mautrix_mods["mautrix.client"].Client = MagicMock(return_value=mock_client)
 
-        from gateway.platforms import matrix as matrix_mod
+        from zermes.gateway.platforms import matrix as matrix_mod
         with patch.dict("sys.modules", fake_mautrix_mods):
             with patch.object(adapter, "_refresh_dm_cache", AsyncMock()):
                 with patch.object(adapter, "_sync_loop", AsyncMock(return_value=None)):
@@ -1149,7 +1149,7 @@ class TestMatrixDeviceIdConfig:
         monkeypatch.setenv("MATRIX_HOMESERVER", "https://matrix.example.org")
         monkeypatch.setenv("MATRIX_DEVICE_ID", "HERMES_BOT")
 
-        from gateway.config import GatewayConfig, _apply_env_overrides
+        from zermes.gateway.config import GatewayConfig, _apply_env_overrides
         config = GatewayConfig()
         _apply_env_overrides(config)
 
@@ -1161,7 +1161,7 @@ class TestMatrixDeviceIdConfig:
         monkeypatch.setenv("MATRIX_HOMESERVER", "https://matrix.example.org")
         monkeypatch.delenv("MATRIX_DEVICE_ID", raising=False)
 
-        from gateway.config import GatewayConfig, _apply_env_overrides
+        from zermes.gateway.config import GatewayConfig, _apply_env_overrides
         config = GatewayConfig()
         _apply_env_overrides(config)
 
@@ -1323,7 +1323,7 @@ class TestMatrixEncryptedSendFallback:
 class TestJoinedRoomsReference:
     def test_joined_rooms_reference_preserved_after_reassignment(self):
         """_CryptoStateStore must see updates after initial sync populates rooms."""
-        from gateway.platforms.matrix import _CryptoStateStore
+        from zermes.gateway.platforms.matrix import _CryptoStateStore
 
         joined = set()
         store = _CryptoStateStore(MagicMock(), joined)
@@ -1344,7 +1344,7 @@ class TestJoinedRoomsReference:
 class TestMatrixEncryptedEventHandler:
     @pytest.mark.asyncio
     async def test_connect_registers_encrypted_event_handler_when_encryption_on(self):
-        from gateway.platforms.matrix import MatrixAdapter
+        from zermes.gateway.platforms.matrix import MatrixAdapter
 
         config = PlatformConfig(
             enabled=True,
@@ -1390,7 +1390,7 @@ class TestMatrixEncryptedEventHandler:
         fake_mautrix_mods["mautrix.client"].Client = MagicMock(return_value=mock_client)
         fake_mautrix_mods["mautrix.crypto"].OlmMachine = MagicMock(return_value=mock_olm)
 
-        from gateway.platforms import matrix as matrix_mod
+        from zermes.gateway.platforms import matrix as matrix_mod
         with patch.object(matrix_mod, "_check_e2ee_deps", return_value=True):
             with patch.dict("sys.modules", fake_mautrix_mods):
                 with patch.object(adapter, "_refresh_dm_cache", AsyncMock()):
@@ -1410,7 +1410,7 @@ class TestMatrixEncryptedEventHandler:
     @pytest.mark.asyncio
     async def test_connect_fails_on_stale_otk_conflict(self):
         """connect() must refuse E2EE when OTK upload hits 'already exists'."""
-        from gateway.platforms.matrix import MatrixAdapter
+        from zermes.gateway.platforms.matrix import MatrixAdapter
 
         config = PlatformConfig(
             enabled=True,
@@ -1459,7 +1459,7 @@ class TestMatrixEncryptedEventHandler:
         fake_mautrix_mods["mautrix.client"].Client = MagicMock(return_value=mock_client)
         fake_mautrix_mods["mautrix.crypto"].OlmMachine = MagicMock(return_value=mock_olm)
 
-        from gateway.platforms import matrix as matrix_mod
+        from zermes.gateway.platforms import matrix as matrix_mod
         with patch.object(matrix_mod, "_check_e2ee_deps", return_value=True):
             with patch.dict("sys.modules", fake_mautrix_mods):
                 result = await adapter.connect()
@@ -1532,7 +1532,7 @@ class TestMatrixMarkdownHtmlSecurity:
     """Tests for HTML injection prevention in _markdown_to_html_fallback."""
 
     def setup_method(self):
-        from gateway.platforms.matrix import MatrixAdapter
+        from zermes.gateway.platforms.matrix import MatrixAdapter
         self.convert = MatrixAdapter._markdown_to_html_fallback
 
     def test_script_injection_in_header(self):
@@ -1593,7 +1593,7 @@ class TestMatrixMarkdownHtmlFormatting:
     """Tests for new formatting capabilities in _markdown_to_html_fallback."""
 
     def setup_method(self):
-        from gateway.platforms.matrix import MatrixAdapter
+        from zermes.gateway.platforms.matrix import MatrixAdapter
         self.convert = MatrixAdapter._markdown_to_html_fallback
 
     def test_fenced_code_block(self):
@@ -1660,23 +1660,23 @@ class TestMatrixMarkdownHtmlFormatting:
 
 class TestMatrixLinkSanitization:
     def test_safe_https_url(self):
-        from gateway.platforms.matrix import MatrixAdapter
+        from zermes.gateway.platforms.matrix import MatrixAdapter
         assert MatrixAdapter._sanitize_link_url("https://example.com") == "https://example.com"
 
     def test_javascript_blocked(self):
-        from gateway.platforms.matrix import MatrixAdapter
+        from zermes.gateway.platforms.matrix import MatrixAdapter
         assert MatrixAdapter._sanitize_link_url("javascript:alert(1)") == ""
 
     def test_data_blocked(self):
-        from gateway.platforms.matrix import MatrixAdapter
+        from zermes.gateway.platforms.matrix import MatrixAdapter
         assert MatrixAdapter._sanitize_link_url("data:text/html,bad") == ""
 
     def test_vbscript_blocked(self):
-        from gateway.platforms.matrix import MatrixAdapter
+        from zermes.gateway.platforms.matrix import MatrixAdapter
         assert MatrixAdapter._sanitize_link_url("vbscript:bad") == ""
 
     def test_quotes_escaped(self):
-        from gateway.platforms.matrix import MatrixAdapter
+        from zermes.gateway.platforms.matrix import MatrixAdapter
         result = MatrixAdapter._sanitize_link_url('http://x"y')
         assert '"' not in result
         assert "&quot;" in result
@@ -1715,7 +1715,7 @@ class TestMatrixReactions:
     @pytest.mark.asyncio
     async def test_on_processing_start_sends_eyes(self):
         """on_processing_start should send eyes reaction."""
-        from gateway.platforms.base import MessageEvent, MessageType
+        from zermes.gateway.platforms.base import MessageEvent, MessageType
 
         self.adapter._reactions_enabled = True
         self.adapter._send_reaction = AsyncMock(return_value="$reaction_event_123")
@@ -1735,7 +1735,7 @@ class TestMatrixReactions:
 
     @pytest.mark.asyncio
     async def test_on_processing_complete_sends_check(self):
-        from gateway.platforms.base import MessageEvent, MessageType, ProcessingOutcome
+        from zermes.gateway.platforms.base import MessageEvent, MessageType, ProcessingOutcome
 
         self.adapter._reactions_enabled = True
         self.adapter._reaction_redaction_delay_seconds = 0.01
@@ -1764,7 +1764,7 @@ class TestMatrixReactions:
 
     @pytest.mark.asyncio
     async def test_on_processing_complete_sends_cross_on_failure(self):
-        from gateway.platforms.base import MessageEvent, MessageType, ProcessingOutcome
+        from zermes.gateway.platforms.base import MessageEvent, MessageType, ProcessingOutcome
 
         self.adapter._reactions_enabled = True
         self.adapter._reaction_redaction_delay_seconds = 0.01
@@ -1793,7 +1793,7 @@ class TestMatrixReactions:
 
     @pytest.mark.asyncio
     async def test_on_processing_complete_cancelled_sends_no_terminal_reaction(self):
-        from gateway.platforms.base import MessageEvent, MessageType, ProcessingOutcome
+        from zermes.gateway.platforms.base import MessageEvent, MessageType, ProcessingOutcome
 
         self.adapter._reactions_enabled = True
         self.adapter._send_reaction = AsyncMock(return_value=True)
@@ -1813,7 +1813,7 @@ class TestMatrixReactions:
     @pytest.mark.asyncio
     async def test_on_processing_complete_no_pending_reaction(self):
         """on_processing_complete should skip redaction if no eyes reaction was tracked."""
-        from gateway.platforms.base import MessageEvent, MessageType, ProcessingOutcome
+        from zermes.gateway.platforms.base import MessageEvent, MessageType, ProcessingOutcome
 
         self.adapter._reactions_enabled = True
         self.adapter._pending_reactions = {}
@@ -1862,7 +1862,7 @@ class TestMatrixReactions:
 
     @pytest.mark.asyncio
     async def test_reactions_disabled(self):
-        from gateway.platforms.base import MessageEvent, MessageType
+        from zermes.gateway.platforms.base import MessageEvent, MessageType
 
         self.adapter._reactions_enabled = False
         self.adapter._send_reaction = AsyncMock()
@@ -2320,7 +2320,7 @@ class TestMatrixProxyConfig:
             for k, v in proxy_env.items():
                 monkeypatch.setenv(k, v)
         with patch.dict("sys.modules", _make_fake_mautrix()):
-            from gateway.platforms.matrix import MatrixAdapter
+            from zermes.gateway.platforms.matrix import MatrixAdapter
             cfg = PlatformConfig(enabled=True, token="syt_test",
                                  extra={"homeserver": "https://matrix.example.org",
                                         "user_id": "@bot:example.org"})
@@ -2353,7 +2353,7 @@ class TestCreateMatrixSession:
     @pytest.mark.asyncio
     async def test_no_proxy_returns_trust_env_session(self):
         with patch.dict("sys.modules", _make_fake_mautrix()):
-            from gateway.platforms.matrix import _create_matrix_session
+            from zermes.gateway.platforms.matrix import _create_matrix_session
             session = _create_matrix_session(None)
             try:
                 assert session.trust_env is True
@@ -2363,7 +2363,7 @@ class TestCreateMatrixSession:
     @pytest.mark.asyncio
     async def test_http_proxy_sets_default_proxy(self):
         with patch.dict("sys.modules", _make_fake_mautrix()):
-            from gateway.platforms.matrix import _create_matrix_session
+            from zermes.gateway.platforms.matrix import _create_matrix_session
             session = _create_matrix_session("http://proxy:8080")
             try:
                 assert str(session._default_proxy) == "http://proxy:8080"
@@ -2381,7 +2381,7 @@ class TestCreateMatrixSession:
                     )
                 ),
             }):
-                from gateway.platforms.matrix import _create_matrix_session
+                from zermes.gateway.platforms.matrix import _create_matrix_session
                 session = _create_matrix_session("socks5://proxy:1080")
                 try:
                     assert session.connector is fake_connector

@@ -17,7 +17,7 @@ def _make_agent_stub(prompt_tokens, completion_tokens, threshold_tokens):
         last_completion_tokens=completion_tokens,
         threshold_tokens=threshold_tokens,
     )
-    # Replicate the fixed logic from run_agent.py ~line 11273
+    # Replicate the fixed logic from zermes.run_agent.py ~line 11273
     if compressor.last_prompt_tokens > 0:
         real_tokens = compressor.last_prompt_tokens  # Fixed: no completion
     else:

@@ -17,10 +17,10 @@ import pytest
 from aiohttp import web
 from aiohttp.test_utils import TestClient, TestServer
 
-from gateway.config import PlatformConfig
-from gateway.platforms.api_server import APIServerAdapter, cors_middleware
+from zermes.gateway.config import PlatformConfig
+from zermes.gateway.platforms.api_server import APIServerAdapter, cors_middleware
 
-_MOD = "gateway.platforms.api_server"
+_MOD = "zermes.gateway.platforms.api_server"
 
 
 # ---------------------------------------------------------------------------

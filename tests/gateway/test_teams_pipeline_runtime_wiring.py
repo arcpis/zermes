@@ -1,4 +1,4 @@
-"""Tests for Teams pipeline runtime wiring into the gateway."""
+"""Tests for Teams pipeline runtime wiring into the zermes.gateway."""
 
 from __future__ import annotations
 
@@ -7,9 +7,9 @@ from types import ModuleType
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
-from gateway.config import Platform, PlatformConfig
-from gateway.run import GatewayRunner
-from plugins.teams_pipeline.runtime import (
+from zermes.gateway.config import Platform, PlatformConfig
+from zermes.gateway.run import GatewayRunner
+from zermes.plugins.teams_pipeline.runtime import (
     bind_gateway_runtime,
     build_pipeline_runtime,
     build_pipeline_runtime_config,
@@ -27,9 +27,9 @@ def test_gateway_runner_wires_teams_pipeline_runtime(monkeypatch):
         calls.append(gateway_runner)
         return True
 
-    monkeypatch.setattr("plugins.teams_pipeline.runtime.bind_gateway_runtime", _bind)
+    monkeypatch.setattr("zermes.plugins.teams_pipeline.runtime.bind_gateway_runtime", _bind)
     monkeypatch.setattr(
-        "gateway.run._load_gateway_config",
+        "zermes.gateway.run._load_gateway_config",
         lambda: {"plugins": {"enabled": ["teams_pipeline"]}},
     )
 
@@ -50,9 +50,9 @@ def test_gateway_runner_skips_wiring_without_msgraph_adapter(monkeypatch):
         called = True
         return True
 
-    monkeypatch.setattr("plugins.teams_pipeline.runtime.bind_gateway_runtime", _bind)
+    monkeypatch.setattr("zermes.plugins.teams_pipeline.runtime.bind_gateway_runtime", _bind)
     monkeypatch.setattr(
-        "gateway.run._load_gateway_config",
+        "zermes.gateway.run._load_gateway_config",
         lambda: {"plugins": {"enabled": ["teams_pipeline"]}},
     )
 
@@ -73,9 +73,9 @@ def test_gateway_runner_skips_wiring_when_teams_pipeline_plugin_disabled(monkeyp
         called = True
         return True
 
-    monkeypatch.setattr("plugins.teams_pipeline.runtime.bind_gateway_runtime", _bind)
+    monkeypatch.setattr("zermes.plugins.teams_pipeline.runtime.bind_gateway_runtime", _bind)
     monkeypatch.setattr(
-        "gateway.run._load_gateway_config",
+        "zermes.gateway.run._load_gateway_config",
         lambda: {"plugins": {"enabled": []}},
     )
 
@@ -106,15 +106,15 @@ def test_build_pipeline_runtime_only_wires_sender_when_delivery_configured(monke
     )
 
     monkeypatch.setattr(
-        "plugins.teams_pipeline.runtime.build_graph_client",
+        "zermes.plugins.teams_pipeline.runtime.build_graph_client",
         lambda: object(),
     )
     monkeypatch.setattr(
-        "plugins.teams_pipeline.runtime.resolve_teams_pipeline_store_path",
+        "zermes.plugins.teams_pipeline.runtime.resolve_teams_pipeline_store_path",
         lambda: "/tmp/teams-pipeline-store.json",
     )
     monkeypatch.setattr(
-        "plugins.teams_pipeline.runtime.TeamsPipelineStore",
+        "zermes.plugins.teams_pipeline.runtime.TeamsPipelineStore",
         lambda path: {"path": path},
     )
 
@@ -140,21 +140,21 @@ def test_build_pipeline_runtime_skips_sender_when_adapter_layer_is_unavailable(m
     )
 
     monkeypatch.setattr(
-        "plugins.teams_pipeline.runtime.build_graph_client",
+        "zermes.plugins.teams_pipeline.runtime.build_graph_client",
         lambda: object(),
     )
     monkeypatch.setattr(
-        "plugins.teams_pipeline.runtime.resolve_teams_pipeline_store_path",
+        "zermes.plugins.teams_pipeline.runtime.resolve_teams_pipeline_store_path",
         lambda: "/tmp/teams-pipeline-store.json",
     )
     monkeypatch.setattr(
-        "plugins.teams_pipeline.runtime.TeamsPipelineStore",
+        "zermes.plugins.teams_pipeline.runtime.TeamsPipelineStore",
         lambda path: {"path": path},
     )
     monkeypatch.setitem(
         sys.modules,
-        "plugins.platforms.teams.adapter",
-        ModuleType("plugins.platforms.teams.adapter"),
+        "zermes.plugins.platforms.teams.adapter",
+        ModuleType("zermes.plugins.platforms.teams.adapter"),
     )
 
     runtime = build_pipeline_runtime(gateway)
@@ -186,12 +186,12 @@ def test_bind_gateway_runtime_installs_drop_scheduler_on_failure(monkeypatch):
     )
 
     monkeypatch.setattr(
-        "plugins.teams_pipeline.runtime.build_pipeline_runtime",
+        "zermes.plugins.teams_pipeline.runtime.build_pipeline_runtime",
         lambda _gateway: (_ for _ in ()).throw(RuntimeError("boom")),
     )
 
     bound = bind_gateway_runtime(gateway)
 
     assert bound is False
-    assert callable(gateway.adapters[Platform.MSGRAPH_WEBHOOK].scheduler)
-    assert gateway._teams_pipeline_runtime_error == "boom"
+    assert callable(zermes.gateway.adapters[Platform.MSGRAPH_WEBHOOK].scheduler)
+    assert zermes.gateway._teams_pipeline_runtime_error == "boom"

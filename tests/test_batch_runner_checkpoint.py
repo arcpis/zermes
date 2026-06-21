@@ -12,7 +12,7 @@ import pytest
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from batch_runner import BatchRunner, _process_batch_worker
+from zermes.batch_runner import BatchRunner, _process_batch_worker
 
 
 @pytest.fixture
@@ -173,7 +173,7 @@ class TestBatchWorkerResumeBehavior:
             "toolsets_used": [],
         }
 
-        monkeypatch.setattr("batch_runner._process_single_prompt", lambda *args, **kwargs: prompt_result)
+        monkeypatch.setattr("zermes.batch_runner._process_single_prompt", lambda *args, **kwargs: prompt_result)
 
         result = _process_batch_worker((
             1,
@@ -199,7 +199,7 @@ class TestFinalCheckpointNoDuplicates:
     """
 
     def _simulate_final_aggregation_fixed(self, batch_results):
-        """Mirror the fixed code path in batch_runner.run()."""
+        """Mirror the fixed code path in zermes.batch_runner.run()."""
         completed_prompts_set = set()
         for result in batch_results:
             completed_prompts_set.update(result.get("completed_prompts", []))

@@ -1,18 +1,18 @@
-"""Tests for hermes_cli.cron command handling."""
+"""Tests for zermes.hermes_cli.cron command handling."""
 
 from argparse import Namespace
 
 import pytest
 
-from cron.jobs import create_job, get_job, list_jobs
-from hermes_cli.cron import cron_command
+from zermes.cron.jobs import create_job, get_job, list_jobs
+from zermes.hermes_cli.cron import cron_command
 
 
 @pytest.fixture()
 def tmp_cron_dir(tmp_path, monkeypatch):
-    monkeypatch.setattr("cron.jobs.CRON_DIR", tmp_path / "cron")
-    monkeypatch.setattr("cron.jobs.JOBS_FILE", tmp_path / "cron" / "jobs.json")
-    monkeypatch.setattr("cron.jobs.OUTPUT_DIR", tmp_path / "cron" / "output")
+    monkeypatch.setattr("zermes.cron.jobs.CRON_DIR", tmp_path / "cron")
+    monkeypatch.setattr("zermes.cron.jobs.JOBS_FILE", tmp_path / "cron" / "jobs.json")
+    monkeypatch.setattr("zermes.cron.jobs.OUTPUT_DIR", tmp_path / "cron" / "output")
     return tmp_path
 
 

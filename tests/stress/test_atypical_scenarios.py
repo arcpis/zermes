@@ -53,7 +53,7 @@ def scenario(name):
                 if m.startswith(("hermes_cli", "plugins", "gateway")):
                     del sys.modules[m]
             sys.path.insert(0, str(WT))
-            from hermes_cli import kanban_db as kb  # noqa: F401
+            from zermes.hermes_cli import kanban_db as kb  # noqa: F401
             print(f"\n═══ {name} ═══")
             try:
                 fn(home, kb)
@@ -236,7 +236,7 @@ def _(home, kb):
     ]
     for bad in bad_metas:
         r = subprocess.run(
-            [sys.executable, "-m", "hermes_cli.main", "kanban",
+            [sys.executable, "-m", "zermes.hermes_cli.main", "kanban",
              "complete", tid, "--metadata", bad],
             capture_output=True, text=True, env=env,
         )
@@ -433,7 +433,7 @@ def _(home, kb):
         # Verify resolve_workspace (which the dispatcher calls) doesn't
         # allow escape.
         try:
-            from hermes_cli.kanban_db import resolve_workspace
+            from zermes.hermes_cli.kanban_db import resolve_workspace
             resolved = resolve_workspace(task)
             # If resolve succeeded, check it's actually escape-safe.
             resolved_abs = str(Path(resolved).resolve())
@@ -692,7 +692,7 @@ def _idempotency_race_worker(hermes_home: str, key: str, result_file: str,
     os.environ["HERMES_HOME"] = hermes_home
     os.environ["HOME"] = hermes_home
     sys.path.insert(0, str(WT))
-    from hermes_cli import kanban_db as kb
+    from zermes.hermes_cli import kanban_db as kb
 
     # Spin until the barrier file exists (crude sync across processes)
     while not os.path.exists(barrier_path):
@@ -981,13 +981,13 @@ def _(home, kb):
     kb.init_db()
     # Set a session token so the ws check doesnt bomb on import
     try:
-        from hermes_cli import web_server as ws  # noqa
+        from zermes.hermes_cli import web_server as ws  # noqa
     except Exception:
         pass
 
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
-    from plugins.kanban.dashboard.plugin_api import router as kanban_router
+    from zermes.plugins.kanban.dashboard.plugin_api import router as kanban_router
     app = FastAPI()
     app.include_router(kanban_router, prefix="/api/plugins/kanban")
     client = TestClient(app)

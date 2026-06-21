@@ -1,4 +1,4 @@
-"""Comprehensive tests for hermes_cli.profiles module.
+"""Comprehensive tests for zermes.hermes_cli.profiles module.
 
 Tests cover: validation, directory resolution, CRUD operations, active profile
 management, export/import, renaming, alias collision checks, profile isolation,
@@ -14,7 +14,7 @@ from unittest.mock import patch, MagicMock
 
 import pytest
 
-from hermes_cli.profiles import (
+from zermes.hermes_cli.profiles import (
     normalize_profile_name,
     validate_profile_name,
     get_profile_dir,
@@ -213,7 +213,7 @@ class TestCreateProfile:
         (default_home / "memories" / "note.md").write_text("remember this")
         (default_home / "config.yaml").write_text("model: gpt-4")
         # Runtime files that should be stripped
-        (default_home / "gateway.pid").write_text("12345")
+        (default_home / "zermes.gateway.pid").write_text("12345")
         (default_home / "gateway_state.json").write_text("{}")
         (default_home / "processes.json").write_text("[]")
 
@@ -223,7 +223,7 @@ class TestCreateProfile:
         assert (profile_dir / "memories" / "note.md").read_text() == "remember this"
         assert (profile_dir / "config.yaml").read_text() == "model: gpt-4"
         # Runtime files should be stripped
-        assert not (profile_dir / "gateway.pid").exists()
+        assert not (profile_dir / "zermes.gateway.pid").exists()
         assert not (profile_dir / "gateway_state.json").exists()
         assert not (profile_dir / "processes.json").exists()
 
@@ -375,7 +375,7 @@ class TestDeleteProfile:
         profile_dir = create_profile("coder", no_alias=True)
         assert profile_dir.is_dir()
         # Mock gateway import to avoid real systemd/launchd interaction
-        with patch("hermes_cli.profiles._cleanup_gateway_service"):
+        with patch("zermes.hermes_cli.profiles._cleanup_gateway_service"):
             delete_profile("coder", yes=True)
         assert not profile_dir.is_dir()
 
@@ -560,7 +560,7 @@ class TestRenameProfile:
         assert old_dir.is_dir()
 
         # Mock alias collision to avoid subprocess calls
-        with patch("hermes_cli.profiles.check_alias_collision", return_value="skip"):
+        with patch("zermes.hermes_cli.profiles.check_alias_collision", return_value="skip"):
             new_dir = rename_profile("oldname", "newname")
 
         assert not old_dir.is_dir()
@@ -586,7 +586,7 @@ class TestRenameProfile:
             }
         }))
 
-        with patch("hermes_cli.profiles.check_alias_collision", return_value="skip"):
+        with patch("zermes.hermes_cli.profiles.check_alias_collision", return_value="skip"):
             rename_profile("ssi_health", "heimdall")
 
         cfg = json.loads(honcho_path.read_text())
@@ -604,7 +604,7 @@ class TestRenameProfile:
             }
         }))
 
-        with patch("hermes_cli.profiles.check_alias_collision", return_value="skip"):
+        with patch("zermes.hermes_cli.profiles.check_alias_collision", return_value="skip"):
             rename_profile("ssi_health", "heimdall")
 
         cfg = json.loads(honcho_path.read_text())
@@ -623,7 +623,7 @@ class TestRenameProfile:
             }
         }))
 
-        with patch("hermes_cli.profiles.check_alias_collision", return_value="skip"):
+        with patch("zermes.hermes_cli.profiles.check_alias_collision", return_value="skip"):
             rename_profile("ssi_health", "heimdall")
 
         cfg = json.loads(honcho_path.read_text())
@@ -830,7 +830,7 @@ class TestExportImport:
             sub.mkdir(exist_ok=True)
             (sub / "marker.txt").write_text("excluded")
 
-        for f in ("state.db", "gateway.pid", "gateway_state.json",
+        for f in ("state.db", "zermes.gateway.pid", "gateway_state.json",
                   "processes.json", "errors.log", ".hermes_history",
                   "active_profile", ".update_check", "auth.lock"):
             (default_dir / f).write_text("excluded")
@@ -856,7 +856,7 @@ class TestExportImport:
                 f"Expected {prefix} to be excluded but found it in archive"
 
         excluded_files = [
-            "default/state.db", "default/gateway.pid",
+            "default/state.db", "default/zermes.gateway.pid",
             "default/gateway_state.json", "default/processes.json",
             "default/errors.log", "default/.hermes_history",
             "default/active_profile", "default/.update_check",
@@ -1028,7 +1028,7 @@ class TestInternalHelpers:
 
     def test_active_profile_path_docker(self, tmp_path, monkeypatch):
         """In Docker, active_profile file lives under HERMES_HOME."""
-        from hermes_cli.profiles import _get_active_profile_path
+        from zermes.hermes_cli.profiles import _get_active_profile_path
         docker_home = tmp_path / "opt" / "data"
         docker_home.mkdir(parents=True)
         monkeypatch.setattr(Path, "home", lambda: tmp_path)
@@ -1087,27 +1087,27 @@ class TestEdgeCases:
 
     def test_gateway_running_check_with_pid_file(self, profile_env):
         """Verify _check_gateway_running uses the shared gateway PID validator."""
-        from hermes_cli.profiles import _check_gateway_running
+        from zermes.hermes_cli.profiles import _check_gateway_running
         tmp_path = profile_env
         default_home = tmp_path / ".hermes"
 
-        with patch("gateway.status.get_running_pid", return_value=99999) as mock_get_running_pid:
+        with patch("zermes.gateway.status.get_running_pid", return_value=99999) as mock_get_running_pid:
             assert _check_gateway_running(default_home) is True
         mock_get_running_pid.assert_called_once_with(
-            default_home / "gateway.pid",
+            default_home / "zermes.gateway.pid",
             cleanup_stale=False,
         )
 
     def test_gateway_running_check_plain_pid(self, profile_env):
         """Shared PID validator returning None means the profile is not running."""
-        from hermes_cli.profiles import _check_gateway_running
+        from zermes.hermes_cli.profiles import _check_gateway_running
         tmp_path = profile_env
         default_home = tmp_path / ".hermes"
 
-        with patch("gateway.status.get_running_pid", return_value=None) as mock_get_running_pid:
+        with patch("zermes.gateway.status.get_running_pid", return_value=None) as mock_get_running_pid:
             assert _check_gateway_running(default_home) is False
         mock_get_running_pid.assert_called_once_with(
-            default_home / "gateway.pid",
+            default_home / "zermes.gateway.pid",
             cleanup_stale=False,
         )
 
@@ -1147,7 +1147,7 @@ class TestEdgeCases:
         set_active_profile("coder")
         assert get_active_profile() == "coder"
 
-        with patch("hermes_cli.profiles._cleanup_gateway_service"):
+        with patch("zermes.hermes_cli.profiles._cleanup_gateway_service"):
             delete_profile("coder", yes=True)
 
         assert get_active_profile() == "default"

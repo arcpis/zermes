@@ -3,7 +3,7 @@
 import unittest
 from unittest.mock import patch
 
-from tools.delegate_tool import _expand_parent_toolsets
+from zermes.tools.delegate_tool import _expand_parent_toolsets
 
 
 class TestExpandParentToolsets(unittest.TestCase):

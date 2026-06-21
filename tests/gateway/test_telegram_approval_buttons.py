@@ -46,8 +46,8 @@ def _ensure_telegram_mock():
 
 _ensure_telegram_mock()
 
-from gateway.platforms.telegram import TelegramAdapter
-from gateway.config import Platform, PlatformConfig
+from zermes.gateway.platforms.telegram import TelegramAdapter
+from zermes.gateway.config import Platform, PlatformConfig
 
 
 def _make_adapter(extra=None):
@@ -210,7 +210,7 @@ class TestTelegramApprovalCallback:
         update.callback_query = query
         context = MagicMock()
 
-        with patch("tools.approval.resolve_gateway_approval", return_value=1) as mock_resolve:
+        with patch("zermes.tools.approval.resolve_gateway_approval", return_value=1) as mock_resolve:
             await adapter._handle_callback_query(update, context)
 
         mock_resolve.assert_called_once_with("agent:main:telegram:group:12345:99", "once")
@@ -238,7 +238,7 @@ class TestTelegramApprovalCallback:
         update.callback_query = query
         context = MagicMock()
 
-        with patch("tools.approval.resolve_gateway_approval", return_value=1) as mock_resolve:
+        with patch("zermes.tools.approval.resolve_gateway_approval", return_value=1) as mock_resolve:
             await adapter._handle_callback_query(update, context)
 
         mock_resolve.assert_called_once_with("some-session", "deny")
@@ -267,7 +267,7 @@ class TestTelegramApprovalCallback:
         update.callback_query = query
         context = MagicMock()
 
-        with patch("tools.approval.resolve_gateway_approval") as mock_resolve:
+        with patch("zermes.tools.approval.resolve_gateway_approval") as mock_resolve:
             await adapter._handle_callback_query(update, context)
 
         mock_resolve.assert_not_called()
@@ -297,7 +297,7 @@ class TestTelegramApprovalCallback:
         update.callback_query = query
         context = MagicMock()
 
-        with patch("tools.approval.resolve_gateway_approval") as mock_resolve:
+        with patch("zermes.tools.approval.resolve_gateway_approval") as mock_resolve:
             await adapter._handle_callback_query(update, context)
 
         # Should NOT resolve — already handled
@@ -323,7 +323,7 @@ class TestTelegramApprovalCallback:
 
         # Model picker callback should be handled (not crash)
         # We just verify it doesn't try to resolve an approval
-        with patch("tools.approval.resolve_gateway_approval") as mock_resolve:
+        with patch("zermes.tools.approval.resolve_gateway_approval") as mock_resolve:
             with patch.object(adapter, "_handle_model_picker_callback", new_callable=AsyncMock):
                 await adapter._handle_callback_query(update, context)
 
@@ -347,8 +347,8 @@ class TestTelegramApprovalCallback:
         update.callback_query = query
         context = MagicMock()
 
-        with patch("tools.approval.resolve_gateway_approval") as mock_resolve:
-            with patch("hermes_constants.get_hermes_home", return_value=tmp_path):
+        with patch("zermes.tools.approval.resolve_gateway_approval") as mock_resolve:
+            with patch("zermes.hermes_constants.get_hermes_home", return_value=tmp_path):
                 with patch.dict(os.environ, {"TELEGRAM_ALLOWED_USERS": ""}):
                     await adapter._handle_callback_query(update, context)
 
@@ -374,7 +374,7 @@ class TestTelegramApprovalCallback:
         update.callback_query = query
         context = MagicMock()
 
-        with patch("hermes_constants.get_hermes_home", return_value=tmp_path):
+        with patch("zermes.hermes_constants.get_hermes_home", return_value=tmp_path):
             with patch.dict(os.environ, {"TELEGRAM_ALLOWED_USERS": "111"}):
                 await adapter._handle_callback_query(update, context)
 
@@ -404,7 +404,7 @@ class TestTelegramApprovalCallback:
         update.callback_query = query
         context = MagicMock()
 
-        with patch("hermes_constants.get_hermes_home", return_value=tmp_path):
+        with patch("zermes.hermes_constants.get_hermes_home", return_value=tmp_path):
             with patch.dict(os.environ, {"TELEGRAM_ALLOWED_USERS": ""}):
                 await adapter._handle_callback_query(update, context)
 
@@ -434,7 +434,7 @@ class TestTelegramApprovalCallback:
         update.callback_query = query
         context = MagicMock()
 
-        with patch("hermes_constants.get_hermes_home", return_value=tmp_path):
+        with patch("zermes.hermes_constants.get_hermes_home", return_value=tmp_path):
             with patch.dict(os.environ, {"TELEGRAM_ALLOWED_USERS": "111"}):
                 await adapter._handle_callback_query(update, context)
 

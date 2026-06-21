@@ -9,7 +9,7 @@ executed with full tool access every tick.
 Fix: `_build_job_prompt` now runs the fully-assembled prompt (user
 prompt + cron hint + skill content) through the same scanner and raises
 `CronPromptInjectionBlocked` on match. `run_job` catches that and
-surfaces a clean "job blocked" delivery instead of running the agent.
+surfaces a clean "job blocked" delivery instead of running the zermes.agent.
 """
 
 import sys
@@ -24,12 +24,12 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 def cron_env(tmp_path, monkeypatch):
     """Isolated HERMES_HOME with an empty skills tree.
 
-    `tools.skills_tool` snapshots `SKILLS_DIR` at module-import time, so
+    `zermes.tools.skills_tool` snapshots `SKILLS_DIR` at module-import time, so
     setting `HERMES_HOME` alone doesn't reach it. We also patch the
     module-level constant so `skill_view()` finds the skills we plant.
 
     Note: `test_cron_no_agent.py` (and potentially others) do
-    ``importlib.reload(cron.scheduler)`` in their fixtures. A plain
+    ``importlib.reload(zermes.cron.scheduler)`` in their fixtures. A plain
     top-level import of ``CronPromptInjectionBlocked`` would become stale
     after that reload and defeat ``pytest.raises(...)`` checks. Each test
     re-imports via this fixture's return value instead.
@@ -45,14 +45,14 @@ def cron_env(tmp_path, monkeypatch):
     # Patch the module-level SKILLS_DIR snapshots that `skill_view()`
     # uses. Without this, the tool resolves against the real
     # `~/.hermes/skills/` and our planted skills are invisible.
-    import tools.skills_tool as _skills_tool
+    import zermes.tools.skills_tool as _skills_tool
     monkeypatch.setattr(_skills_tool, "SKILLS_DIR", skills_dir)
     monkeypatch.setattr(_skills_tool, "HERMES_HOME", hermes_home)
 
     # Return both the home dir and the scheduler module so tests use the
     # CURRENT module object (post any reload that happened in fixtures of
     # previously-executed tests in the same worker).
-    import cron.scheduler as _scheduler
+    import zermes.cron.scheduler as _scheduler
     return hermes_home, _scheduler
 
 
@@ -135,7 +135,7 @@ class TestBuildJobPromptScansSkillContent:
         clean. At runtime, `_build_job_prompt` pulled the skill body and
         prepended it — injection payload now lives inside a `[IMPORTANT:
         The user has invoked the skill...]` frame. Without assembled-prompt
-        scanning, this reached the non-interactive auto-approve agent.
+        scanning, this reached the non-interactive auto-approve zermes.agent.
         """
         hermes_home, scheduler = cron_env
         _plant_skill(

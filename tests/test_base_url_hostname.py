@@ -1,4 +1,4 @@
-"""Targeted tests for ``utils.base_url_hostname`` and ``base_url_host_matches``.
+"""Targeted tests for ``zermes.utils.base_url_hostname`` and ``base_url_host_matches``.
 
 These helpers are used across provider routing, auxiliary client, setup
 wizards, billing routes, and the trajectory compressor to avoid the
@@ -8,7 +8,7 @@ tests/agent/test_direct_provider_url_detection.py.
 
 from __future__ import annotations
 
-from utils import base_url_hostname, base_url_host_matches
+from zermes.utils import base_url_hostname, base_url_host_matches
 
 
 # ─── base_url_hostname ────────────────────────────────────────────────────

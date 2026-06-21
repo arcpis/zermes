@@ -1,6 +1,6 @@
 import pytest
 
-from worker_agents.management import (
+from zermes.worker_agents.management import (
     ExportPackageSection,
     ManagementSourceRef,
     WorkerAgentsExportPackageManifest,

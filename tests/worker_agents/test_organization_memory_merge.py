@@ -1,12 +1,12 @@
 import pytest
 
-from worker_agents.department_memory import (
+from zermes.worker_agents.department_memory import (
     DepartmentMemoryKind,
     DepartmentMemoryProposal,
     DepartmentMemoryRecord,
     DepartmentMemorySensitivity,
 )
-from worker_agents.organization_memory_merge import (
+from zermes.worker_agents.organization_memory_merge import (
     MemoryMergeCandidate,
     MemoryMergeCandidateSourceKind,
     MemoryMergeClassification,
@@ -27,7 +27,7 @@ from worker_agents.organization_memory_merge import (
     memory_merge_report_to_dict,
     validate_memory_merge_candidate_payload,
 )
-from worker_agents.private_assets import (
+from zermes.worker_agents.private_assets import (
     PrivateAssetProposalInput,
     PrivateAssetSensitivity,
 )

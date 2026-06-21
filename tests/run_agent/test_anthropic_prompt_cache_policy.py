@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-from run_agent import AIAgent
+from zermes.run_agent import AIAgent
 
 
 def _make_agent(
@@ -95,7 +95,7 @@ class TestThirdPartyAnthropicGateway:
         # cache_control, so stay conservative.
         agent = _make_agent(
             provider="custom",
-            base_url="https://some-unknown-gateway.example.com/anthropic",
+            base_url="https://some-unknown-zermes.gateway.example.com/anthropic",
             api_mode="anthropic_messages",
             model="glm-4.5",
         )

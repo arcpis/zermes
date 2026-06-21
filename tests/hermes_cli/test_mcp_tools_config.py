@@ -1,14 +1,14 @@
-"""Tests for MCP tools interactive configuration in hermes_cli.tools_config."""
+"""Tests for MCP tools interactive configuration in zermes.hermes_cli.tools_config."""
 
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
-from hermes_cli.tools_config import _configure_mcp_tools_interactive
+from zermes.hermes_cli.tools_config import _configure_mcp_tools_interactive
 
 # Patch targets: imports happen inside the function body, so patch at source
-_PROBE = "tools.mcp_tool.probe_mcp_server_tools"
-_CHECKLIST = "hermes_cli.curses_ui.curses_checklist"
-_SAVE = "hermes_cli.tools_config.save_config"
+_PROBE = "zermes.tools.mcp_tool.probe_mcp_server_tools"
+_CHECKLIST = "zermes.hermes_cli.curses_ui.curses_checklist"
+_SAVE = "zermes.hermes_cli.tools_config.save_config"
 
 
 def test_no_mcp_servers_prints_info(capsys):
@@ -33,7 +33,7 @@ def test_all_servers_disabled_prints_info(capsys):
 
 
 def test_probe_failure_shows_warning(capsys):
-    """Shows warning when probe returns no tools."""
+    """Shows warning when probe returns no zermes.tools."""
     config = {"mcp_servers": {"github": {"command": "npx"}}}
     with patch(_PROBE, return_value={}):
         _configure_mcp_tools_interactive(config)

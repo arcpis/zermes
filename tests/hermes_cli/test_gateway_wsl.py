@@ -8,8 +8,8 @@ from unittest.mock import patch, MagicMock, mock_open
 
 import pytest
 
-import hermes_cli.gateway as gateway
-import hermes_constants
+import zermes.hermes_cli.gateway as gateway
+import zermes.hermes_constants as hermes_constants
 
 
 # =============================================================================
@@ -21,7 +21,7 @@ class TestIsWsl:
 
     def setup_method(self):
         # Reset cached value between tests
-        hermes_constants._wsl_detected = None
+        zermes.hermes_constants._wsl_detected = None
 
     def test_detects_wsl2(self):
         fake_content = (
@@ -29,7 +29,7 @@ class TestIsWsl:
             "(gcc (GCC) 11.2.0) #1 SMP Thu Jan 11 04:09:03 UTC 2024\n"
         )
         with patch("builtins.open", mock_open(read_data=fake_content)):
-            assert hermes_constants.is_wsl() is True
+            assert zermes.hermes_constants.is_wsl() is True
 
     def test_detects_wsl1(self):
         fake_content = (
@@ -37,7 +37,7 @@ class TestIsWsl:
             "(Microsoft@Microsoft.com) (gcc version 5.4.0) #1\n"
         )
         with patch("builtins.open", mock_open(read_data=fake_content)):
-            assert hermes_constants.is_wsl() is True
+            assert zermes.hermes_constants.is_wsl() is True
 
     def test_native_linux(self):
         fake_content = (
@@ -45,18 +45,18 @@ class TestIsWsl:
             "(x86_64-linux-gnu-gcc-12 (Ubuntu 12.3.0-1ubuntu1~22.04) 12.3.0) #44\n"
         )
         with patch("builtins.open", mock_open(read_data=fake_content)):
-            assert hermes_constants.is_wsl() is False
+            assert zermes.hermes_constants.is_wsl() is False
 
     def test_no_proc_version(self):
         with patch("builtins.open", side_effect=FileNotFoundError):
-            assert hermes_constants.is_wsl() is False
+            assert zermes.hermes_constants.is_wsl() is False
 
     def test_result_is_cached(self):
         """After first detection, subsequent calls return the cached value."""
-        hermes_constants._wsl_detected = True
+        zermes.hermes_constants._wsl_detected = True
         # Even with open raising, cached value is returned
         with patch("builtins.open", side_effect=FileNotFoundError):
-            assert hermes_constants.is_wsl() is True
+            assert zermes.hermes_constants.is_wsl() is True
 
 
 # =============================================================================
@@ -68,53 +68,53 @@ class TestWslSystemdOperational:
 
     def test_running(self, monkeypatch):
         monkeypatch.setattr(
-            gateway.subprocess, "run",
+            zermes.gateway.subprocess, "run",
             lambda *a, **kw: SimpleNamespace(
                 returncode=0, stdout="running\n", stderr=""
             ),
         )
-        assert gateway._wsl_systemd_operational() is True
+        assert zermes.gateway._wsl_systemd_operational() is True
 
     def test_degraded(self, monkeypatch):
         monkeypatch.setattr(
-            gateway.subprocess, "run",
+            zermes.gateway.subprocess, "run",
             lambda *a, **kw: SimpleNamespace(
                 returncode=1, stdout="degraded\n", stderr=""
             ),
         )
-        assert gateway._wsl_systemd_operational() is True
+        assert zermes.gateway._wsl_systemd_operational() is True
 
     def test_starting(self, monkeypatch):
         monkeypatch.setattr(
-            gateway.subprocess, "run",
+            zermes.gateway.subprocess, "run",
             lambda *a, **kw: SimpleNamespace(
                 returncode=1, stdout="starting\n", stderr=""
             ),
         )
-        assert gateway._wsl_systemd_operational() is True
+        assert zermes.gateway._wsl_systemd_operational() is True
 
     def test_offline_no_systemd(self, monkeypatch):
         monkeypatch.setattr(
-            gateway.subprocess, "run",
+            zermes.gateway.subprocess, "run",
             lambda *a, **kw: SimpleNamespace(
                 returncode=1, stdout="offline\n", stderr=""
             ),
         )
-        assert gateway._wsl_systemd_operational() is False
+        assert zermes.gateway._wsl_systemd_operational() is False
 
     def test_systemctl_not_found(self, monkeypatch):
         monkeypatch.setattr(
-            gateway.subprocess, "run",
+            zermes.gateway.subprocess, "run",
             MagicMock(side_effect=FileNotFoundError),
         )
-        assert gateway._wsl_systemd_operational() is False
+        assert zermes.gateway._wsl_systemd_operational() is False
 
     def test_timeout(self, monkeypatch):
         monkeypatch.setattr(
-            gateway.subprocess, "run",
+            zermes.gateway.subprocess, "run",
             MagicMock(side_effect=subprocess.TimeoutExpired("systemctl", 5)),
         )
-        assert gateway._wsl_systemd_operational() is False
+        assert zermes.gateway._wsl_systemd_operational() is False
 
 
 # =============================================================================
@@ -130,7 +130,7 @@ class TestSupportsSystemdServicesWSL:
         monkeypatch.setattr(gateway, "is_termux", lambda: False)
         monkeypatch.setattr(gateway, "is_wsl", lambda: True)
         monkeypatch.setattr(gateway, "_wsl_systemd_operational", lambda: True)
-        assert gateway.supports_systemd_services() is True
+        assert zermes.gateway.supports_systemd_services() is True
 
     def test_wsl_without_systemd(self, monkeypatch):
         """WSL + no systemd → False."""
@@ -138,20 +138,20 @@ class TestSupportsSystemdServicesWSL:
         monkeypatch.setattr(gateway, "is_termux", lambda: False)
         monkeypatch.setattr(gateway, "is_wsl", lambda: True)
         monkeypatch.setattr(gateway, "_wsl_systemd_operational", lambda: False)
-        assert gateway.supports_systemd_services() is False
+        assert zermes.gateway.supports_systemd_services() is False
 
     def test_native_linux(self, monkeypatch):
         """Native Linux (not WSL) → True without checking systemd."""
         monkeypatch.setattr(gateway, "is_linux", lambda: True)
         monkeypatch.setattr(gateway, "is_termux", lambda: False)
         monkeypatch.setattr(gateway, "is_wsl", lambda: False)
-        assert gateway.supports_systemd_services() is True
+        assert zermes.gateway.supports_systemd_services() is True
 
     def test_termux_still_excluded(self, monkeypatch):
         """Termux → False regardless of WSL status."""
         monkeypatch.setattr(gateway, "is_linux", lambda: True)
         monkeypatch.setattr(gateway, "is_termux", lambda: True)
-        assert gateway.supports_systemd_services() is False
+        assert zermes.gateway.supports_systemd_services() is False
 
 
 # =============================================================================
@@ -175,7 +175,7 @@ class TestGatewayCommandWSLMessages:
             run_as_user=None,
         )
         with pytest.raises(SystemExit) as exc_info:
-            gateway.gateway_command(args)
+            zermes.gateway.gateway_command(args)
         assert exc_info.value.code == 1
 
         out = capsys.readouterr().out
@@ -194,7 +194,7 @@ class TestGatewayCommandWSLMessages:
 
         args = SimpleNamespace(gateway_command="start", system=False)
         with pytest.raises(SystemExit) as exc_info:
-            gateway.gateway_command(args)
+            zermes.gateway.gateway_command(args)
         assert exc_info.value.code == 1
 
         out = capsys.readouterr().out
@@ -222,7 +222,7 @@ class TestGatewayCommandWSLMessages:
             gateway_command="install", force=False, system=False,
             run_as_user=None,
         )
-        gateway.gateway_command(args)
+        zermes.gateway.gateway_command(args)
 
         out = capsys.readouterr().out
         assert "WSL detected" in out
@@ -248,7 +248,7 @@ class TestGatewayCommandWSLMessages:
         )
 
         args = SimpleNamespace(gateway_command="status", deep=False, system=False)
-        gateway.gateway_command(args)
+        zermes.gateway.gateway_command(args)
 
         out = capsys.readouterr().out
         assert "WSL note" in out
@@ -272,7 +272,7 @@ class TestGatewayCommandWSLMessages:
         )
 
         args = SimpleNamespace(gateway_command="status", deep=False, system=False)
-        gateway.gateway_command(args)
+        zermes.gateway.gateway_command(args)
 
         out = capsys.readouterr().out
         assert "hermes gateway run" in out

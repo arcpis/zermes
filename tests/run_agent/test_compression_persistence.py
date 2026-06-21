@@ -1,4 +1,4 @@
-"""Tests for context compression persistence in the gateway.
+"""Tests for context compression persistence in the zermes.gateway.
 
 Verifies that when context compression fires during run_conversation(),
 the compressed messages are properly persisted to both SQLite (via the
@@ -35,7 +35,7 @@ class TestFlushAfterCompression:
 
     def _make_agent(self, session_db):
         with patch.dict(os.environ, {"OPENROUTER_API_KEY": "test-key"}):
-            from run_agent import AIAgent
+            from zermes.run_agent import AIAgent
             agent = AIAgent(
                 api_key="test-key",
                 base_url="https://openrouter.ai/api/v1",
@@ -56,7 +56,7 @@ class TestFlushAfterCompression:
         After the fix, conversation_history is cleared to None after compression,
         so flush_from = max(0, 0) = 0, and ALL compressed messages are written.
         """
-        from hermes_state import SessionDB
+        from zermes.hermes_state import SessionDB
 
         with tempfile.TemporaryDirectory() as tmpdir:
             db_path = Path(tmpdir) / "test.db"
@@ -103,7 +103,7 @@ class TestFlushAfterCompression:
 
     def test_flush_with_stale_history_loses_messages(self):
         """Demonstrates the bug condition: stale conversation_history causes data loss."""
-        from hermes_state import SessionDB
+        from zermes.hermes_state import SessionDB
 
         with tempfile.TemporaryDirectory() as tmpdir:
             db_path = Path(tmpdir) / "test.db"
@@ -144,9 +144,9 @@ class TestGatewayHistoryOffsetAfterSplit:
     to the JSONL transcript."""
 
     def test_history_offset_zero_on_session_split(self):
-        """When agent.session_id differs from the original, history_offset must be 0."""
+        """When zermes.agent.session_id differs from the original, history_offset must be 0."""
         # This tests the logic in gateway/run.py run_sync():
-        # _session_was_split = agent.session_id != session_id
+        # _session_was_split = zermes.agent.session_id != session_id
         # _effective_history_offset = 0 if _session_was_split else len(agent_history)
 
         original_session_id = "session-abc"

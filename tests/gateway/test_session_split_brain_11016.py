@@ -21,14 +21,14 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from gateway.config import GatewayConfig, Platform, PlatformConfig
-from gateway.platforms.base import (
+from zermes.gateway.config import GatewayConfig, Platform, PlatformConfig
+from zermes.gateway.platforms.base import (
     BasePlatformAdapter,
     MessageEvent,
     MessageType,
 )
-from gateway.run import GatewayRunner, _AGENT_PENDING_SENTINEL
-from gateway.session import SessionSource, build_session_key
+from zermes.gateway.run import GatewayRunner, _AGENT_PENDING_SENTINEL
+from zermes.gateway.session import SessionSource, build_session_key
 
 
 # ---------------------------------------------------------------------------

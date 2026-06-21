@@ -4,9 +4,9 @@ from unittest.mock import patch
 
 from rich.console import Console
 
-import hermes_cli.banner as banner
-import model_tools
-import tools.mcp_tool
+import zermes.hermes_cli.banner as banner
+import zermes.model_tools as model_tools
+import zermes.tools.mcp_tool
 
 
 def test_display_toolset_name_strips_legacy_suffix():
@@ -42,7 +42,7 @@ def test_build_welcome_banner_uses_normalized_toolset_names():
         ),
         patch.object(banner, "get_available_skills", return_value={}),
         patch.object(banner, "get_update_result", return_value=None),
-        patch.object(tools.mcp_tool, "get_mcp_status", return_value=[]),
+        patch.object(zermes.tools.mcp_tool, "get_mcp_status", return_value=[]),
     ):
         console = Console(
             record=True, force_terminal=False, color_system=None, width=160
@@ -74,9 +74,9 @@ def test_build_welcome_banner_title_is_hyperlinked_to_release():
     """Panel title (version label) is wrapped in an OSC-8 hyperlink to the GitHub release."""
     import io
     from unittest.mock import patch as _patch
-    import hermes_cli.banner as _banner
-    import model_tools as _mt
-    import tools.mcp_tool as _mcp
+    import zermes.hermes_cli.banner as _banner
+    import zermes.model_tools as _mt
+    import zermes.tools.mcp_tool as _mcp
 
     _banner._latest_release_cache = None
     tag_url = ("v2026.4.23", "https://github.com/NousResearch/hermes-agent/releases/tag/v2026.4.23")
@@ -109,9 +109,9 @@ def test_build_welcome_banner_title_falls_back_when_no_tag():
     """Without a resolvable tag, the panel title renders as plain text (no hyperlink escape)."""
     import io
     from unittest.mock import patch as _patch
-    import hermes_cli.banner as _banner
-    import model_tools as _mt
-    import tools.mcp_tool as _mcp
+    import zermes.hermes_cli.banner as _banner
+    import zermes.model_tools as _mt
+    import zermes.tools.mcp_tool as _mcp
 
     _banner._latest_release_cache = None
     buf = io.StringIO()

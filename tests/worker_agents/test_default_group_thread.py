@@ -1,5 +1,5 @@
-from hermes_cli import worker_agents_product as product
-from worker_agents.message_router import ChatParticipantKind
+from zermes.hermes_cli import worker_agents_product as product
+from zermes.worker_agents.message_router import ChatParticipantKind
 
 
 def _worker(worker_id: str, status: str = "enabled") -> dict:

@@ -1,4 +1,4 @@
-from worker_agents.department_skills import (
+from zermes.worker_agents.department_skills import (
     DepartmentSkillApplicabilityDecision,
     DepartmentSkillApplicabilityRequest,
     DepartmentSkillBindingState,
@@ -14,7 +14,7 @@ from worker_agents.department_skills import (
     resolve_department_skill_bindings,
     validate_department_skill_applicability,
 )
-from worker_agents.private_skill_experience import SkillExperienceProposalInput
+from zermes.worker_agents.private_skill_experience import SkillExperienceProposalInput
 
 
 def test_skill_experience_can_be_reviewed_and_exposed_as_safe_candidate(tmp_path):

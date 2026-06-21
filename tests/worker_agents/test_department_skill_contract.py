@@ -1,6 +1,6 @@
 import pytest
 
-from worker_agents.department_skills import (
+from zermes.worker_agents.department_skills import (
     DepartmentSkillBindingProposal,
     DepartmentSkillBindingRecord,
     DepartmentSkillBindingSensitivity,

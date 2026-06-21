@@ -10,7 +10,7 @@ from unittest.mock import patch, MagicMock, AsyncMock
 
 import pytest
 
-from tools.mcp_oauth import (
+from zermes.tools.mcp_oauth import (
     HermesTokenStorage,
     OAuthNonInteractiveError,
     build_oauth_auth,
@@ -165,7 +165,7 @@ class TestBuildOAuthAuth:
         assert isinstance(auth, OAuthClientProvider)
 
     def test_returns_none_without_sdk(self, monkeypatch):
-        import tools.mcp_oauth as mod
+        import zermes.tools.mcp_oauth as mod
         monkeypatch.setattr(mod, "_OAUTH_AVAILABLE", False)
         result = build_oauth_auth("test", "https://example.com")
         assert result is None
@@ -333,7 +333,7 @@ class TestOAuthPortSharing:
     """Verify build_oauth_auth and _wait_for_callback use the same port."""
 
     def test_port_stored_globally(self, tmp_path, monkeypatch):
-        import tools.mcp_oauth as mod
+        import zermes.tools.mcp_oauth as mod
         mod._oauth_port = None
 
         try:
@@ -375,24 +375,24 @@ class TestRemoveOAuthTokens:
 # ---------------------------------------------------------------------------
 
 class TestIsInteractive:
-    """_is_interactive() detects headless/daemon/container environments."""
+    """_is_interactive() detects headless/daemon/container zermes.environments."""
 
     def test_false_when_stdin_not_tty(self, monkeypatch):
         mock_stdin = MagicMock()
         mock_stdin.isatty.return_value = False
-        monkeypatch.setattr("tools.mcp_oauth.sys.stdin", mock_stdin)
+        monkeypatch.setattr("zermes.tools.mcp_oauth.sys.stdin", mock_stdin)
         assert _is_interactive() is False
 
     def test_true_when_stdin_is_tty(self, monkeypatch):
         mock_stdin = MagicMock()
         mock_stdin.isatty.return_value = True
-        monkeypatch.setattr("tools.mcp_oauth.sys.stdin", mock_stdin)
+        monkeypatch.setattr("zermes.tools.mcp_oauth.sys.stdin", mock_stdin)
         assert _is_interactive() is True
 
     def test_false_when_stdin_has_no_isatty(self, monkeypatch):
         """Some environments replace stdin with an object without isatty()."""
         mock_stdin = object()  # no isatty attribute
-        monkeypatch.setattr("tools.mcp_oauth.sys.stdin", mock_stdin)
+        monkeypatch.setattr("zermes.tools.mcp_oauth.sys.stdin", mock_stdin)
         assert _is_interactive() is False
 
 
@@ -401,7 +401,7 @@ class TestWaitForCallbackNoBlocking:
 
     def test_raises_on_timeout_instead_of_input(self):
         """When no auth code arrives, raises OAuthNonInteractiveError."""
-        import tools.mcp_oauth as mod
+        import zermes.tools.mcp_oauth as mod
         import asyncio
 
         mod._oauth_port = _find_free_port()
@@ -428,10 +428,10 @@ class TestBuildOAuthAuthNonInteractive:
         monkeypatch.setenv("HERMES_HOME", str(tmp_path))
         mock_stdin = MagicMock()
         mock_stdin.isatty.return_value = False
-        monkeypatch.setattr("tools.mcp_oauth.sys.stdin", mock_stdin)
+        monkeypatch.setattr("zermes.tools.mcp_oauth.sys.stdin", mock_stdin)
 
         import logging
-        with caplog.at_level(logging.WARNING, logger="tools.mcp_oauth"):
+        with caplog.at_level(logging.WARNING, logger="zermes.tools.mcp_oauth"):
             auth = build_oauth_auth("atlassian", "https://mcp.atlassian.com/v1/mcp")
 
         assert auth is not None
@@ -448,7 +448,7 @@ class TestBuildOAuthAuthNonInteractive:
         monkeypatch.setenv("HERMES_HOME", str(tmp_path))
         mock_stdin = MagicMock()
         mock_stdin.isatty.return_value = False
-        monkeypatch.setattr("tools.mcp_oauth.sys.stdin", mock_stdin)
+        monkeypatch.setattr("zermes.tools.mcp_oauth.sys.stdin", mock_stdin)
 
         # Pre-populate cached tokens
         d = tmp_path / "mcp-tokens"
@@ -459,7 +459,7 @@ class TestBuildOAuthAuthNonInteractive:
         }))
 
         import logging
-        with caplog.at_level(logging.WARNING, logger="tools.mcp_oauth"):
+        with caplog.at_level(logging.WARNING, logger="zermes.tools.mcp_oauth"):
             auth = build_oauth_auth("atlassian", "https://mcp.atlassian.com/v1/mcp")
 
         assert auth is not None
@@ -474,7 +474,7 @@ class TestBuildOAuthAuthNonInteractive:
 def test_build_client_metadata_basic():
     """_build_client_metadata returns metadata with expected defaults."""
     pytest.importorskip("mcp")
-    from tools.mcp_oauth import _build_client_metadata, _configure_callback_port
+    from zermes.tools.mcp_oauth import _build_client_metadata, _configure_callback_port
 
     cfg = {"client_name": "Test Client"}
     _configure_callback_port(cfg)
@@ -488,7 +488,7 @@ def test_build_client_metadata_basic():
 def test_build_client_metadata_without_secret_is_public():
     """Without client_secret, token endpoint auth is 'none' (public client)."""
     pytest.importorskip("mcp")
-    from tools.mcp_oauth import _build_client_metadata, _configure_callback_port
+    from zermes.tools.mcp_oauth import _build_client_metadata, _configure_callback_port
 
     cfg = {}
     _configure_callback_port(cfg)
@@ -499,7 +499,7 @@ def test_build_client_metadata_without_secret_is_public():
 def test_build_client_metadata_with_secret_is_confidential():
     """With client_secret, token endpoint auth is 'client_secret_post'."""
     pytest.importorskip("mcp")
-    from tools.mcp_oauth import _build_client_metadata, _configure_callback_port
+    from zermes.tools.mcp_oauth import _build_client_metadata, _configure_callback_port
 
     cfg = {"client_secret": "shh"}
     _configure_callback_port(cfg)
@@ -509,7 +509,7 @@ def test_build_client_metadata_with_secret_is_confidential():
 
 def test_configure_callback_port_picks_free_port():
     """_configure_callback_port(0) picks a free port in the ephemeral range."""
-    from tools.mcp_oauth import _configure_callback_port
+    from zermes.tools.mcp_oauth import _configure_callback_port
 
     cfg = {"redirect_port": 0}
     port = _configure_callback_port(cfg)
@@ -519,7 +519,7 @@ def test_configure_callback_port_picks_free_port():
 
 def test_configure_callback_port_uses_explicit_port():
     """An explicit redirect_port is preserved."""
-    from tools.mcp_oauth import _configure_callback_port
+    from zermes.tools.mcp_oauth import _configure_callback_port
 
     cfg = {"redirect_port": 54321}
     port = _configure_callback_port(cfg)
@@ -537,7 +537,7 @@ def test_build_oauth_auth_preserves_server_url_path():
     itself for authorization-server discovery via
     ``OAuthContext.get_authorization_base_url``; Hermes must not pre-strip.
     """
-    from tools import mcp_oauth
+    from zermes.tools import mcp_oauth
 
     captured: dict = {}
 

@@ -2,7 +2,7 @@
 
 import json
 
-from code_modification.token_strategy import (
+from zermes.code_modification.token_strategy import (
     AnalysisBudget,
     AnalysisHints,
     build_analysis_context,
@@ -29,12 +29,12 @@ def test_collect_structure_sources_uses_repository_documents(tmp_path):
     _write(project_root / "AGENTS.md", "# Rules\n")
     _write(project_root / "README.md", "# Hermes\n")
     _write(project_root / "docs" / "releases" / "v1.0.0.md", "# Release\n")
-    _write(project_root / "toolsets.py", "CONFIGURABLE_TOOLSETS = {}\n")
+    _write(project_root / "zermes.toolsets.py", "CONFIGURABLE_TOOLSETS = {}\n")
 
     sources = collect_structure_sources(project_root)
     paths = {source.relative_path for source in sources}
 
-    assert {"AGENTS.md", "README.md", "docs/releases/v1.0.0.md", "toolsets.py"} <= paths
+    assert {"AGENTS.md", "README.md", "docs/releases/v1.0.0.md", "zermes.toolsets.py"} <= paths
 
 
 def test_build_analysis_context_writes_reusable_task_summaries(tmp_path):

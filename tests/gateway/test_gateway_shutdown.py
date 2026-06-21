@@ -3,9 +3,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from gateway.platforms.base import MessageEvent
-from gateway.restart import GATEWAY_SERVICE_RESTART_EXIT_CODE
-from gateway.session import build_session_key
+from zermes.gateway.platforms.base import MessageEvent
+from zermes.gateway.restart import GATEWAY_SERVICE_RESTART_EXIT_CODE
+from zermes.gateway.session import build_session_key
 from tests.gateway.restart_test_helpers import make_restart_runner, make_restart_source
 
 
@@ -39,7 +39,7 @@ def test_cleanup_agent_resources_reaps_stale_aux_clients():
     runner, _adapter = make_restart_runner()
     agent = MagicMock()
 
-    with patch("agent.auxiliary_client.cleanup_stale_async_clients") as cleanup_mock:
+    with patch("zermes.agent.auxiliary_client.cleanup_stale_async_clients") as cleanup_mock:
         runner._cleanup_agent_resources(agent)
 
     agent.shutdown_memory_provider.assert_called_once()
@@ -73,9 +73,9 @@ async def test_gateway_stop_interrupts_running_agents_and_cancels_adapter_tasks(
     runner._running_agents = {session_key: running_agent}
 
     with (
-        patch("gateway.status.remove_pid_file"),
-        patch("gateway.status.write_runtime_status"),
-        patch("agent.auxiliary_client.shutdown_cached_clients") as shutdown_cached_clients,
+        patch("zermes.gateway.status.remove_pid_file"),
+        patch("zermes.gateway.status.write_runtime_status"),
+        patch("zermes.agent.auxiliary_client.shutdown_cached_clients") as shutdown_cached_clients,
     ):
         await runner.stop()
 
@@ -104,7 +104,7 @@ async def test_gateway_stop_drains_running_agents_before_disconnect():
 
     asyncio.create_task(finish_agent())
 
-    with patch("gateway.status.remove_pid_file"), patch("gateway.status.write_runtime_status"):
+    with patch("zermes.gateway.status.remove_pid_file"), patch("zermes.gateway.status.write_runtime_status"):
         await runner.stop()
 
     running_agent.interrupt.assert_not_called()
@@ -123,7 +123,7 @@ async def test_gateway_stop_interrupts_after_drain_timeout():
     running_agent = MagicMock()
     runner._running_agents = {"session": running_agent}
 
-    with patch("gateway.status.remove_pid_file"), patch("gateway.status.write_runtime_status"):
+    with patch("zermes.gateway.status.remove_pid_file"), patch("zermes.gateway.status.write_runtime_status"):
         await runner.stop()
 
     running_agent.interrupt.assert_called_once_with("Gateway shutting down")
@@ -136,7 +136,7 @@ async def test_gateway_stop_service_restart_sets_named_exit_code():
     runner, adapter = make_restart_runner()
     adapter.disconnect = AsyncMock()
 
-    with patch("gateway.status.remove_pid_file"), patch("gateway.status.write_runtime_status"):
+    with patch("zermes.gateway.status.remove_pid_file"), patch("zermes.gateway.status.write_runtime_status"):
         await runner.stop(restart=True, service_restart=True)
 
     assert runner._exit_code == GATEWAY_SERVICE_RESTART_EXIT_CODE
@@ -188,9 +188,9 @@ async def test_gateway_stop_kills_tool_subprocesses_before_adapter_disconnect_on
         call_order.append("disconnect")
 
     # Patch the module-level names the stop() helper imports lazily.
-    import tools.process_registry as _pr
-    import tools.terminal_tool as _tt
-    import tools.browser_tool as _bt
+    import zermes.tools.process_registry as _pr
+    import zermes.tools.terminal_tool as _tt
+    import zermes.tools.browser_tool as _bt
     monkeypatch.setattr(_pr.process_registry, "kill_all", _fake_kill_all)
     monkeypatch.setattr(_tt, "cleanup_all_environments", _fake_cleanup_envs)
     monkeypatch.setattr(_bt, "cleanup_all_browsers", _fake_cleanup_browsers)
@@ -199,7 +199,7 @@ async def test_gateway_stop_kills_tool_subprocesses_before_adapter_disconnect_on
 
     runner._running_agents = {"session": MagicMock()}
 
-    with patch("gateway.status.remove_pid_file"), patch("gateway.status.write_runtime_status"):
+    with patch("zermes.gateway.status.remove_pid_file"), patch("zermes.gateway.status.write_runtime_status"):
         await runner.stop()
 
     # First kill_all must precede the first disconnect.  (Both the eager
@@ -232,15 +232,15 @@ async def test_gateway_stop_kills_tool_subprocesses_on_graceful_path(monkeypatch
         kill_count += 1
         return 0
 
-    import tools.process_registry as _pr
-    import tools.terminal_tool as _tt
-    import tools.browser_tool as _bt
+    import zermes.tools.process_registry as _pr
+    import zermes.tools.terminal_tool as _tt
+    import zermes.tools.browser_tool as _bt
     monkeypatch.setattr(_pr.process_registry, "kill_all", _fake_kill_all)
     monkeypatch.setattr(_tt, "cleanup_all_environments", lambda: None)
     monkeypatch.setattr(_bt, "cleanup_all_browsers", lambda: None)
 
     # No running agents → drain returns immediately, no timeout, no eager cleanup.
-    with patch("gateway.status.remove_pid_file"), patch("gateway.status.write_runtime_status"):
+    with patch("zermes.gateway.status.remove_pid_file"), patch("zermes.gateway.status.write_runtime_status"):
         await runner.stop()
 
     # Only the final catch-all fires on the graceful path.

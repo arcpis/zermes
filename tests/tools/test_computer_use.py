@@ -18,7 +18,7 @@ import pytest
 @pytest.fixture(autouse=True)
 def _reset_backend():
     """Tear down the cached backend between tests."""
-    from tools.computer_use.tool import reset_backend_for_tests
+    from zermes.tools.computer_use.tool import reset_backend_for_tests
     reset_backend_for_tests()
     # Force the noop backend.
     with patch.dict(os.environ, {"HERMES_COMPUTER_USE_BACKEND": "noop"}, clear=False):
@@ -29,7 +29,7 @@ def _reset_backend():
 @pytest.fixture
 def noop_backend():
     """Return the active noop backend instance so tests can inspect calls."""
-    from tools.computer_use.tool import _get_backend
+    from zermes.tools.computer_use.tool import _get_backend
     return _get_backend()
 
 
@@ -39,7 +39,7 @@ def noop_backend():
 
 class TestSchema:
     def test_schema_is_universal_openai_function_format(self):
-        from tools.computer_use.schema import COMPUTER_USE_SCHEMA
+        from zermes.tools.computer_use.schema import COMPUTER_USE_SCHEMA
         assert COMPUTER_USE_SCHEMA["name"] == "computer_use"
         assert "parameters" in COMPUTER_USE_SCHEMA
         params = COMPUTER_USE_SCHEMA["parameters"]
@@ -49,14 +49,14 @@ class TestSchema:
 
     def test_schema_does_not_use_anthropic_native_types(self):
         """Generic OpenAI schema — no `type: computer_20251124`."""
-        from tools.computer_use.schema import COMPUTER_USE_SCHEMA
+        from zermes.tools.computer_use.schema import COMPUTER_USE_SCHEMA
         assert COMPUTER_USE_SCHEMA.get("type") != "computer_20251124"
         # The word should not appear in the description either.
         dumped = json.dumps(COMPUTER_USE_SCHEMA)
         assert "computer_20251124" not in dumped
 
     def test_schema_supports_element_and_coordinate_targeting(self):
-        from tools.computer_use.schema import COMPUTER_USE_SCHEMA
+        from zermes.tools.computer_use.schema import COMPUTER_USE_SCHEMA
         props = COMPUTER_USE_SCHEMA["parameters"]["properties"]
         assert "element" in props
         assert "coordinate" in props
@@ -64,7 +64,7 @@ class TestSchema:
         assert props["coordinate"]["type"] == "array"
 
     def test_schema_lists_all_expected_actions(self):
-        from tools.computer_use.schema import COMPUTER_USE_SCHEMA
+        from zermes.tools.computer_use.schema import COMPUTER_USE_SCHEMA
         actions = set(COMPUTER_USE_SCHEMA["parameters"]["properties"]["action"]["enum"])
         assert actions >= {
             "capture", "click", "double_click", "right_click", "middle_click",
@@ -72,7 +72,7 @@ class TestSchema:
         }
 
     def test_capture_mode_enum_has_som_vision_ax(self):
-        from tools.computer_use.schema import COMPUTER_USE_SCHEMA
+        from zermes.tools.computer_use.schema import COMPUTER_USE_SCHEMA
         modes = set(COMPUTER_USE_SCHEMA["parameters"]["properties"]["mode"]["enum"])
         assert modes == {"som", "vision", "ax"}
 
@@ -80,16 +80,16 @@ class TestSchema:
 class TestRegistration:
     def test_tool_registers_with_registry(self):
         # Importing the shim registers the tool.
-        import tools.computer_use_tool  # noqa: F401
-        from tools.registry import registry
+        import zermes.tools.computer_use_tool  # noqa: F401
+        from zermes.tools.registry import registry
         entry = registry._tools.get("computer_use")
         assert entry is not None
         assert entry.toolset == "computer_use"
         assert entry.schema["name"] == "computer_use"
 
     def test_check_fn_is_false_on_linux(self):
-        import tools.computer_use_tool  # noqa: F401
-        from tools.registry import registry
+        import zermes.tools.computer_use_tool  # noqa: F401
+        from zermes.tools.registry import registry
         entry = registry._tools["computer_use"]
         if sys.platform != "darwin":
             assert entry.check_fn() is False
@@ -101,26 +101,26 @@ class TestRegistration:
 
 class TestDispatch:
     def test_missing_action_returns_error(self):
-        from tools.computer_use.tool import handle_computer_use
+        from zermes.tools.computer_use.tool import handle_computer_use
         out = handle_computer_use({})
         parsed = json.loads(out)
         assert "error" in parsed
 
     def test_unknown_action_returns_error(self):
-        from tools.computer_use.tool import handle_computer_use
+        from zermes.tools.computer_use.tool import handle_computer_use
         out = handle_computer_use({"action": "nope"})
         parsed = json.loads(out)
         assert "error" in parsed
 
     def test_list_apps_returns_json(self, noop_backend):
-        from tools.computer_use.tool import handle_computer_use
+        from zermes.tools.computer_use.tool import handle_computer_use
         out = handle_computer_use({"action": "list_apps"})
         parsed = json.loads(out)
         assert "apps" in parsed
         assert parsed["count"] == 0
 
     def test_wait_clamps_long_waits(self, noop_backend):
-        from tools.computer_use.tool import handle_computer_use
+        from zermes.tools.computer_use.tool import handle_computer_use
         # The backend's default wait() uses time.sleep with clamping.
         out = handle_computer_use({"action": "wait", "seconds": 0.01})
         parsed = json.loads(out)
@@ -128,7 +128,7 @@ class TestDispatch:
         assert parsed["action"] == "wait"
 
     def test_click_without_target_returns_error(self, noop_backend):
-        from tools.computer_use.tool import handle_computer_use
+        from zermes.tools.computer_use.tool import handle_computer_use
         out = handle_computer_use({"action": "click"})
         parsed = json.loads(out)
         # Noop backend returns ok=True with no targeting; we only hard-error
@@ -136,7 +136,7 @@ class TestDispatch:
         assert "action" in parsed or "error" in parsed
 
     def test_click_by_element_routes_to_backend(self, noop_backend):
-        from tools.computer_use.tool import handle_computer_use
+        from zermes.tools.computer_use.tool import handle_computer_use
         handle_computer_use({"action": "click", "element": 7})
         call_names = [c[0] for c in noop_backend.calls]
         assert "click" in call_names
@@ -144,13 +144,13 @@ class TestDispatch:
         assert click_kw.get("element") == 7
 
     def test_double_click_sets_click_count(self, noop_backend):
-        from tools.computer_use.tool import handle_computer_use
+        from zermes.tools.computer_use.tool import handle_computer_use
         handle_computer_use({"action": "double_click", "element": 3})
         click_kw = next(c[1] for c in noop_backend.calls if c[0] == "click")
         assert click_kw["click_count"] == 2
 
     def test_right_click_sets_button(self, noop_backend):
-        from tools.computer_use.tool import handle_computer_use
+        from zermes.tools.computer_use.tool import handle_computer_use
         handle_computer_use({"action": "right_click", "element": 3})
         click_kw = next(c[1] for c in noop_backend.calls if c[0] == "click")
         assert click_kw["button"] == "right"
@@ -169,7 +169,7 @@ class TestSafetyGuards:
         ":(){ :|: & };:",
     ])
     def test_blocked_type_patterns(self, text, noop_backend):
-        from tools.computer_use.tool import handle_computer_use
+        from zermes.tools.computer_use.tool import handle_computer_use
         out = handle_computer_use({"action": "type", "text": text})
         parsed = json.loads(out)
         assert "error" in parsed
@@ -182,20 +182,20 @@ class TestSafetyGuards:
         "cmd+shift+q",              # log out
     ])
     def test_blocked_key_combos(self, keys, noop_backend):
-        from tools.computer_use.tool import handle_computer_use
+        from zermes.tools.computer_use.tool import handle_computer_use
         out = handle_computer_use({"action": "key", "keys": keys})
         parsed = json.loads(out)
         assert "error" in parsed
         assert "blocked key combo" in parsed["error"]
 
     def test_safe_key_combos_pass(self, noop_backend):
-        from tools.computer_use.tool import handle_computer_use
+        from zermes.tools.computer_use.tool import handle_computer_use
         out = handle_computer_use({"action": "key", "keys": "cmd+s"})
         parsed = json.loads(out)
         assert "error" not in parsed
 
     def test_type_with_empty_string_is_allowed(self, noop_backend):
-        from tools.computer_use.tool import handle_computer_use
+        from zermes.tools.computer_use.tool import handle_computer_use
         out = handle_computer_use({"action": "type", "text": ""})
         parsed = json.loads(out)
         assert "error" not in parsed
@@ -207,7 +207,7 @@ class TestSafetyGuards:
 
 class TestCaptureResponse:
     def test_capture_ax_mode_returns_text_json(self, noop_backend):
-        from tools.computer_use.tool import handle_computer_use
+        from zermes.tools.computer_use.tool import handle_computer_use
         out = handle_computer_use({"action": "capture", "mode": "ax"})
         # AX mode → always JSON string
         parsed = json.loads(out)
@@ -215,8 +215,8 @@ class TestCaptureResponse:
 
     def test_capture_vision_mode_with_image_returns_multimodal_envelope(self):
         """Inject a fake backend that returns a PNG to exercise the envelope path."""
-        from tools.computer_use.backend import CaptureResult
-        from tools.computer_use import tool as cu_tool
+        from zermes.tools.computer_use.backend import CaptureResult
+        from zermes.tools.computer_use import tool as cu_tool
 
         fake_png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
 
@@ -251,8 +251,8 @@ class TestCaptureResponse:
         assert any(p.get("type") == "text" for p in out["content"])
 
     def test_capture_som_with_elements_formats_index(self):
-        from tools.computer_use.backend import CaptureResult, UIElement
-        from tools.computer_use import tool as cu_tool
+        from zermes.tools.computer_use.backend import CaptureResult, UIElement
+        from zermes.tools.computer_use import tool as cu_tool
 
         fake_png = "iVBORw0KGgo="
 
@@ -294,7 +294,7 @@ class TestCaptureResponse:
 
 class TestAnthropicAdapterMultimodal:
     def test_multimodal_envelope_becomes_tool_result_with_image_block(self):
-        from agent.anthropic_adapter import convert_messages_to_anthropic
+        from zermes.agent.anthropic_adapter import convert_messages_to_anthropic
 
         fake_png = "iVBORw0KGgo="
         messages = [
@@ -334,7 +334,7 @@ class TestAnthropicAdapterMultimodal:
 
     def test_old_screenshots_are_evicted_beyond_max_keep(self):
         """Image blocks in old tool_results get replaced with placeholders."""
-        from agent.anthropic_adapter import convert_messages_to_anthropic
+        from zermes.agent.anthropic_adapter import convert_messages_to_anthropic
 
         fake_png = "iVBORw0KGgo="
 
@@ -398,7 +398,7 @@ class TestAnthropicAdapterMultimodal:
         assert len(placeholders) == 2
 
     def test_content_parts_helper_filters_to_text_and_image(self):
-        from agent.anthropic_adapter import _content_parts_to_anthropic_blocks
+        from zermes.agent.anthropic_adapter import _content_parts_to_anthropic_blocks
 
         fake_png = "iVBORw0KGgo="
         blocks = _content_parts_to_anthropic_blocks([
@@ -418,7 +418,7 @@ class TestAnthropicAdapterMultimodal:
 
 class TestCompressorScreenshotPruning:
     def _make_compressor(self):
-        from agent.context_compressor import ContextCompressor
+        from zermes.agent.context_compressor import ContextCompressor
         # Minimal constructor — _prune_old_tool_results doesn't need a real client.
         c = ContextCompressor.__new__(ContextCompressor)
         return c
@@ -481,7 +481,7 @@ class TestCompressorScreenshotPruning:
 
 class TestImageAwareTokenEstimator:
     def test_image_block_counts_as_flat_1500_tokens(self):
-        from agent.model_metadata import estimate_messages_tokens_rough
+        from zermes.agent.model_metadata import estimate_messages_tokens_rough
         huge_b64 = "A" * (1024 * 1024)  # 1MB of base64 text
         messages = [
             {"role": "user", "content": "hi"},
@@ -496,7 +496,7 @@ class TestImageAwareTokenEstimator:
         assert tokens < 5000, f"image-aware counter returned {tokens} tokens — too high"
 
     def test_multimodal_envelope_counts_images(self):
-        from agent.model_metadata import estimate_messages_tokens_rough
+        from zermes.agent.model_metadata import estimate_messages_tokens_rough
         messages = [
             {"role": "tool", "tool_call_id": "c1", "content": {
                 "_multimodal": True,
@@ -518,7 +518,7 @@ class TestImageAwareTokenEstimator:
 
 class TestPromptGuidance:
     def test_computer_use_guidance_constant_exists(self):
-        from agent.prompt_builder import COMPUTER_USE_GUIDANCE
+        from zermes.agent.prompt_builder import COMPUTER_USE_GUIDANCE
         assert "background" in COMPUTER_USE_GUIDANCE.lower()
         assert "element" in COMPUTER_USE_GUIDANCE.lower()
         # Security callouts must remain
@@ -531,7 +531,7 @@ class TestPromptGuidance:
 
 class TestRunAgentMultimodalHelpers:
     def test_is_multimodal_tool_result(self):
-        from run_agent import _is_multimodal_tool_result
+        from zermes.run_agent import _is_multimodal_tool_result
         assert _is_multimodal_tool_result({
             "_multimodal": True, "content": [{"type": "text", "text": "x"}]
         })
@@ -540,7 +540,7 @@ class TestRunAgentMultimodalHelpers:
         assert not _is_multimodal_tool_result({"_multimodal": True, "content": "not a list"})
 
     def test_multimodal_text_summary_prefers_summary(self):
-        from run_agent import _multimodal_text_summary
+        from zermes.run_agent import _multimodal_text_summary
         out = _multimodal_text_summary({
             "_multimodal": True,
             "content": [{"type": "text", "text": "detailed"}],
@@ -549,7 +549,7 @@ class TestRunAgentMultimodalHelpers:
         assert out == "short"
 
     def test_multimodal_text_summary_falls_back_to_parts(self):
-        from run_agent import _multimodal_text_summary
+        from zermes.run_agent import _multimodal_text_summary
         out = _multimodal_text_summary({
             "_multimodal": True,
             "content": [{"type": "text", "text": "detailed"}],
@@ -557,7 +557,7 @@ class TestRunAgentMultimodalHelpers:
         assert out == "detailed"
 
     def test_append_subdir_hint_to_multimodal_appends_to_text_part(self):
-        from run_agent import _append_subdir_hint_to_multimodal
+        from zermes.run_agent import _append_subdir_hint_to_multimodal
         env = {
             "_multimodal": True,
             "content": [
@@ -573,7 +573,7 @@ class TestRunAgentMultimodalHelpers:
         assert env["text_summary"] == "summary\n[subdir hint]"
 
     def test_trajectory_normalize_strips_images(self):
-        from run_agent import _trajectory_normalize_msg
+        from zermes.run_agent import _trajectory_normalize_msg
         msg = {
             "role": "tool",
             "tool_call_id": "c1",
@@ -599,7 +599,7 @@ class TestRunAgentMultimodalHelpers:
 class TestUniversality:
     def test_schema_is_valid_openai_function_schema(self):
         """The schema must be round-trippable as a standard OpenAI tool definition."""
-        from tools.computer_use.schema import COMPUTER_USE_SCHEMA
+        from zermes.tools.computer_use.schema import COMPUTER_USE_SCHEMA
         # OpenAI tool definition wrapper
         wrapped = {"type": "function", "function": COMPUTER_USE_SCHEMA}
         # Should serialize to JSON without error
@@ -609,8 +609,8 @@ class TestUniversality:
 
     def test_no_provider_gating_in_tool_registration(self):
         """Anthropic-only gating was a #4562 artefact — must not recur."""
-        import tools.computer_use_tool  # noqa: F401
-        from tools.registry import registry
+        import zermes.tools.computer_use_tool  # noqa: F401
+        from zermes.tools.registry import registry
         entry = registry._tools["computer_use"]
         # check_fn should only check platform + binary availability,
         # never provider.

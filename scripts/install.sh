@@ -620,7 +620,7 @@ install_node() {
 }
 
 check_network_prerequisites() {
-    log_info "Checking internet connectivity for package install and web tools..."
+    log_info "Checking internet connectivity for package install and web zermes.tools..."
 
     local url
     local failed=false
@@ -1018,7 +1018,7 @@ install_deps() {
         export VIRTUAL_ENV="$INSTALL_DIR/venv"
     fi
 
-    # On Debian/Ubuntu (including WSL), some Python packages need build tools.
+    # On Debian/Ubuntu (including WSL), some Python packages need build zermes.tools.
     # Check and offer to install them if missing.
     if [ "$DISTRO" = "ubuntu" ] || [ "$DISTRO" = "debian" ]; then
         local need_build_tools=false
@@ -1291,8 +1291,8 @@ SOUL_EOF
         log_success "Skills synced to ~/.hermes/skills/"
     else
         # Fallback: simple directory copy if Python sync fails
-        if [ -d "$INSTALL_DIR/skills" ] && [ ! "$(ls -A "$HERMES_HOME/skills/" 2>/dev/null | grep -v '.bundled_manifest')" ]; then
-            cp -r "$INSTALL_DIR/skills/"* "$HERMES_HOME/skills/" 2>/dev/null || true
+        if [ -d "$INSTALL_DIR/resources/skills/bundled" ] && [ ! "$(ls -A "$HERMES_HOME/skills/" 2>/dev/null | grep -v '.bundled_manifest')" ]; then
+            cp -r "$INSTALL_DIR/resources/skills/bundled/"* "$HERMES_HOME/skills/" 2>/dev/null || true
             log_success "Skills copied to ~/.hermes/skills/"
         fi
     fi
@@ -1379,9 +1379,9 @@ install_node_deps() {
     fi
 
     # Install TUI dependencies
-    if [ -f "$INSTALL_DIR/ui-tui/package.json" ]; then
+    if [ -f "$INSTALL_DIR/apps/tui/package.json" ]; then
         log_info "Installing TUI dependencies..."
-        cd "$INSTALL_DIR/ui-tui"
+        cd "$INSTALL_DIR/apps/tui"
         npm install --silent 2>/dev/null || {
             log_warn "TUI npm install failed (hermes --tui may not work)"
         }
@@ -1419,9 +1419,9 @@ run_setup_wizard() {
     # Run hermes setup using the venv Python directly (no activation needed).
     # Redirect stdin from /dev/tty so interactive prompts work when piped from curl.
     if [ "$USE_VENV" = true ]; then
-        "$INSTALL_DIR/venv/bin/python" -m hermes_cli.main setup < /dev/tty
+        "$INSTALL_DIR/venv/bin/python" -m zermes.hermes_cli.main setup < /dev/tty
     else
-        python -m hermes_cli.main setup < /dev/tty
+        python -m zermes.hermes_cli.main setup < /dev/tty
     fi
 }
 
@@ -1508,9 +1508,9 @@ maybe_start_gateway() {
             else
                 log_info "systemd not available — starting gateway in background..."
             fi
-            nohup $HERMES_CMD gateway > "$HERMES_HOME/logs/gateway.log" 2>&1 &
+            nohup $HERMES_CMD gateway > "$HERMES_HOME/logs/zermes.gateway.log" 2>&1 &
             GATEWAY_PID=$!
-            log_success "Gateway started (PID $GATEWAY_PID). Logs: ~/.hermes/logs/gateway.log"
+            log_success "Gateway started (PID $GATEWAY_PID). Logs: ~/.hermes/logs/zermes.gateway.log"
             log_info "To stop: kill $GATEWAY_PID"
             log_info "To restart later: hermes gateway"
             if [ "$DISTRO" = "termux" ]; then

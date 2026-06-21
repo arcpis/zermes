@@ -42,7 +42,7 @@ def _cap_retaindb_sleeps(monkeypatch):
     own ``time.sleep`` stays real since it uses a different reference.
     """
     try:
-        from plugins.memory import retaindb as _retaindb
+        from zermes.plugins.memory import retaindb as _retaindb
     except ImportError:
         return
 
@@ -56,13 +56,13 @@ def _cap_retaindb_sleeps(monkeypatch):
     monkeypatch.setattr(_retaindb, "time", fake_time)
 
 
-# We need the repo root on sys.path so the plugin can import agent.memory_provider
+# We need the repo root on sys.path so the plugin can import zermes.agent.memory_provider
 import sys
 _repo_root = str(Path(__file__).resolve().parents[2])
 if _repo_root not in sys.path:
     sys.path.insert(0, _repo_root)
 
-from plugins.memory.retaindb import (
+from zermes.plugins.memory.retaindb import (
     _Client,
     _WriteQueue,
     _build_overlay,
@@ -380,12 +380,12 @@ class TestRetainDBMemoryProvider:
     def test_initialize_seeds_soul_md(self, tmp_path, monkeypatch):
         p = self._make_provider(tmp_path, monkeypatch)
         soul_path = tmp_path / ".hermes" / "SOUL.md"
-        soul_path.write_text("I am a helpful agent.")
+        soul_path.write_text("I am a helpful zermes.agent.")
         with patch.object(RetainDBMemoryProvider, "_seed_soul") as mock_seed:
             p.initialize("test-session", hermes_home=str(tmp_path / ".hermes"))
             # Give thread time to start
             time.sleep(0.5)
-            mock_seed.assert_called_once_with("I am a helpful agent.")
+            mock_seed.assert_called_once_with("I am a helpful zermes.agent.")
         p.shutdown()
 
     def test_system_prompt_block(self, tmp_path, monkeypatch):
@@ -735,7 +735,7 @@ class TestOnMemoryWrite:
 
 class TestRegister:
     def test_register_calls_register_memory_provider(self):
-        from plugins.memory.retaindb import register
+        from zermes.plugins.memory.retaindb import register
         ctx = MagicMock()
         register(ctx)
         ctx.register_memory_provider.assert_called_once()

@@ -12,8 +12,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
-from gateway.config import Platform, PlatformConfig, HomeChannel
-from plugins.teams_pipeline.models import TeamsMeetingRef, TeamsMeetingSummaryPayload
+from zermes.gateway.config import Platform, PlatformConfig, HomeChannel
+from zermes.plugins.teams_pipeline.models import TeamsMeetingRef, TeamsMeetingSummaryPayload
 from tests.gateway._plugin_adapter_loader import load_plugin_adapter
 
 
@@ -338,13 +338,13 @@ class TestTeamsPluginRegistration:
 class TestTeamsInteractiveSetup:
     def test_interactive_setup_persists_credentials(self, tmp_path, monkeypatch):
         """Regression for #19173: interactive_setup must import prompt helpers
-        from hermes_cli.cli_output (not hermes_cli.config) and persist
+        from zermes.hermes_cli.cli_output (not zermes.hermes_cli.config) and persist
         credentials to .env without crashing.
         """
         hermes_home = tmp_path / "hermes"
         monkeypatch.setenv("HERMES_HOME", str(hermes_home))
 
-        import hermes_cli.cli_output as cli_output_mod
+        import zermes.hermes_cli.cli_output as cli_output_mod
 
         answers = iter(["client-id", "client-secret", "tenant-id", "aad-1, aad-2"])
         monkeypatch.setattr(cli_output_mod, "prompt", lambda *_a, **_kw: next(answers))

@@ -28,7 +28,7 @@ _WORKTREE = Path(__file__).resolve().parents[2]
 if str(_WORKTREE) not in sys.path:
     sys.path.insert(0, str(_WORKTREE))
 
-from hermes_cli import kanban_db as kb
+from zermes.hermes_cli import kanban_db as kb
 
 
 # ---------------------------------------------------------------------------
@@ -55,8 +55,8 @@ def fresh_home(tmp_path, monkeypatch):
         monkeypatch.delenv(var, raising=False)
     # Also reset hermes_constants cache so get_default_hermes_root() re-reads.
     try:
-        import hermes_constants
-        hermes_constants._cached_default_hermes_root = None  # type: ignore[attr-defined]
+        import zermes.hermes_constants as hermes_constants
+        zermes.hermes_constants._cached_default_hermes_root = None  # type: ignore[attr-defined]
     except Exception:
         pass
     # Kanban module-level init cache must not leak between tests.
@@ -414,7 +414,7 @@ def _cli(args: list[str], env_extra: dict | None = None) -> subprocess.Completed
     if env_extra:
         env.update(env_extra)
     return subprocess.run(
-        [sys.executable, "-m", "hermes_cli.main", "kanban"] + args,
+        [sys.executable, "-m", "zermes.hermes_cli.main", "kanban"] + args,
         env=env,
         capture_output=True,
         text=True,

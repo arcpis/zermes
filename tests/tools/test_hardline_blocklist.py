@@ -10,7 +10,7 @@ import os
 
 import pytest
 
-from tools.approval import (
+from zermes.tools.approval import (
     DANGEROUS_PATTERNS,
     HARDLINE_PATTERNS,
     check_all_command_guards,
@@ -217,7 +217,7 @@ def test_session_yolo_cannot_bypass_hardline(clean_session):
 def test_approvals_mode_off_cannot_bypass_hardline(clean_session, monkeypatch, tmp_path):
     """config approvals.mode=off (yolo-equivalent) must not bypass hardline."""
     # _get_approval_mode() reads from hermes config; simplest path: monkeypatch the helper.
-    import tools.approval as approval_mod
+    import zermes.tools.approval as approval_mod
     monkeypatch.setattr(approval_mod, "_get_approval_mode", lambda: "off")
 
     result = check_all_command_guards("rm -rf /", "local")
@@ -228,7 +228,7 @@ def test_approvals_mode_off_cannot_bypass_hardline(clean_session, monkeypatch, t
 def test_cron_approve_mode_cannot_bypass_hardline(clean_session, monkeypatch):
     """Cron sessions with cron_mode=approve must not bypass hardline."""
     monkeypatch.setenv("HERMES_CRON_SESSION", "1")
-    import tools.approval as approval_mod
+    import zermes.tools.approval as approval_mod
     monkeypatch.setattr(approval_mod, "_get_cron_approval_mode", lambda: "approve")
 
     result = check_all_command_guards("rm -rf /", "local")

@@ -11,15 +11,15 @@ from io import StringIO
 from unittest.mock import MagicMock, patch
 
 import pytest
-import cli as cli_mod
+import zermes.cli as cli_mod
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 
 def _make_cli(config_overrides=None, env_overrides=None, **kwargs):
     """Create a HermesCLI instance with minimal mocking."""
-    import cli as _cli_mod
-    from cli import HermesCLI
+    import zermes.cli as _cli_mod
+    from zermes.cli import HermesCLI
 
     _clean_config = {
         "model": {
@@ -42,7 +42,7 @@ def _make_cli(config_overrides=None, env_overrides=None, **kwargs):
     if env_overrides:
         clean_env.update(env_overrides)
     with (
-        patch("cli.get_tool_definitions", return_value=[]),
+        patch("zermes.cli.get_tool_definitions", return_value=[]),
         patch.dict("os.environ", clean_env, clear=False),
         patch.dict(_cli_mod.__dict__, {"CLI_CONFIG": _clean_config}),
     ):
@@ -643,15 +643,15 @@ class TestResumeDisplayConfig:
 
     def test_default_config_has_resume_display(self):
         """DEFAULT_CONFIG in hermes_cli/config.py includes resume_display."""
-        from hermes_cli.config import DEFAULT_CONFIG
+        from zermes.hermes_cli.config import DEFAULT_CONFIG
         display = DEFAULT_CONFIG.get("display", {})
         assert "resume_display" in display
         assert display["resume_display"] == "full"
 
     def test_cli_defaults_have_resume_display(self):
-        """cli.py load_cli_config defaults include resume_display."""
-        import cli as _cli_mod
-        from cli import load_cli_config
+        """zermes.cli.py load_cli_config defaults include resume_display."""
+        import zermes.cli as _cli_mod
+        from zermes.cli import load_cli_config
 
         with (
             patch("pathlib.Path.exists", return_value=False),

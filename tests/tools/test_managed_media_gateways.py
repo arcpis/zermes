@@ -24,9 +24,9 @@ def _restore_tool_and_agent_modules():
         name: module
         for name, module in sys.modules.items()
         if name == "tools"
-        or name.startswith("tools.")
+        or name.startswith("zermes.tools.")
         or name == "agent"
-        or name.startswith("agent.")
+        or name.startswith("zermes.agent.")
         or name in {"fal_client", "openai"}
     }
     try:
@@ -35,9 +35,9 @@ def _restore_tool_and_agent_modules():
         for name in list(sys.modules):
             if (
                 name == "tools"
-                or name.startswith("tools.")
+                or name.startswith("zermes.tools.")
                 or name == "agent"
-                or name.startswith("agent.")
+                or name.startswith("zermes.agent.")
                 or name in {"fal_client", "openai"}
             ):
                 sys.modules.pop(name, None)
@@ -48,15 +48,15 @@ def _restore_tool_and_agent_modules():
 def _enable_managed_nous_tools(monkeypatch):
     """Patch the source modules so managed_nous_tools_enabled() returns True
     even after tool modules are dynamically reloaded."""
-    monkeypatch.setattr("hermes_cli.auth.get_nous_auth_status", lambda: {"logged_in": True})
-    monkeypatch.setattr("hermes_cli.models.check_nous_free_tier", lambda: False)
+    monkeypatch.setattr("zermes.hermes_cli.auth.get_nous_auth_status", lambda: {"logged_in": True})
+    monkeypatch.setattr("zermes.hermes_cli.models.check_nous_free_tier", lambda: False)
 
 
 def _install_fake_tools_package():
     tools_package = types.ModuleType("tools")
     tools_package.__path__ = [str(TOOLS_DIR)]  # type: ignore[attr-defined]
     sys.modules["tools"] = tools_package
-    sys.modules["tools.debug_helpers"] = types.SimpleNamespace(
+    sys.modules["zermes.tools.debug_helpers"] = types.SimpleNamespace(
         DebugSession=lambda *args, **kwargs: types.SimpleNamespace(
             active=False,
             session_id="debug-session",
@@ -65,8 +65,8 @@ def _install_fake_tools_package():
             get_session_info=lambda: {},
         )
     )
-    sys.modules["tools.managed_tool_gateway"] = _load_tool_module(
-        "tools.managed_tool_gateway",
+    sys.modules["zermes.tools.managed_tool_gateway"] = _load_tool_module(
+        "zermes.tools.managed_tool_gateway",
         "managed_tool_gateway.py",
     )
 
@@ -173,7 +173,7 @@ def test_managed_fal_submit_uses_gateway_origin_and_nous_token(monkeypatch):
     monkeypatch.setenv("TOOL_GATEWAY_USER_TOKEN", "nous-token")
 
     image_generation_tool = _load_tool_module(
-        "tools.image_generation_tool",
+        "zermes.tools.image_generation_tool",
         "image_generation_tool.py",
     )
     monkeypatch.setattr(image_generation_tool.uuid, "uuid4", lambda: "fal-submit-123")
@@ -201,7 +201,7 @@ def test_managed_fal_submit_reuses_cached_sync_client(monkeypatch):
     monkeypatch.setenv("TOOL_GATEWAY_USER_TOKEN", "nous-token")
 
     image_generation_tool = _load_tool_module(
-        "tools.image_generation_tool",
+        "zermes.tools.image_generation_tool",
         "image_generation_tool.py",
     )
 
@@ -222,13 +222,13 @@ def test_openai_tts_uses_managed_audio_gateway_when_direct_key_absent(monkeypatc
     monkeypatch.setenv("TOOL_GATEWAY_DOMAIN", "nousresearch.com")
     monkeypatch.setenv("TOOL_GATEWAY_USER_TOKEN", "nous-token")
 
-    tts_tool = _load_tool_module("tools.tts_tool", "tts_tool.py")
+    tts_tool = _load_tool_module("zermes.tools.tts_tool", "tts_tool.py")
     monkeypatch.setattr(tts_tool.uuid, "uuid4", lambda: "tts-call-123")
     output_path = tmp_path / "speech.mp3"
     tts_tool._generate_openai_tts("hello world", str(output_path), {"openai": {}})
 
     assert captured["api_key"] == "nous-token"
-    assert captured["base_url"] == "https://openai-audio-gateway.nousresearch.com/v1"
+    assert captured["base_url"] == "https://openai-audio-zermes.gateway.nousresearch.com/v1"
     assert captured["speech_kwargs"]["model"] == "gpt-4o-mini-tts"
     assert captured["speech_kwargs"]["extra_headers"] == {"x-idempotency-key": "tts-call-123"}
     assert captured["stream_to_file"] == str(output_path)
@@ -244,7 +244,7 @@ def test_openai_tts_accepts_openai_api_key_as_direct_fallback(monkeypatch, tmp_p
     monkeypatch.setenv("TOOL_GATEWAY_DOMAIN", "nousresearch.com")
     monkeypatch.setenv("TOOL_GATEWAY_USER_TOKEN", "nous-token")
 
-    tts_tool = _load_tool_module("tools.tts_tool", "tts_tool.py")
+    tts_tool = _load_tool_module("zermes.tools.tts_tool", "tts_tool.py")
     output_path = tmp_path / "speech.mp3"
     tts_tool._generate_openai_tts("hello world", str(output_path), {"openai": {}})
 
@@ -265,7 +265,7 @@ def test_transcription_uses_model_specific_response_formats(monkeypatch, tmp_pat
     monkeypatch.setenv("TOOL_GATEWAY_USER_TOKEN", "nous-token")
 
     transcription_tools = _load_tool_module(
-        "tools.transcription_tools",
+        "zermes.tools.transcription_tools",
         "transcription_tools.py",
     )
     transcription_tools._load_stt_config = lambda: {"provider": "openai"}
@@ -274,7 +274,7 @@ def test_transcription_uses_model_specific_response_formats(monkeypatch, tmp_pat
 
     whisper_result = transcription_tools.transcribe_audio(str(audio_path), model="whisper-1")
     assert whisper_result["success"] is True
-    assert whisper_capture["base_url"] == "https://openai-audio-gateway.nousresearch.com/v1"
+    assert whisper_capture["base_url"] == "https://openai-audio-zermes.gateway.nousresearch.com/v1"
     assert whisper_capture["transcription_kwargs"]["response_format"] == "text"
     assert whisper_capture["close_calls"] == 1
 
@@ -284,7 +284,7 @@ def test_transcription_uses_model_specific_response_formats(monkeypatch, tmp_pat
         transcription_response=types.SimpleNamespace(text="hello from gpt-4o"),
     )
     transcription_tools = _load_tool_module(
-        "tools.transcription_tools",
+        "zermes.tools.transcription_tools",
         "transcription_tools.py",
     )
 

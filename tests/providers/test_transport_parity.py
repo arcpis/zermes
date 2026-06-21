@@ -1,14 +1,14 @@
 """Parity tests: pin the exact current transport behavior per provider.
 
-These tests document the flag-based contract between run_agent.py and
+These tests document the flag-based contract between zermes.run_agent.py and
 ChatCompletionsTransport.build_kwargs(). When the next PR wires profiles
 to replace flags, every assertion here must still pass — any failure is
 a behavioral regression.
 """
 
 import pytest
-from agent.transports.chat_completions import ChatCompletionsTransport
-from providers import get_provider_profile
+from zermes.agent.transports.chat_completions import ChatCompletionsTransport
+from zermes.providers import get_provider_profile
 
 
 @pytest.fixture
@@ -29,7 +29,7 @@ class TestNvidiaParity:
 
     def test_default_max_tokens(self, transport):
         """NVIDIA default max_tokens=16384 comes from profile, not legacy is_nvidia_nim flag."""
-        from providers import get_provider_profile
+        from zermes.providers import get_provider_profile
 
         profile = get_provider_profile("nvidia")
         kw = transport.build_kwargs(
@@ -42,7 +42,7 @@ class TestNvidiaParity:
         assert kw["max_completion_tokens"] == 16384
 
     def test_user_max_tokens_overrides(self, transport):
-        from providers import get_provider_profile
+        from zermes.providers import get_provider_profile
 
         profile = get_provider_profile("nvidia")
         kw = transport.build_kwargs(

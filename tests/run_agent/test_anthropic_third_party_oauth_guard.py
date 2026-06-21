@@ -1,4 +1,4 @@
-"""Tests for ``_is_anthropic_oauth`` guard against third-party Anthropic-compatible providers.
+"""Tests for ``_is_anthropic_oauth`` guard against third-party Anthropic-compatible zermes.providers.
 
 The invariant: ``self._is_anthropic_oauth`` must only ever be True when
 ``self.provider == 'anthropic'`` (native Anthropic).  Third-party providers
@@ -22,7 +22,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from run_agent import AIAgent
+from zermes.run_agent import AIAgent
 
 
 # A plausible-looking OAuth token (``sk-ant-`` without the ``-api`` suffix).
@@ -34,9 +34,9 @@ _API_KEY_TOKEN = "sk-ant-api-abcdef1234567890"
 def agent():
     """Minimal AIAgent construction, skipping tool discovery."""
     with (
-        patch("run_agent.get_tool_definitions", return_value=[]),
-        patch("run_agent.check_toolset_requirements", return_value={}),
-        patch("run_agent.OpenAI"),
+        patch("zermes.run_agent.get_tool_definitions", return_value=[]),
+        patch("zermes.run_agent.check_toolset_requirements", return_value={}),
+        patch("zermes.run_agent.OpenAI"),
     ):
         a = AIAgent(
             api_key="test-key-1234567890",
@@ -54,7 +54,7 @@ class TestOAuthFlagOnRefresh:
 
     def test_third_party_provider_refresh_is_noop(self, agent):
         """Refresh path returns False immediately when provider != anthropic — the
-        OAuth flag can never be mutated for third-party providers. Double-defended
+        OAuth flag can never be mutated for third-party zermes.providers. Double-defended
         by the per-assignment guard at line ~5393 so future refactors can't
         reintroduce the bug."""
         agent.api_mode = "anthropic_messages"
@@ -64,14 +64,14 @@ class TestOAuthFlagOnRefresh:
         agent._is_anthropic_oauth = False
 
         with (
-            patch("agent.anthropic_adapter.resolve_anthropic_token",
+            patch("zermes.agent.anthropic_adapter.resolve_anthropic_token",
                   return_value=_OAUTH_LIKE_TOKEN),
-            patch("agent.anthropic_adapter.build_anthropic_client",
+            patch("zermes.agent.anthropic_adapter.build_anthropic_client",
                   return_value=MagicMock()),
         ):
             result = agent._try_refresh_anthropic_client_credentials()
 
-        # The function short-circuits on non-anthropic providers.
+        # The function short-circuits on non-anthropic zermes.providers.
         assert result is False
         # And the flag is untouched regardless.
         assert agent._is_anthropic_oauth is False
@@ -85,9 +85,9 @@ class TestOAuthFlagOnRefresh:
         agent._is_anthropic_oauth = False
 
         with (
-            patch("agent.anthropic_adapter.resolve_anthropic_token",
+            patch("zermes.agent.anthropic_adapter.resolve_anthropic_token",
                   return_value=_OAUTH_LIKE_TOKEN),
-            patch("agent.anthropic_adapter.build_anthropic_client",
+            patch("zermes.agent.anthropic_adapter.build_anthropic_client",
                   return_value=MagicMock()),
         ):
             result = agent._try_refresh_anthropic_client_credentials()
@@ -111,7 +111,7 @@ class TestOAuthFlagOnCredentialSwap:
         entry.runtime_api_key = _OAUTH_LIKE_TOKEN
         entry.runtime_base_url = "https://open.bigmodel.cn/api/anthropic"
 
-        with patch("agent.anthropic_adapter.build_anthropic_client",
+        with patch("zermes.agent.anthropic_adapter.build_anthropic_client",
                    return_value=MagicMock()):
             agent._swap_credential(entry)
 
@@ -123,13 +123,13 @@ class TestOAuthFlagOnConstruction:
 
     def test_minimax_init_does_not_flip_oauth(self):
         with (
-            patch("run_agent.get_tool_definitions", return_value=[]),
-            patch("run_agent.check_toolset_requirements", return_value={}),
-            patch("agent.anthropic_adapter.build_anthropic_client",
+            patch("zermes.run_agent.get_tool_definitions", return_value=[]),
+            patch("zermes.run_agent.check_toolset_requirements", return_value={}),
+            patch("zermes.agent.anthropic_adapter.build_anthropic_client",
                   return_value=MagicMock()),
             # Simulate a stale ANTHROPIC_TOKEN in the env — the init code
             # MUST NOT fall back to it when provider != anthropic.
-            patch("agent.anthropic_adapter.resolve_anthropic_token",
+            patch("zermes.agent.anthropic_adapter.resolve_anthropic_token",
                   return_value=_OAUTH_LIKE_TOKEN),
         ):
             agent = AIAgent(
@@ -154,7 +154,7 @@ class TestOAuthFlagOnFallbackActivation:
 
     def test_fallback_to_third_party_does_not_flip_oauth(self, agent):
         """Directly mimic the post-fallback assignment at line ~6537."""
-        from agent.anthropic_adapter import _is_oauth_token
+        from zermes.agent.anthropic_adapter import _is_oauth_token
 
         # Emulate the relevant lines of _try_activate_fallback without
         # running the entire recovery stack (which pulls in streaming,
@@ -171,11 +171,11 @@ class TestApiKeyTokensAlwaysSafe:
     """Regression: plain API-key shapes must always resolve to non-OAuth, any provider."""
 
     def test_native_anthropic_with_api_key_token(self):
-        from agent.anthropic_adapter import _is_oauth_token
+        from zermes.agent.anthropic_adapter import _is_oauth_token
         assert _is_oauth_token(_API_KEY_TOKEN) is False
 
     def test_third_party_key_shape(self):
-        from agent.anthropic_adapter import _is_oauth_token
+        from zermes.agent.anthropic_adapter import _is_oauth_token
         # Third-party key shapes (MiniMax 'mxp-...', GLM 'glm.sess.', etc.)
         # already return False from _is_oauth_token; the guard adds a second
         # defense line in case future token formats accidentally look OAuth-y.

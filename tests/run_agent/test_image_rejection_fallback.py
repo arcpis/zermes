@@ -1,4 +1,4 @@
-"""Tests for the image-rejection fallback in run_agent.
+"""Tests for the image-rejection fallback in zermes.run_agent.
 
 When a server rejects image content (e.g. text-only endpoints), the agent
 strips image parts from message history and retries text-only.  These tests
@@ -6,7 +6,7 @@ verify that stripping preserves the role-alternation invariants providers
 require, and that the phrase detector fires on the expected error bodies.
 """
 
-from run_agent import _strip_images_from_messages
+from zermes.run_agent import _strip_images_from_messages
 
 
 class TestStripImagesPreservesAlternation:
@@ -178,7 +178,7 @@ class TestImageRejectionPhraseIsolation:
     so they route to the correct recovery handler (e.g. _try_shrink_image_parts).
     """
 
-    # Reproduces the phrase list used in run_agent.py's error-handler block.
+    # Reproduces the phrase list used in zermes.run_agent.py's error-handler block.
     _REJECTION_PHRASES = (
         "only 'text' content type is supported",
         "only text content type is supported",

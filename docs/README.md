@@ -11,12 +11,12 @@ This directory contains repository-maintained project documentation.
 
 ## Architecture And Runtime
 
-- [Runtime contract](runtime_contract.md)
-- [Code self-evolution guide](code-self-evolution/guide.md)
-- [Code self-evolution architecture](code-self-evolution/architecture.md)
-- [Worker Agent guide](worker-agent/guide.md)
-- [Worker Agent architecture](worker-agent/architecture.md)
-- [Worker Agent APIs](worker-agent/apis.md)
+- [Runtime contract](architecture/runtime-contract.md)
+- [Code self-evolution guide](architecture/code-self-evolution/guide.md)
+- [Code self-evolution architecture](architecture/code-self-evolution/architecture.md)
+- [Worker Agent guide](architecture/worker-agent/guide.md)
+- [Worker Agent architecture](architecture/worker-agent/architecture.md)
+- [Worker Agent APIs](architecture/worker-agent/apis.md)
 
 ## Releases
 

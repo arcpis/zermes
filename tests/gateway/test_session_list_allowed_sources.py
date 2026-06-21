@@ -15,7 +15,7 @@ History:
 
 from __future__ import annotations
 
-from tui_gateway import server
+from zermes.tui_gateway import server
 
 
 class _StubDB:

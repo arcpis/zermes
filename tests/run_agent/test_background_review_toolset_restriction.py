@@ -1,4 +1,4 @@
-"""Tests that the background review agent is restricted to memory+skills toolsets.
+"""Tests that the background review agent is restricted to memory+skills zermes.toolsets.
 
 Regression coverage for issue #15204: the background skill-review agent
 inherited the full default toolset, allowing it to perform non-skill side
@@ -42,17 +42,17 @@ class _SyncThread:
 
 
 def test_background_review_agent_uses_restricted_toolsets():
-    """The review agent must only have access to 'memory' and 'skills' toolsets."""
-    import run_agent
+    """The review agent must only have access to 'memory' and 'skills' zermes.toolsets."""
+    import zermes.run_agent as run_agent
 
-    agent = _make_agent_stub(run_agent.AIAgent)
+    agent = _make_agent_stub(zermes.run_agent.AIAgent)
     captured = {}
 
     def _capture_init(self, *args, **kwargs):
         captured["enabled_toolsets"] = kwargs.get("enabled_toolsets")
         raise RuntimeError("stop after capturing init args")
 
-    with patch.object(run_agent.AIAgent, "__init__", _capture_init), \
+    with patch.object(zermes.run_agent.AIAgent, "__init__", _capture_init),\
          patch("threading.Thread", _SyncThread):
         agent._spawn_background_review(
             messages_snapshot=[],
@@ -65,8 +65,8 @@ def test_background_review_agent_uses_restricted_toolsets():
 
 
 def test_background_review_agent_tools_are_limited():
-    """Verify the resolved memory+skills toolsets only contain memory and skill tools."""
-    from toolsets import resolve_multiple_toolsets
+    """Verify the resolved memory+skills toolsets only contain memory and skill zermes.tools."""
+    from zermes.toolsets import resolve_multiple_toolsets
 
     expected_tools = set(resolve_multiple_toolsets(["memory", "skills"]))
 

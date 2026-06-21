@@ -1,6 +1,6 @@
 import pytest
 
-from worker_agents.department_chats import (
+from zermes.worker_agents.department_chats import (
     DEPARTMENT_CHAT_BINDING_SCHEMA_VERSION,
     DepartmentChatBinding,
     DepartmentChatBindingState,
@@ -13,7 +13,7 @@ from worker_agents.department_chats import (
     required_department_chat_participants,
     summarize_department_chat_binding,
 )
-from worker_agents.message_router import ChatParticipantKind, ChatParticipantRef
+from zermes.worker_agents.message_router import ChatParticipantKind, ChatParticipantRef
 
 
 def _required():

@@ -1,6 +1,6 @@
 import pytest
 
-from worker_agents.result_routing import (
+from zermes.worker_agents.result_routing import (
     ResultRouteItem,
     ResultRouteItemKind,
     ResultRouteVisibility,
@@ -8,7 +8,7 @@ from worker_agents.result_routing import (
     classify_runtime_result,
     runtime_result_classification_to_dict,
 )
-from worker_agents.runtime_contract import (
+from zermes.worker_agents.runtime_contract import (
     RuntimeArtifactRef,
     RuntimeErrorCode,
     RuntimeErrorInfo,

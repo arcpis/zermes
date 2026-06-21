@@ -6,8 +6,8 @@ so users never received the final response.
 """
 import pytest
 from unittest.mock import AsyncMock, MagicMock
-from gateway.run import GatewayRunner
-from gateway.platforms.base import MessageEvent, MessageType
+from zermes.gateway.run import GatewayRunner
+from zermes.gateway.platforms.base import MessageEvent, MessageType
 
 
 @pytest.fixture
@@ -24,22 +24,22 @@ def gateway(tmp_path):
 @pytest.mark.asyncio
 async def test_retry_returns_response_not_none(gateway):
     """_handle_retry_command must return the inner handler response, not None."""
-    gateway.session_store.get_or_create_session.return_value = MagicMock(
+    zermes.gateway.session_store.get_or_create_session.return_value = MagicMock(
         session_id="test-session"
     )
-    gateway.session_store.load_transcript.return_value = [
+    zermes.gateway.session_store.load_transcript.return_value = [
         {"role": "user", "content": "Hello Hermes"},
         {"role": "assistant", "content": "Hi there!"},
     ]
-    gateway.session_store.rewrite_transcript = MagicMock()
+    zermes.gateway.session_store.rewrite_transcript = MagicMock()
     expected_response = "Hi there! (retried)"
-    gateway._handle_message = AsyncMock(return_value=expected_response)
+    zermes.gateway._handle_message = AsyncMock(return_value=expected_response)
     event = MessageEvent(
         text="/retry",
         message_type=MessageType.TEXT,
         source=MagicMock(),
     )
-    result = await gateway._handle_retry_command(event)
+    result = await zermes.gateway._handle_retry_command(event)
     assert result is not None, "/retry must not return None"
     assert result == expected_response
 
@@ -47,14 +47,14 @@ async def test_retry_returns_response_not_none(gateway):
 @pytest.mark.asyncio
 async def test_retry_no_previous_message(gateway):
     """If there is no previous user message, return early with a message."""
-    gateway.session_store.get_or_create_session.return_value = MagicMock(
+    zermes.gateway.session_store.get_or_create_session.return_value = MagicMock(
         session_id="test-session"
     )
-    gateway.session_store.load_transcript.return_value = []
+    zermes.gateway.session_store.load_transcript.return_value = []
     event = MessageEvent(
         text="/retry",
         message_type=MessageType.TEXT,
         source=MagicMock(),
     )
-    result = await gateway._handle_retry_command(event)
+    result = await zermes.gateway._handle_retry_command(event)
     assert result == "No previous message to retry."

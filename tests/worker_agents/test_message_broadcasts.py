@@ -1,13 +1,13 @@
 import pytest
 
-from worker_agents.message_broadcasts import (
+from zermes.worker_agents.message_broadcasts import (
     BroadcastDeliveryStatus,
     BroadcastDeliveryUpdate,
     BroadcastImportance,
     BroadcastTarget,
     BroadcastTargetKind,
 )
-from worker_agents.message_router import (
+from zermes.worker_agents.message_router import (
     ChatMessageType,
     ChatParticipantKind,
     ChatParticipantRef,
@@ -15,7 +15,7 @@ from worker_agents.message_router import (
     MessageRouterError,
     WorkerMessageEnvelope,
 )
-from worker_agents.organization import (
+from zermes.worker_agents.organization import (
     OrgLeaderKind,
     OrgLeaderRef,
     OrgLifecycleState,

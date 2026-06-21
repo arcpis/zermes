@@ -8,8 +8,8 @@ import sys
 from datetime import datetime, timedelta
 from unittest.mock import MagicMock, patch
 
-from hermes_state import SessionDB
-from tools.todo_tool import TodoStore
+from zermes.hermes_state import SessionDB
+from zermes.tools.todo_tool import TodoStore
 
 
 class _FakeCompressor:
@@ -110,7 +110,7 @@ def _make_cli(env_overrides=None, config_overrides=None, **kwargs):
     with patch.dict(sys.modules, prompt_toolkit_stubs), patch.dict(
         "os.environ", clean_env, clear=False
     ):
-        import cli as _cli_mod
+        import zermes.cli as _cli_mod
 
         _cli_mod = importlib.reload(_cli_mod)
         with patch.object(_cli_mod, "get_tool_definitions", return_value=[]), patch.dict(
@@ -305,7 +305,7 @@ def test_hermes_cli_worker_messaging_toolset_blocks_new_session(capsys):
 
 
 def test_delete_context_keeps_session_and_preserves_worker_state():
-    from tools.worker_task_state import (
+    from zermes.tools.worker_task_state import (
         add_pending_task,
         get_pending_tasks,
         load_read_cursor,

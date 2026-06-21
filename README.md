@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/banner.png" alt="Zermes" width="100%">
+  <img src="resources/assets/banner.png" alt="Zermes" width="100%">
 </p>
 
 # Zermes
@@ -25,7 +25,7 @@ The preferred user-facing command is `zermes`. Hermes-compatible names and inter
 
    Best for: code-oriented AI agent projects that need continuous improvement while preserving approval, audit, and verification controls.
 
-   Guide: [代码自我进化使用指南](docs/code-self-evolution/guide.md) | Architecture: [架构参考](docs/code-self-evolution/architecture.md)
+   [Guide](docs/architecture/code-self-evolution/guide.md) | [Architecture](docs/architecture/code-self-evolution/architecture.md)
 
 2. **Multi-level Worker-Agent**
 
@@ -35,7 +35,7 @@ The preferred user-facing command is `zermes`. Hermes-compatible names and inter
 
    Best for: Agent platforms that need organized multi-agent collaboration, departmental division of labor, and cross-team memory consistency.
 
-   Guide: [Worker Agent 使用指南](docs/worker-agent/guide.md) | API: [API 参考](docs/worker-agent/apis.md) | Architecture: [架构参考](docs/worker-agent/architecture.md)
+   [Guide](docs/architecture/worker-agent/guide.md) | [API](docs/architecture/worker-agent/apis.md) | [Architecture](docs/architecture/worker-agent/architecture.md)
 
 ## Installation And Usage
 

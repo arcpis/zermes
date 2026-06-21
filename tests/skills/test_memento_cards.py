@@ -1,4 +1,4 @@
-"""Tests for optional-skills/productivity/memento-flashcards/scripts/memento_cards.py"""
+"""Tests for resources/skills/optional/productivity/memento-flashcards/scripts/memento_cards.py"""
 
 import csv
 import json

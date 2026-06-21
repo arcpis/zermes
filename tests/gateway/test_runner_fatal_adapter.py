@@ -2,9 +2,9 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from gateway.config import GatewayConfig, Platform, PlatformConfig
-from gateway.platforms.base import BasePlatformAdapter
-from gateway.run import GatewayRunner
+from zermes.gateway.config import GatewayConfig, Platform, PlatformConfig
+from zermes.gateway.platforms.base import BasePlatformAdapter
+from zermes.gateway.run import GatewayRunner
 
 
 class _FatalAdapter(BasePlatformAdapter):
@@ -68,7 +68,7 @@ async def test_runner_requests_clean_exit_for_nonretryable_startup_conflict(monk
 @pytest.mark.asyncio
 async def test_runner_queues_retryable_runtime_fatal_for_reconnection(monkeypatch, tmp_path):
     """Retryable runtime fatal errors queue the platform for reconnection
-    instead of shutting down the gateway."""
+    instead of shutting down the zermes.gateway."""
     config = GatewayConfig(
         platforms={
             Platform.WHATSAPP: PlatformConfig(enabled=True, token="token")

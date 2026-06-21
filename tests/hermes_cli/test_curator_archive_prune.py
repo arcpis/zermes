@@ -28,8 +28,8 @@ def _ns(**kwargs):
 
 
 def test_archive_refuses_pinned(monkeypatch, capsys):
-    import hermes_cli.curator as curator_cli
-    import tools.skill_usage as skill_usage
+    import zermes.hermes_cli.curator as curator_cli
+    import zermes.tools.skill_usage as skill_usage
 
     monkeypatch.setattr(skill_usage, "get_record", lambda name: {"pinned": True})
     called = []
@@ -47,8 +47,8 @@ def test_archive_refuses_pinned(monkeypatch, capsys):
 
 
 def test_archive_calls_archive_skill(monkeypatch, capsys):
-    import hermes_cli.curator as curator_cli
-    import tools.skill_usage as skill_usage
+    import zermes.hermes_cli.curator as curator_cli
+    import zermes.tools.skill_usage as skill_usage
 
     monkeypatch.setattr(skill_usage, "get_record", lambda name: {"pinned": False})
     monkeypatch.setattr(
@@ -61,8 +61,8 @@ def test_archive_calls_archive_skill(monkeypatch, capsys):
 
 
 def test_archive_reports_failure(monkeypatch, capsys):
-    import hermes_cli.curator as curator_cli
-    import tools.skill_usage as skill_usage
+    import zermes.hermes_cli.curator as curator_cli
+    import zermes.tools.skill_usage as skill_usage
 
     monkeypatch.setattr(skill_usage, "get_record", lambda name: {"pinned": False})
     monkeypatch.setattr(
@@ -94,7 +94,7 @@ def _mk_record(name, *, idle_days=0, pinned=False, state="active", created_idle_
 
 
 def test_prune_days_validation(monkeypatch, capsys):
-    import hermes_cli.curator as curator_cli
+    import zermes.hermes_cli.curator as curator_cli
     rc = curator_cli._cmd_prune(_ns(days=0, yes=True, dry_run=False))
     assert rc == 2
     err = capsys.readouterr().err
@@ -102,8 +102,8 @@ def test_prune_days_validation(monkeypatch, capsys):
 
 
 def test_prune_nothing_to_do(monkeypatch, capsys):
-    import hermes_cli.curator as curator_cli
-    import tools.skill_usage as skill_usage
+    import zermes.hermes_cli.curator as curator_cli
+    import zermes.tools.skill_usage as skill_usage
 
     monkeypatch.setattr(skill_usage, "agent_created_report", lambda: [])
     rc = curator_cli._cmd_prune(_ns(days=30, yes=True, dry_run=False))
@@ -112,8 +112,8 @@ def test_prune_nothing_to_do(monkeypatch, capsys):
 
 
 def test_prune_filters_pinned_and_archived(monkeypatch, capsys):
-    import hermes_cli.curator as curator_cli
-    import tools.skill_usage as skill_usage
+    import zermes.hermes_cli.curator as curator_cli
+    import zermes.tools.skill_usage as skill_usage
 
     rows = [
         _mk_record("old-pinned", idle_days=200, pinned=True),
@@ -141,8 +141,8 @@ def test_prune_filters_pinned_and_archived(monkeypatch, capsys):
 
 def test_prune_falls_back_to_created_at_when_never_used(monkeypatch, capsys):
     """Never-used skills must be prunable via created_at — otherwise immortal."""
-    import hermes_cli.curator as curator_cli
-    import tools.skill_usage as skill_usage
+    import zermes.hermes_cli.curator as curator_cli
+    import zermes.tools.skill_usage as skill_usage
 
     rows = [_mk_record("never-used", idle_days=0, created_idle_days=200)]
     # Force last_activity_at to None explicitly
@@ -160,8 +160,8 @@ def test_prune_falls_back_to_created_at_when_never_used(monkeypatch, capsys):
 
 
 def test_prune_dry_run_makes_no_changes(monkeypatch, capsys):
-    import hermes_cli.curator as curator_cli
-    import tools.skill_usage as skill_usage
+    import zermes.hermes_cli.curator as curator_cli
+    import zermes.tools.skill_usage as skill_usage
 
     rows = [_mk_record("old-skill", idle_days=200)]
     monkeypatch.setattr(skill_usage, "agent_created_report", lambda: rows)
@@ -179,8 +179,8 @@ def test_prune_dry_run_makes_no_changes(monkeypatch, capsys):
 
 
 def test_prune_prompts_without_yes(monkeypatch, capsys):
-    import hermes_cli.curator as curator_cli
-    import tools.skill_usage as skill_usage
+    import zermes.hermes_cli.curator as curator_cli
+    import zermes.tools.skill_usage as skill_usage
 
     rows = [_mk_record("old-skill", idle_days=200)]
     monkeypatch.setattr(skill_usage, "agent_created_report", lambda: rows)
@@ -197,8 +197,8 @@ def test_prune_prompts_without_yes(monkeypatch, capsys):
 
 
 def test_prune_confirms_with_y(monkeypatch, capsys):
-    import hermes_cli.curator as curator_cli
-    import tools.skill_usage as skill_usage
+    import zermes.hermes_cli.curator as curator_cli
+    import zermes.tools.skill_usage as skill_usage
 
     rows = [_mk_record("old-skill", idle_days=200)]
     monkeypatch.setattr(skill_usage, "agent_created_report", lambda: rows)
@@ -214,8 +214,8 @@ def test_prune_confirms_with_y(monkeypatch, capsys):
 
 
 def test_prune_reports_partial_failure(monkeypatch, capsys):
-    import hermes_cli.curator as curator_cli
-    import tools.skill_usage as skill_usage
+    import zermes.hermes_cli.curator as curator_cli
+    import zermes.tools.skill_usage as skill_usage
 
     rows = [
         _mk_record("ok-skill", idle_days=200),
@@ -241,7 +241,7 @@ def test_prune_reports_partial_failure(monkeypatch, capsys):
 
 def test_archive_and_prune_registered():
     import argparse
-    import hermes_cli.curator as curator_cli
+    import zermes.hermes_cli.curator as curator_cli
 
     parser = argparse.ArgumentParser(prog="hermes curator")
     curator_cli.register_cli(parser)
@@ -259,7 +259,7 @@ def test_archive_and_prune_registered():
 
 def test_prune_defaults():
     import argparse
-    import hermes_cli.curator as curator_cli
+    import zermes.hermes_cli.curator as curator_cli
 
     parser = argparse.ArgumentParser(prog="hermes curator")
     curator_cli.register_cli(parser)

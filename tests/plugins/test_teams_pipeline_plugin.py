@@ -9,12 +9,12 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from hermes_cli.plugins import PluginContext, PluginManager, PluginManifest
-from gateway.config import GatewayConfig, Platform, PlatformConfig
-from plugins.teams_pipeline import register
-from plugins.teams_pipeline.pipeline import TeamsMeetingPipeline
-from plugins.teams_pipeline.store import TeamsPipelineStore
-from plugins.teams_pipeline.models import MeetingArtifact
+from zermes.hermes_cli.plugins import PluginContext, PluginManager, PluginManifest
+from zermes.gateway.config import GatewayConfig, Platform, PlatformConfig
+from zermes.plugins.teams_pipeline import register
+from zermes.plugins.teams_pipeline.pipeline import TeamsMeetingPipeline
+from zermes.plugins.teams_pipeline.store import TeamsPipelineStore
+from zermes.plugins.teams_pipeline.models import MeetingArtifact
 
 
 class FakeGraphClient:
@@ -23,7 +23,7 @@ class FakeGraphClient:
 
 
 async def _transcript_meeting_resolver(client, *, meeting_id=None, join_web_url=None, tenant_id=None):
-    from plugins.teams_pipeline.models import TeamsMeetingRef
+    from zermes.plugins.teams_pipeline.models import TeamsMeetingRef
 
     return TeamsMeetingRef(
         meeting_id=str(meeting_id),
@@ -51,7 +51,7 @@ def test_register_adds_cli_only():
 
 
 def test_runtime_config_uses_existing_teams_platform_settings():
-    from plugins.teams_pipeline.runtime import build_pipeline_runtime_config
+    from zermes.plugins.teams_pipeline.runtime import build_pipeline_runtime_config
 
     gateway_config = GatewayConfig(
         platforms={
@@ -83,7 +83,7 @@ def test_runtime_config_uses_existing_teams_platform_settings():
 
 
 def test_build_pipeline_runtime_reuses_existing_teams_adapter_surface(monkeypatch, tmp_path):
-    from plugins.teams_pipeline import runtime as runtime_module
+    from zermes.plugins.teams_pipeline import runtime as runtime_module
 
     class FakeWriter:
         def __init__(self, platform_config=None, **kwargs) -> None:
@@ -91,7 +91,7 @@ def test_build_pipeline_runtime_reuses_existing_teams_adapter_surface(monkeypatc
 
     monkeypatch.setattr(runtime_module, "build_graph_client", lambda: object())
     monkeypatch.setattr(runtime_module, "resolve_teams_pipeline_store_path", lambda: tmp_path / "teams-store.json")
-    monkeypatch.setattr("plugins.platforms.teams.adapter.TeamsSummaryWriter", FakeWriter)
+    monkeypatch.setattr("zermes.plugins.platforms.teams.adapter.TeamsSummaryWriter", FakeWriter)
 
     gateway = SimpleNamespace(
         config=GatewayConfig(
@@ -110,12 +110,12 @@ def test_build_pipeline_runtime_reuses_existing_teams_adapter_surface(monkeypatc
     runtime = runtime_module.build_pipeline_runtime(gateway)
 
     assert isinstance(runtime.teams_sender, FakeWriter)
-    assert runtime.teams_sender.platform_config is gateway.config.platforms[Platform("teams")]
+    assert runtime.teams_sender.platform_config is zermes.gateway.config.platforms[Platform("teams")]
 
 
 @pytest.mark.anyio
 async def test_bind_gateway_runtime_attaches_scheduler(monkeypatch, tmp_path):
-    from plugins.teams_pipeline import runtime as runtime_module
+    from zermes.plugins.teams_pipeline import runtime as runtime_module
 
     class FakeAdapter:
         def __init__(self) -> None:
@@ -145,7 +145,7 @@ async def test_bind_gateway_runtime_attaches_scheduler(monkeypatch, tmp_path):
     bound = runtime_module.bind_gateway_runtime(gateway)
 
     assert bound is True
-    assert gateway._teams_pipeline_runtime is pipeline
+    assert zermes.gateway._teams_pipeline_runtime is pipeline
     assert callable(adapter.scheduler)
 
     notification = {"id": "notif-1"}
@@ -155,8 +155,8 @@ async def test_bind_gateway_runtime_attaches_scheduler(monkeypatch, tmp_path):
 
 @pytest.mark.anyio
 async def test_bind_gateway_runtime_drops_notifications_when_unavailable(monkeypatch):
-    from plugins.teams_pipeline import runtime as runtime_module
-    from tools.microsoft_graph_auth import MicrosoftGraphConfigError
+    from zermes.plugins.teams_pipeline import runtime as runtime_module
+    from zermes.tools.microsoft_graph_auth import MicrosoftGraphConfigError
 
     class FakeAdapter:
         def __init__(self) -> None:
@@ -181,7 +181,7 @@ async def test_bind_gateway_runtime_drops_notifications_when_unavailable(monkeyp
     bound = runtime_module.bind_gateway_runtime(gateway)
 
     assert bound is False
-    assert "missing graph env" in gateway._teams_pipeline_runtime_error
+    assert "missing graph env" in zermes.gateway._teams_pipeline_runtime_error
     assert callable(adapter.scheduler)
     await adapter.scheduler({"id": "notif-2"}, object())
 
@@ -232,7 +232,7 @@ def test_store_notification_receipts_are_idempotent(tmp_path):
 @pytest.mark.anyio
 class TestTeamsMeetingPipeline:
     async def test_transcript_first_path_persists_state_and_skips_recording(self, tmp_path, monkeypatch):
-        from plugins.teams_pipeline import pipeline as pipeline_module
+        from zermes.plugins.teams_pipeline import pipeline as pipeline_module
 
         monkeypatch.setattr(pipeline_module, "resolve_meeting_reference", _transcript_meeting_resolver)
 
@@ -292,7 +292,7 @@ class TestTeamsMeetingPipeline:
         assert stored["status"] == "completed"
 
     async def test_recording_fallback_uses_stt_and_updates_sink_records(self, tmp_path, monkeypatch):
-        from plugins.teams_pipeline import pipeline as pipeline_module
+        from zermes.plugins.teams_pipeline import pipeline as pipeline_module
 
         monkeypatch.setattr(pipeline_module, "resolve_meeting_reference", _transcript_meeting_resolver)
 
@@ -384,7 +384,7 @@ class TestTeamsMeetingPipeline:
         assert teams_record["message_id"] == "msg-1"
 
     async def test_missing_transcript_and_recording_schedules_retry(self, tmp_path, monkeypatch):
-        from plugins.teams_pipeline import pipeline as pipeline_module
+        from zermes.plugins.teams_pipeline import pipeline as pipeline_module
 
         monkeypatch.setattr(pipeline_module, "resolve_meeting_reference", _transcript_meeting_resolver)
         monkeypatch.setattr(pipeline_module, "fetch_preferred_transcript_text", lambda *a, **kw: asyncio.sleep(0, result=(None, None)))
@@ -412,7 +412,7 @@ class TestTeamsMeetingPipeline:
         assert "Recording unavailable" in job.error_info["message"]
 
     async def test_duplicate_notification_reuses_completed_job(self, tmp_path, monkeypatch):
-        from plugins.teams_pipeline import pipeline as pipeline_module
+        from zermes.plugins.teams_pipeline import pipeline as pipeline_module
 
         monkeypatch.setattr(pipeline_module, "resolve_meeting_reference", _transcript_meeting_resolver)
 

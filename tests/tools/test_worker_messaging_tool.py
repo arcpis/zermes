@@ -1,9 +1,9 @@
 import json
 
-from hermes_cli import worker_agents_product as product
-from tools import worker_messaging_tool as messaging
-from tools import worker_task_state as task_state
-from worker_agents.message_router import (
+from zermes.hermes_cli import worker_agents_product as product
+from zermes.tools import worker_messaging_tool as messaging
+from zermes.tools import worker_task_state as task_state
+from zermes.worker_agents.message_router import (
     ChatMessageType,
     ChatParticipantKind,
     ChatParticipantRef,
@@ -12,7 +12,7 @@ from worker_agents.message_router import (
     MessageVisibility,
     WorkerMessageEnvelope,
 )
-from worker_agents.runtime_contract import RuntimeResult, RuntimeState, RuntimeType
+from zermes.worker_agents.runtime_contract import RuntimeResult, RuntimeState, RuntimeType
 
 
 def _worker(worker_id: str, *, status: str = "enabled") -> dict:

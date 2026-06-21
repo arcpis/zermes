@@ -23,7 +23,7 @@ import pytest
 
 def _make_session_db(tmp_path):
     """Create a real SessionDB for integration-style tests."""
-    from hermes_state import SessionDB
+    from zermes.hermes_state import SessionDB
     db_path = tmp_path / "test_state.db"
     return SessionDB(db_path=db_path)
 
@@ -53,15 +53,15 @@ def _tui_session(agent=None, session_key="session-key-old", **extra):
 # ===========================================================================
 
 class TestFinalizeSessionUsesAgentSessionId:
-    """After compression rotates agent.session_id, _finalize_session()
+    """After compression rotates zermes.agent.session_id, _finalize_session()
     must call end_session() on the NEW (current) session_id, not the stale
     session_key stored in the session dict."""
 
     def test_finalize_targets_agent_session_id_not_stale_key(self, tmp_path):
-        """Reproduction: agent.session_id rotated by compression, but
+        """Reproduction: zermes.agent.session_id rotated by compression, but
         session['session_key'] still holds old value. _finalize_session()
         should end the agent's current session."""
-        from tui_gateway import server
+        from zermes.tui_gateway import server
 
         db = _make_session_db(tmp_path)
 
@@ -106,7 +106,7 @@ class TestFinalizeSessionUsesAgentSessionId:
     def test_finalize_fallback_to_session_key_when_agent_is_none(self, tmp_path):
         """When agent is None (e.g. session never fully initialized),
         _finalize_session falls back to session_key."""
-        from tui_gateway import server
+        from zermes.tui_gateway import server
 
         db = _make_session_db(tmp_path)
         db.create_session(session_id="orphan-key", source="tui", model="test")
@@ -133,8 +133,8 @@ class TestSyncSessionKeyAfterAutoCompress:
 
     def test_session_key_synced_after_run_conversation_with_compression(self, monkeypatch):
         """Simulate: run_conversation() internally compresses and rotates
-        agent.session_id. After it returns, session['session_key'] must match."""
-        from tui_gateway import server
+        zermes.agent.session_id. After it returns, session['session_key'] must match."""
+        from zermes.tui_gateway import server
 
         class _CompressingAgent:
             """Agent that simulates compression-driven session_id rotation."""
@@ -195,9 +195,9 @@ class TestSyncSessionKeyAfterAutoCompress:
                 "to pick up compression-driven session_id rotation"
             )
 
-            # session_key should now match agent.session_id
+            # session_key should now match zermes.agent.session_id
             assert session["session_key"] == "post-compress-key", (
-                "session_key must be updated to match agent.session_id after compression"
+                "session_key must be updated to match zermes.agent.session_id after compression"
             )
         finally:
             server._sessions.pop("test-sid", None)
@@ -213,7 +213,7 @@ class TestPendingTitleValueError:
 
     def test_valueerror_clears_pending_title(self, monkeypatch):
         """ValueError from set_session_title should drop pending_title."""
-        from tui_gateway import server
+        from zermes.tui_gateway import server
 
         mock_db = MagicMock()
         mock_db.set_session_title.side_effect = ValueError("duplicate title")
@@ -267,7 +267,7 @@ class TestPendingTitleValueError:
 
     def test_other_exception_keeps_pending_title_for_retry(self, monkeypatch):
         """Non-ValueError exceptions should keep pending_title for retry."""
-        from tui_gateway import server
+        from zermes.tui_gateway import server
 
         mock_db = MagicMock()
         mock_db.set_session_title.side_effect = RuntimeError("transient DB lock")
@@ -331,7 +331,7 @@ class TestGatewaySurfacesNullResponse:
 
     def test_partial_response_surfaces_error(self):
         """Agent returns partial=True with no response → user sees error."""
-        from gateway.run import _normalize_empty_agent_response
+        from zermes.gateway.run import _normalize_empty_agent_response
 
         agent_result = {
             "final_response": None,
@@ -351,7 +351,7 @@ class TestGatewaySurfacesNullResponse:
 
     def test_interrupted_response_stays_empty(self):
         """Interrupted agent → response stays empty (platform handles UX)."""
-        from gateway.run import _normalize_empty_agent_response
+        from zermes.gateway.run import _normalize_empty_agent_response
 
         agent_result = {
             "final_response": None,
@@ -369,7 +369,7 @@ class TestGatewaySurfacesNullResponse:
 
     def test_failed_context_overflow(self):
         """Agent failed with context overflow → specific guidance message."""
-        from gateway.run import _normalize_empty_agent_response
+        from zermes.gateway.run import _normalize_empty_agent_response
 
         agent_result = {
             "final_response": None,
@@ -388,7 +388,7 @@ class TestGatewaySurfacesNullResponse:
 
     def test_failed_generic_error(self):
         """Agent failed with non-context error → generic error message."""
-        from gateway.run import _normalize_empty_agent_response
+        from zermes.gateway.run import _normalize_empty_agent_response
 
         agent_result = {
             "final_response": None,
@@ -407,7 +407,7 @@ class TestGatewaySurfacesNullResponse:
 
     def test_nonempty_response_passes_through(self):
         """Non-empty response is returned unchanged."""
-        from gateway.run import _normalize_empty_agent_response
+        from zermes.gateway.run import _normalize_empty_agent_response
 
         agent_result = {"final_response": "Hello!", "api_calls": 1}
         response = "Hello!"

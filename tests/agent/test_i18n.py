@@ -1,4 +1,4 @@
-"""Tests for agent.i18n -- catalog parity, fallback, language resolution."""
+"""Tests for zermes.agent.i18n -- catalog parity, fallback, language resolution."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from agent import i18n
+from zermes.agent import i18n
 
 
 LOCALES_DIR = Path(__file__).resolve().parents[2] / "locales"
@@ -137,7 +137,7 @@ def test_t_explicit_lang():
 
 
 def test_t_formats_placeholders():
-    msg = i18n.t("gateway.draining", lang="en", count=3)
+    msg = i18n.t("zermes.gateway.draining", lang="en", count=3)
     assert "3" in msg
 
 

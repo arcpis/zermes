@@ -1,4 +1,4 @@
-"""Tests for utils.atomic_yaml_write — crash-safe YAML file writes."""
+"""Tests for zermes.utils.atomic_yaml_write — crash-safe YAML file writes."""
 
 from pathlib import Path
 from unittest.mock import patch
@@ -6,7 +6,7 @@ from unittest.mock import patch
 import pytest
 import yaml
 
-from utils import atomic_yaml_write
+from zermes.utils import atomic_yaml_write
 
 
 class TestAtomicYamlWrite:
@@ -26,7 +26,7 @@ class TestAtomicYamlWrite:
         original = {"preserved": True}
         target.write_text(yaml.safe_dump(original), encoding="utf-8")
 
-        with patch("utils.yaml.dump", side_effect=SimulatedAbort):
+        with patch("zermes.utils.yaml.dump", side_effect=SimulatedAbort):
             with pytest.raises(SimulatedAbort):
                 atomic_yaml_write(target, {"new": True})
 

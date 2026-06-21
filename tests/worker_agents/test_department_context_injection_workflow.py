@@ -1,4 +1,4 @@
-from worker_agents import (
+from zermes.worker_agents import (
     DepartmentContextBuildInput,
     DepartmentContextCandidate,
     DepartmentContextInjectionLimits,
@@ -9,7 +9,7 @@ from worker_agents import (
     render_department_context_bundle,
     select_department_context_assets,
 )
-from worker_agents.runtime_boundary import (
+from zermes.worker_agents.runtime_boundary import (
     AgentRuntimeLifecycle,
     AgentRuntimePersona,
     AgentRuntimeRole,

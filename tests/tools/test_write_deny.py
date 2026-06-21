@@ -4,7 +4,7 @@ import os
 import pytest
 from pathlib import Path
 
-from tools.file_operations import _is_write_denied
+from zermes.tools.file_operations import _is_write_denied
 
 
 class TestWriteDenyExactPaths:
@@ -37,7 +37,7 @@ class TestWriteDenyExactPaths:
         # ``~/.hermes``) must be write-denied. The hermetic test conftest
         # points HERMES_HOME at a tempdir — resolve via get_hermes_home()
         # to match the denylist.
-        from hermes_constants import get_hermes_home
+        from zermes.hermes_constants import get_hermes_home
         path = str(get_hermes_home() / ".env")
         assert _is_write_denied(path) is True
 

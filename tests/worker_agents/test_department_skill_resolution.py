@@ -1,4 +1,4 @@
-from worker_agents.department_skills import (
+from zermes.worker_agents.department_skills import (
     DepartmentSkillBindingProposal,
     DepartmentSkillBindingState,
     DepartmentSkillBindingStore,

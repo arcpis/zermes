@@ -1,25 +1,25 @@
-from worker_agents.message_broadcasts import (
+from zermes.worker_agents.message_broadcasts import (
     BroadcastImportance,
     BroadcastTarget,
     BroadcastTargetKind,
 )
-from worker_agents.message_followups import (
+from zermes.worker_agents.message_followups import (
     FollowUpKind,
     MentionTimeoutPolicy,
 )
-from worker_agents.message_mentions import (
+from zermes.worker_agents.message_mentions import (
     MentionDeliveryStatus,
     MentionDeliveryUpdate,
     resolve_mention_targets,
 )
-from worker_agents.message_router import (
+from zermes.worker_agents.message_router import (
     ChatMessageType,
     ChatParticipantKind,
     ChatParticipantRef,
     MessageRouter,
     WorkerMessageEnvelope,
 )
-from worker_agents.registry import WorkerLifecycleStatus
+from zermes.worker_agents.registry import WorkerLifecycleStatus
 
 
 def _router_with_frontend_mention(deadline_at: str = "2026-05-20T00:30:00Z"):

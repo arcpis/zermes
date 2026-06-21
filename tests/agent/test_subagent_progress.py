@@ -15,8 +15,8 @@ import threading
 import pytest
 from unittest.mock import MagicMock, patch
 
-from agent.display import KawaiiSpinner
-from tools.delegate_tool import _build_child_progress_callback
+from zermes.agent.display import KawaiiSpinner
+from zermes.tools.delegate_tool import _build_child_progress_callback
 
 
 # =========================================================================
@@ -224,14 +224,14 @@ class TestBuildChildProgressCallback:
 
 
 # =========================================================================
-# Integration: thinking callback in run_agent.py
+# Integration: thinking callback in zermes.run_agent.py
 # =========================================================================
 
 class TestThinkingCallback:
     """Tests for the _thinking callback in AIAgent conversation loop."""
 
     def _simulate_thinking_callback(self, content, callback, delegate_depth=1):
-        """Simulate the exact code path from run_agent.py for the thinking callback.
+        """Simulate the exact code path from zermes.run_agent.py for the thinking callback.
         
         delegate_depth: simulates self._delegate_depth.
             0 = main agent (should NOT fire), >=1 = subagent (should fire).

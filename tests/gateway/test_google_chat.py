@@ -20,7 +20,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from gateway.config import Platform, PlatformConfig, load_gateway_config
+from zermes.gateway.config import Platform, PlatformConfig, load_gateway_config
 
 
 # ---------------------------------------------------------------------------
@@ -120,12 +120,12 @@ _ensure_google_mocks()
 # (which targets bare ``import adapter`` / ``from adapter import …`` and
 # ``sys.path.insert`` into ``plugins/platforms/``) does not flag this
 # fully-qualified form.
-import plugins.platforms.google_chat.adapter as _gc_mod  # noqa: E402
+import zermes.plugins.platforms.google_chat.adapter as _gc_mod  # noqa: E402
 
 _gc_mod.GOOGLE_CHAT_AVAILABLE = True
 
-from gateway.platforms.base import MessageEvent, MessageType, ProcessingOutcome  # noqa: E402
-from plugins.platforms.google_chat.adapter import (  # noqa: E402
+from zermes.gateway.platforms.base import MessageEvent, MessageType, ProcessingOutcome  # noqa: E402
+from zermes.plugins.platforms.google_chat.adapter import (  # noqa: E402
     GoogleChatAdapter,
     _is_google_owned_host,
     _mime_for_message_type,
@@ -158,7 +158,7 @@ def adapter(tmp_path):
     don't pollute (or read state from) the developer's real
     ~/.hermes/google_chat_thread_counts.json.
     """
-    from plugins.platforms.google_chat.adapter import _ThreadCountStore
+    from zermes.plugins.platforms.google_chat.adapter import _ThreadCountStore
     a = GoogleChatAdapter(_base_config())
     a._loop = asyncio.get_event_loop_policy().new_event_loop()
     a._chat_api = MagicMock()
@@ -851,7 +851,7 @@ class TestSend:
         # After patch, the typing slot holds the consumed sentinel so the
         # base class's _keep_typing loop cannot post a fresh marker that
         # the cleanup pass would later delete and tombstone.
-        from plugins.platforms.google_chat.adapter import _TYPING_CONSUMED_SENTINEL
+        from zermes.plugins.platforms.google_chat.adapter import _TYPING_CONSUMED_SENTINEL
         assert adapter._typing_messages["spaces/S"] == _TYPING_CONSUMED_SENTINEL
 
     @pytest.mark.asyncio
@@ -1033,7 +1033,7 @@ class TestTypingLifecycle:
         _orphan_typing_messages. on_processing_complete must patch each
         orphan to a benign marker so users don't see stuck
         'Hermes is thinking…' messages."""
-        from plugins.platforms.google_chat.adapter import _TYPING_CONSUMED_SENTINEL
+        from zermes.plugins.platforms.google_chat.adapter import _TYPING_CONSUMED_SENTINEL
         adapter._orphan_typing_messages["spaces/S"] = [
             "spaces/S/messages/ORPHAN1",
             "spaces/S/messages/ORPHAN2",
@@ -1076,7 +1076,7 @@ class TestTypingLifecycle:
     async def test_stop_typing_pops_sentinel(self, adapter):
         """After send() patches the typing card, the slot holds the
         sentinel; stop_typing pops it so the next turn starts fresh."""
-        from plugins.platforms.google_chat.adapter import _TYPING_CONSUMED_SENTINEL
+        from zermes.plugins.platforms.google_chat.adapter import _TYPING_CONSUMED_SENTINEL
         adapter._typing_messages["spaces/S"] = _TYPING_CONSUMED_SENTINEL
         await adapter.stop_typing("spaces/S")
         assert "spaces/S" not in adapter._typing_messages
@@ -1091,7 +1091,7 @@ class TestTypingLifecycle:
     @pytest.mark.asyncio
     async def test_on_processing_complete_pops_sentinel_on_success(self, adapter):
         """SUCCESS path: send() set the sentinel; cleanup just pops it."""
-        from plugins.platforms.google_chat.adapter import _TYPING_CONSUMED_SENTINEL
+        from zermes.plugins.platforms.google_chat.adapter import _TYPING_CONSUMED_SENTINEL
         adapter._typing_messages["spaces/S"] = _TYPING_CONSUMED_SENTINEL
         adapter._patch_message = AsyncMock()
         event = MagicMock()
@@ -1177,8 +1177,8 @@ class TestEditMessage:
         If our subclass doesn't override edit_message, no tool progress is
         ever shown to the user — so this test guards against a future
         accidental removal."""
-        from gateway.platforms.base import BasePlatformAdapter
-        from plugins.platforms.google_chat.adapter import GoogleChatAdapter
+        from zermes.gateway.platforms.base import BasePlatformAdapter
+        from zermes.plugins.platforms.google_chat.adapter import GoogleChatAdapter
         assert GoogleChatAdapter.edit_message is not BasePlatformAdapter.edit_message
 
 
@@ -1404,26 +1404,26 @@ class TestUserOAuthHelper:
         """Missing token file is the expected no-op case (user hasn't
         run /setup-files yet). Must NOT raise."""
         monkeypatch.setenv("HERMES_HOME", str(tmp_path))
-        from plugins.platforms.google_chat.oauth import load_user_credentials
+        from zermes.plugins.platforms.google_chat.oauth import load_user_credentials
         assert load_user_credentials() is None
 
     def test_load_user_credentials_returns_none_on_corrupt_token(self, tmp_path, monkeypatch):
         monkeypatch.setenv("HERMES_HOME", str(tmp_path))
         (tmp_path / "google_chat_user_token.json").write_text("not json")
-        from plugins.platforms.google_chat.oauth import load_user_credentials
+        from zermes.plugins.platforms.google_chat.oauth import load_user_credentials
         assert load_user_credentials() is None
 
     def test_scopes_are_minimal(self):
         """The OAuth flow should request ONLY chat.messages.create — no
         Drive, no broader Chat scopes. Defends against scope creep."""
-        from plugins.platforms.google_chat.oauth import SCOPES
+        from zermes.plugins.platforms.google_chat.oauth import SCOPES
         assert SCOPES == ["https://www.googleapis.com/auth/chat.messages.create"]
 
     def test_sanitize_email_lowercases_and_replaces_unsafe_chars(self):
         """Path components must be filesystem-safe across users.
         ``a@B.com`` and ``A@b.com`` must collapse to the same key, and
         path-traversal characters must NOT escape into the filename."""
-        from plugins.platforms.google_chat.oauth import _sanitize_email
+        from zermes.plugins.platforms.google_chat.oauth import _sanitize_email
         assert _sanitize_email("Ramon@NTTData.com") == "ramon@nttdata.com"
         assert _sanitize_email("user+tag@x.io") == "user_tag@x.io"
         # Slashes are stripped (path separator); dots inside names are
@@ -1436,7 +1436,7 @@ class TestUserOAuthHelper:
         """Per-user files live under a dedicated subdirectory so the
         legacy single-user JSON stays addressable on disk."""
         monkeypatch.setenv("HERMES_HOME", str(tmp_path))
-        from plugins.platforms.google_chat.oauth import (
+        from zermes.plugins.platforms.google_chat.oauth import (
             _token_path, _legacy_token_path,
         )
         per_user = _token_path("alice@example.com")
@@ -1451,7 +1451,7 @@ class TestUserOAuthHelper:
         """A user who has not authorized has no token file; load returns
         ``None`` and never throws — same contract as the legacy path."""
         monkeypatch.setenv("HERMES_HOME", str(tmp_path))
-        from plugins.platforms.google_chat.oauth import load_user_credentials
+        from zermes.plugins.platforms.google_chat.oauth import load_user_credentials
         assert load_user_credentials("nobody@example.com") is None
 
     def test_list_authorized_emails_lists_per_user_files(
@@ -1467,7 +1467,7 @@ class TestUserOAuthHelper:
         # Legacy file should NOT appear in the list.
         (tmp_path / "google_chat_user_token.json").write_text("{}")
 
-        from plugins.platforms.google_chat.oauth import list_authorized_emails
+        from zermes.plugins.platforms.google_chat.oauth import list_authorized_emails
         assert list_authorized_emails() == [
             "alice@example.com", "bob@example.com",
         ]
@@ -1476,7 +1476,7 @@ class TestUserOAuthHelper:
         self, tmp_path, monkeypatch
     ):
         monkeypatch.setenv("HERMES_HOME", str(tmp_path))
-        from plugins.platforms.google_chat.oauth import list_authorized_emails
+        from zermes.plugins.platforms.google_chat.oauth import list_authorized_emails
         assert list_authorized_emails() == []
 
     def test_pending_auth_path_is_per_user_when_email_given(
@@ -1486,7 +1486,7 @@ class TestUserOAuthHelper:
         clobber each other's PKCE verifier — the pending state file
         is namespaced by email."""
         monkeypatch.setenv("HERMES_HOME", str(tmp_path))
-        from plugins.platforms.google_chat.oauth import _pending_auth_path
+        from zermes.plugins.platforms.google_chat.oauth import _pending_auth_path
         a = _pending_auth_path("alice@example.com")
         b = _pending_auth_path("bob@example.com")
         legacy = _pending_auth_path(None)
@@ -1543,7 +1543,7 @@ class TestPerUserAttachmentRouting:
         adapter._user_credentials = MagicMock(valid=True)
         adapter._consume_typing_card_with_text = AsyncMock(return_value=None)
 
-        from plugins.platforms.google_chat import oauth as helper
+        from zermes.plugins.platforms.google_chat import oauth as helper
         with patch.object(
             helper, "load_user_credentials",
             return_value=MagicMock(valid=True),
@@ -1616,7 +1616,7 @@ class TestPerUserAttachmentRouting:
 
         f = tmp_path / "x.pdf"
         f.write_bytes(b"%PDF")
-        from plugins.platforms.google_chat import oauth as helper
+        from zermes.plugins.platforms.google_chat import oauth as helper
         with patch.object(helper, "load_user_credentials", return_value=None):
             result = await adapter._send_file(
                 "spaces/S", str(f), caption=None,
@@ -1679,7 +1679,7 @@ class TestPerUserAttachmentRouting:
             return_value=type("R", (), {"success": True, "message_id": "m",
                                         "error": None})()
         )
-        from plugins.platforms.google_chat import oauth as helper
+        from zermes.plugins.platforms.google_chat import oauth as helper
         # Stub the costly bits; we're verifying routing, not OAuth I/O.
         alice_creds = MagicMock(valid=True)
         with patch.object(helper, "exchange_auth_code") as ex, \
@@ -1722,7 +1722,7 @@ class TestPerUserAttachmentRouting:
                                         "error": None})()
         )
 
-        from plugins.platforms.google_chat import oauth as helper
+        from zermes.plugins.platforms.google_chat import oauth as helper
         with patch.object(helper, "revoke") as rev:
             await adapter._handle_setup_files_command(
                 chat_id="spaces/S",
@@ -1747,7 +1747,7 @@ class TestPerUserAttachmentRouting:
 
 class TestThreadCountStore:
     def test_missing_file_returns_zero_counts(self, tmp_path):
-        from plugins.platforms.google_chat.adapter import _ThreadCountStore
+        from zermes.plugins.platforms.google_chat.adapter import _ThreadCountStore
         store = _ThreadCountStore(tmp_path / "nonexistent.json")
         store.load()
         assert store.get("spaces/X", "spaces/X/threads/T") == 0
@@ -1755,7 +1755,7 @@ class TestThreadCountStore:
     def test_corrupt_json_treated_as_empty(self, tmp_path):
         """A garbage file shouldn't crash the adapter — log warn, treat
         as fresh, move on. The next incr() will overwrite."""
-        from plugins.platforms.google_chat.adapter import _ThreadCountStore
+        from zermes.plugins.platforms.google_chat.adapter import _ThreadCountStore
         path = tmp_path / "counts.json"
         path.write_text("not valid json {")
         store = _ThreadCountStore(path)
@@ -1773,7 +1773,7 @@ class TestThreadCountStore:
         """The PRE-increment count is the heuristic input — it answers
         'have we seen this thread BEFORE this message?'. Off-by-one in
         either direction would break the main-flow vs side-thread call."""
-        from plugins.platforms.google_chat.adapter import _ThreadCountStore
+        from zermes.plugins.platforms.google_chat.adapter import _ThreadCountStore
         store = _ThreadCountStore(tmp_path / "counts.json")
         store.load()
         assert store.incr("spaces/X", "spaces/X/threads/T") == 0
@@ -1785,7 +1785,7 @@ class TestThreadCountStore:
         """Two store instances on the same file behave like a single
         store split across a process boundary. This is the exact
         restart-safety property the store exists to provide."""
-        from plugins.platforms.google_chat.adapter import _ThreadCountStore
+        from zermes.plugins.platforms.google_chat.adapter import _ThreadCountStore
         path = tmp_path / "counts.json"
 
         store_a = _ThreadCountStore(path)
@@ -1805,7 +1805,7 @@ class TestThreadCountStore:
     def test_invalid_shape_dropped_silently(self, tmp_path):
         """If someone hand-edits the file with weird shapes, drop the
         bad entries but keep the valid ones."""
-        from plugins.platforms.google_chat.adapter import _ThreadCountStore
+        from zermes.plugins.platforms.google_chat.adapter import _ThreadCountStore
         import json
         path = tmp_path / "counts.json"
         path.write_text(json.dumps({
@@ -1891,7 +1891,7 @@ class TestThreadCountStore:
 
         # Simulate restart: build a fresh adapter pointing at the SAME
         # persistence file the previous one used.
-        from plugins.platforms.google_chat.adapter import (
+        from zermes.plugins.platforms.google_chat.adapter import (
             GoogleChatAdapter, _ThreadCountStore,
         )
         store_path = adapter._thread_count_store._path
@@ -1955,7 +1955,7 @@ class TestAttachmentSSRFGuard:
             return b"%PDF-fake"
 
         monkeypatch.setattr(asyncio, "to_thread", _fake_to_thread)
-        from plugins.platforms.google_chat import adapter as gc_mod
+        from zermes.plugins.platforms.google_chat import adapter as gc_mod
         monkeypatch.setattr(
             gc_mod, "cache_document_from_bytes",
             lambda data, ext=None, filename=None: str(tmp_path / "out.pdf"),
@@ -2110,7 +2110,7 @@ class TestOutboundRetry:
         reply with no visible failure. The wrapper's sleep is patched
         out so the test runs instantly.
         """
-        from plugins.platforms.google_chat import adapter as gc_mod
+        from zermes.plugins.platforms.google_chat import adapter as gc_mod
         async def _no_sleep(*_a, **_kw):
             return None
         monkeypatch.setattr(gc_mod.asyncio, "sleep", _no_sleep)
@@ -2133,7 +2133,7 @@ class TestOutboundRetry:
     @pytest.mark.asyncio
     async def test_gives_up_after_max_attempts(self, adapter, monkeypatch):
         """Three consecutive 503s exhaust the retry budget; the call raises."""
-        from plugins.platforms.google_chat import adapter as gc_mod
+        from zermes.plugins.platforms.google_chat import adapter as gc_mod
         async def _no_sleep(*_a, **_kw):
             return None
         monkeypatch.setattr(gc_mod.asyncio, "sleep", _no_sleep)
@@ -2150,7 +2150,7 @@ class TestOutboundRetry:
     @pytest.mark.asyncio
     async def test_does_not_retry_on_400(self, adapter, monkeypatch):
         """A 400 (client error) is permanent — no retry, fails immediately."""
-        from plugins.platforms.google_chat import adapter as gc_mod
+        from zermes.plugins.platforms.google_chat import adapter as gc_mod
         async def _no_sleep(*_a, **_kw):
             return None
         monkeypatch.setattr(gc_mod.asyncio, "sleep", _no_sleep)
@@ -2166,7 +2166,7 @@ class TestOutboundRetry:
 
     def test_is_retryable_error_classifier(self):
         """Spot-check the retryable-error taxonomy."""
-        from plugins.platforms.google_chat.adapter import _is_retryable_error
+        from zermes.plugins.platforms.google_chat.adapter import _is_retryable_error
 
         # Retryable: 429, 5xx, timeout-flavored exceptions
         assert _is_retryable_error(_FakeHttpError(status=429, reason="rate"))
@@ -2362,7 +2362,7 @@ class TestADCFallback:
 class TestGoogleChatInteractiveSetup:
     def test_interactive_setup_uses_shared_cli_prompt_helpers(self, monkeypatch):
         """Google Chat setup should not import prompt helpers from config.py."""
-        from plugins.platforms.google_chat import adapter as gc_mod
+        from zermes.plugins.platforms.google_chat import adapter as gc_mod
 
         saved: dict[str, str] = {}
         answers = {
@@ -2386,20 +2386,20 @@ class TestGoogleChatInteractiveSetup:
         def fake_prompt(question, default=None, password=False):
             return answers.get(question, default or "")
 
-        monkeypatch.setattr("hermes_cli.config.get_env_value", fake_get_env_value)
-        monkeypatch.setattr("hermes_cli.config.save_env_value", fake_save_env_value)
-        monkeypatch.setattr("hermes_cli.cli_output.prompt", fake_prompt)
+        monkeypatch.setattr("zermes.hermes_cli.config.get_env_value", fake_get_env_value)
+        monkeypatch.setattr("zermes.hermes_cli.config.save_env_value", fake_save_env_value)
+        monkeypatch.setattr("zermes.hermes_cli.cli_output.prompt", fake_prompt)
         monkeypatch.setattr(
-            "hermes_cli.cli_output.prompt_yes_no", lambda *_a, **_kw: True
+            "zermes.hermes_cli.cli_output.prompt_yes_no", lambda *_a, **_kw: True
         )
         monkeypatch.setattr(
-            "hermes_cli.cli_output.print_info", lambda *_a, **_kw: None
+            "zermes.hermes_cli.cli_output.print_info", lambda *_a, **_kw: None
         )
         monkeypatch.setattr(
-            "hermes_cli.cli_output.print_success", lambda *_a, **_kw: None
+            "zermes.hermes_cli.cli_output.print_success", lambda *_a, **_kw: None
         )
         monkeypatch.setattr(
-            "hermes_cli.cli_output.print_warning", lambda *_a, **_kw: None
+            "zermes.hermes_cli.cli_output.print_warning", lambda *_a, **_kw: None
         )
 
         gc_mod.interactive_setup()
@@ -2427,7 +2427,7 @@ class TestSupervisorReconnect:
         async def _instant(*args, **kwargs):
             return None
         monkeypatch.setattr(
-            "plugins.platforms.google_chat.adapter.asyncio.sleep", _instant
+            "zermes.plugins.platforms.google_chat.adapter.asyncio.sleep", _instant
         )
 
         def _fail(*args, **kwargs):
@@ -2461,9 +2461,9 @@ class TestAuthorizationEmailMatch:
         The adapter assigns ``user_id = sender_email`` so the generic
         check_ids path picks it up. No platform-specific bridge needed.
         """
-        from gateway.config import GatewayConfig
-        from gateway.run import GatewayRunner
-        from gateway.session import SessionSource
+        from zermes.gateway.config import GatewayConfig
+        from zermes.gateway.run import GatewayRunner
+        from zermes.gateway.session import SessionSource
 
         monkeypatch.setenv("GOOGLE_CHAT_ALLOWED_USERS", "alice@example.com")
         cfg = GatewayConfig()
@@ -2482,9 +2482,9 @@ class TestAuthorizationEmailMatch:
         assert runner._is_user_authorized(source) is True
 
     def test_allowlist_denies_wrong_email(self, monkeypatch):
-        from gateway.config import GatewayConfig
-        from gateway.run import GatewayRunner
-        from gateway.session import SessionSource
+        from zermes.gateway.config import GatewayConfig
+        from zermes.gateway.run import GatewayRunner
+        from zermes.gateway.session import SessionSource
 
         monkeypatch.setenv("GOOGLE_CHAT_ALLOWED_USERS", "alice@example.com")
         cfg = GatewayConfig()
@@ -2508,9 +2508,9 @@ class TestAuthorizationEmailMatch:
         """If sender has no email, ``user_id`` falls back to the resource
         name. Operators who allowlist by ``users/{id}`` still match.
         """
-        from gateway.config import GatewayConfig
-        from gateway.run import GatewayRunner
-        from gateway.session import SessionSource
+        from zermes.gateway.config import GatewayConfig
+        from zermes.gateway.run import GatewayRunner
+        from zermes.gateway.session import SessionSource
 
         monkeypatch.setenv("GOOGLE_CHAT_ALLOWED_USERS", "users/77777")
         cfg = GatewayConfig()
@@ -2550,38 +2550,38 @@ class TestCronSchedulerRegistry:
         discover + manually invoke the register hook so the resolver sees
         ``cron_deliver_env_var``.
         """
-        from gateway.platform_registry import platform_registry
+        from zermes.gateway.platform_registry import platform_registry
         if platform_registry.get("google_chat") is not None:
             return
         # Discover first so the plugin is loaded at all.
         try:
-            from hermes_cli.plugins import discover_plugins
+            from zermes.hermes_cli.plugins import discover_plugins
             discover_plugins()
         except Exception:
             pass
         if platform_registry.get("google_chat") is not None:
             return
         # Fallback: construct a minimal ctx and call register directly.
-        from plugins.platforms.google_chat.adapter import register as _register
+        from zermes.plugins.platforms.google_chat.adapter import register as _register
         class _Ctx:
             class _M:
                 name = "google_chat-platform"
             manifest = _M()
             _manager = type("_Mgr", (), {"_plugin_platform_names": set()})()
             def register_platform(self, **kwargs):
-                from gateway.platform_registry import PlatformEntry
+                from zermes.gateway.platform_registry import PlatformEntry
                 entry = PlatformEntry(source="plugin", **kwargs)
                 platform_registry.register(entry)
         _register(_Ctx())
 
     def test_google_chat_is_known_delivery_platform(self):
         self._ensure_registered()
-        from cron.scheduler import _is_known_delivery_platform
+        from zermes.cron.scheduler import _is_known_delivery_platform
 
         assert _is_known_delivery_platform("google_chat") is True
 
     def test_google_chat_home_env_var_resolves(self):
         self._ensure_registered()
-        from cron.scheduler import _resolve_home_env_var
+        from zermes.cron.scheduler import _resolve_home_env_var
 
         assert _resolve_home_env_var("google_chat") == "GOOGLE_CHAT_HOME_CHANNEL"

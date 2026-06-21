@@ -1,4 +1,4 @@
-"""Tests for context token tracking in run_agent.py's usage extraction.
+"""Tests for context token tracking in zermes.run_agent.py's usage extraction.
 
 The context counter (status bar) must show the TOTAL prompt tokens including
 Anthropic's cached portions. This is an integration test for the token
@@ -14,7 +14,7 @@ sys.modules.setdefault("fire", types.SimpleNamespace(Fire=lambda *a, **k: None))
 sys.modules.setdefault("firecrawl", types.SimpleNamespace(Firecrawl=object))
 sys.modules.setdefault("fal_client", types.SimpleNamespace())
 
-import run_agent
+import zermes.run_agent as run_agent
 
 
 def _patch_bootstrap(monkeypatch):
@@ -40,14 +40,14 @@ class _FakeOpenAIClient:
 def _make_agent(monkeypatch, api_mode, provider, response_fn):
     _patch_bootstrap(monkeypatch)
     if api_mode == "anthropic_messages":
-        monkeypatch.setattr("agent.anthropic_adapter.build_anthropic_client", lambda k, b=None, **kwargs: _FakeAnthropicClient())
+        monkeypatch.setattr("zermes.agent.anthropic_adapter.build_anthropic_client", lambda k, b=None, **kwargs: _FakeAnthropicClient())
     if provider == "openai-codex":
         monkeypatch.setattr(
-            "agent.auxiliary_client.resolve_provider_client",
+            "zermes.agent.auxiliary_client.resolve_provider_client",
             lambda *a, **kw: (_FakeOpenAIClient(), "test-model"),
         )
 
-    class _A(run_agent.AIAgent):
+    class _A(zermes.run_agent.AIAgent):
         def __init__(self, *a, **kw):
             kw.update(skip_context_files=True, skip_memory=True, max_iterations=4)
             super().__init__(*a, **kw)

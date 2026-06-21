@@ -5,9 +5,9 @@ from types import SimpleNamespace
 
 import pytest
 
-from gateway.config import Platform, PlatformConfig
-from gateway.platforms.base import BasePlatformAdapter, MessageEvent, ProcessingOutcome, SendResult
-from gateway.session import SessionSource, build_session_key
+from zermes.gateway.config import Platform, PlatformConfig
+from zermes.gateway.platforms.base import BasePlatformAdapter, MessageEvent, ProcessingOutcome, SendResult
+from zermes.gateway.session import SessionSource, build_session_key
 
 
 class DummyTelegramAdapter(BasePlatformAdapter):

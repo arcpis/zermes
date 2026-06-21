@@ -13,7 +13,7 @@ the steer as an ordinary next-turn message.
 
 The fix dispatches /steer inline on the UI thread when the agent is
 running — matching the existing pattern for /model — so the steer
-reaches ``agent.steer()`` (thread-safe) without touching the queue.
+reaches ``zermes.agent.steer()`` (thread-safe) without touching the queue.
 
 These tests exercise the detector + inline dispatch without starting a
 prompt_toolkit app.
@@ -59,7 +59,7 @@ def _make_cli():
     with patch.dict(sys.modules, prompt_toolkit_stubs), patch.dict(
         "os.environ", clean_env, clear=False
     ):
-        import cli as _cli_mod
+        import zermes.cli as _cli_mod
 
         _cli_mod = importlib.reload(_cli_mod)
         with patch.object(_cli_mod, "get_tool_definitions", return_value=[]), patch.dict(
@@ -105,11 +105,11 @@ class TestSteerInlineDetector:
 
 class TestSteerBusyPathDispatch:
     """When the detector fires, process_command('/steer ...') must call
-    agent.steer() directly rather than the idle-path fallback."""
+    zermes.agent.steer() directly rather than the idle-path fallback."""
 
     def test_process_command_routes_to_agent_steer(self):
-        """With _agent_running=True and agent.steer present, /steer reaches
-        agent.steer(payload), NOT _pending_input."""
+        """With _agent_running=True and zermes.agent.steer present, /steer reaches
+        zermes.agent.steer(payload), NOT _pending_input."""
         cli = _make_cli()
         cli._agent_running = True
         cli.agent = MagicMock()
@@ -134,7 +134,7 @@ class TestSteerBusyPathDispatch:
 
         cli.process_command("/steer would-be-next-turn")
 
-        # Idle path does NOT call agent.steer
+        # Idle path does NOT call zermes.agent.steer
         cli.agent.steer.assert_not_called()
         # It puts the payload in the queue as a normal next-turn message
         cli._pending_input.put.assert_called_once_with("would-be-next-turn")

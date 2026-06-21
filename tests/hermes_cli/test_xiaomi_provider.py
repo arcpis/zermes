@@ -4,7 +4,7 @@ import os
 
 import pytest
 
-from hermes_cli.auth import (
+from zermes.hermes_cli.auth import (
     PROVIDER_REGISTRY,
     resolve_provider,
     get_api_key_provider_status,
@@ -59,12 +59,12 @@ class TestXiaomiAliases:
         assert resolve_provider(alias) == "xiaomi"
 
     def test_normalize_provider_models_py(self):
-        from hermes_cli.models import normalize_provider
+        from zermes.hermes_cli.models import normalize_provider
         assert normalize_provider("mimo") == "xiaomi"
         assert normalize_provider("xiaomi-mimo") == "xiaomi"
 
     def test_normalize_provider_providers_py(self):
-        from hermes_cli.providers import normalize_provider
+        from zermes.hermes_cli.providers import normalize_provider
         assert normalize_provider("mimo") == "xiaomi"
         assert normalize_provider("xiaomi-mimo") == "xiaomi"
 
@@ -133,7 +133,7 @@ class TestXiaomiModelCatalog:
     """Xiaomi uses dynamic model discovery via models.dev."""
 
     def test_models_dev_mapping(self):
-        from agent.models_dev import PROVIDER_TO_MODELS_DEV
+        from zermes.agent.models_dev import PROVIDER_TO_MODELS_DEV
         assert PROVIDER_TO_MODELS_DEV["xiaomi"] == "xiaomi"
 
     def test_static_model_list_fallback(self):
@@ -143,13 +143,13 @@ class TestXiaomiModelCatalog:
         names are data that changes with upstream releases and doesn't
         belong in tests.
         """
-        from hermes_cli.models import _PROVIDER_MODELS
+        from zermes.hermes_cli.models import _PROVIDER_MODELS
         assert "xiaomi" in _PROVIDER_MODELS
         assert len(_PROVIDER_MODELS["xiaomi"]) >= 1
 
     def test_list_agentic_models_mock(self, monkeypatch):
         """When models.dev returns Xiaomi data, list_agentic_models should return models."""
-        from agent import models_dev as md
+        from zermes.agent import models_dev as md
 
         fake_data = {
             "xiaomi": {
@@ -188,17 +188,17 @@ class TestXiaomiNormalization:
     """Model name normalization — Xiaomi is a direct provider."""
 
     def test_vendor_prefix_mapping(self):
-        from hermes_cli.model_normalize import _VENDOR_PREFIXES
+        from zermes.hermes_cli.model_normalize import _VENDOR_PREFIXES
         assert _VENDOR_PREFIXES.get("mimo") == "xiaomi"
 
     def test_matching_prefix_strip(self):
         """xiaomi/mimo-v2-pro should normalize to mimo-v2-pro for direct API."""
-        from hermes_cli.model_normalize import _MATCHING_PREFIX_STRIP_PROVIDERS
+        from zermes.hermes_cli.model_normalize import _MATCHING_PREFIX_STRIP_PROVIDERS
         assert "xiaomi" in _MATCHING_PREFIX_STRIP_PROVIDERS
 
     def test_lowercase_model_provider(self):
         """Xiaomi must be in _LOWERCASE_MODEL_PROVIDERS."""
-        from hermes_cli.model_normalize import _LOWERCASE_MODEL_PROVIDERS
+        from zermes.hermes_cli.model_normalize import _LOWERCASE_MODEL_PROVIDERS
         assert "xiaomi" in _LOWERCASE_MODEL_PROVIDERS
 
     def test_lowercase_subset_of_matching_prefix(self):
@@ -207,7 +207,7 @@ class TestXiaomiNormalization:
         Otherwise the .lower() code path is unreachable dead code — the
         provider check at line 422 gates entry to the block.
         """
-        from hermes_cli.model_normalize import (
+        from zermes.hermes_cli.model_normalize import (
             _LOWERCASE_MODEL_PROVIDERS,
             _MATCHING_PREFIX_STRIP_PROVIDERS,
         )
@@ -217,19 +217,19 @@ class TestXiaomiNormalization:
         )
 
     def test_normalize_strips_provider_prefix(self):
-        from hermes_cli.model_normalize import normalize_model_for_provider
+        from zermes.hermes_cli.model_normalize import normalize_model_for_provider
         result = normalize_model_for_provider("xiaomi/mimo-v2-pro", "xiaomi")
         assert result == "mimo-v2-pro"
 
     def test_normalize_bare_name_unchanged(self):
-        from hermes_cli.model_normalize import normalize_model_for_provider
+        from zermes.hermes_cli.model_normalize import normalize_model_for_provider
         result = normalize_model_for_provider("mimo-v2-pro", "xiaomi")
         assert result == "mimo-v2-pro"
 
     @pytest.mark.parametrize("empty_input", ["", None, "   "])
     def test_normalize_empty_and_none(self, empty_input):
         """None, empty, and whitespace-only inputs return empty string."""
-        from hermes_cli.model_normalize import normalize_model_for_provider
+        from zermes.hermes_cli.model_normalize import normalize_model_for_provider
         result = normalize_model_for_provider(empty_input, "xiaomi")
         assert result == ""
 
@@ -245,7 +245,7 @@ class TestXiaomiNormalization:
     ])
     def test_normalize_lowercases_mixed_case(self, input_name, expected):
         """Xiaomi's API requires lowercase model IDs — mixed case from docs must be lowered."""
-        from hermes_cli.model_normalize import normalize_model_for_provider
+        from zermes.hermes_cli.model_normalize import normalize_model_for_provider
         result = normalize_model_for_provider(input_name, "xiaomi")
         assert result == expected
 
@@ -256,7 +256,7 @@ class TestXiaomiNormalization:
     ])
     def test_normalize_strips_prefix_and_lowercases(self, input_name, expected):
         """Provider prefix stripping AND lowercasing must both work together."""
-        from hermes_cli.model_normalize import normalize_model_for_provider
+        from zermes.hermes_cli.model_normalize import normalize_model_for_provider
         result = normalize_model_for_provider(input_name, "xiaomi")
         assert result == expected
 
@@ -270,29 +270,29 @@ class TestXiaomiURLMapping:
     """Test URL → provider inference for Xiaomi endpoints."""
 
     def test_url_to_provider(self):
-        from agent.model_metadata import _URL_TO_PROVIDER
+        from zermes.agent.model_metadata import _URL_TO_PROVIDER
         assert _URL_TO_PROVIDER.get("api.xiaomimimo.com") == "xiaomi"
 
     def test_provider_prefixes(self):
-        from agent.model_metadata import _PROVIDER_PREFIXES
+        from zermes.agent.model_metadata import _PROVIDER_PREFIXES
         assert "xiaomi" in _PROVIDER_PREFIXES
         assert "mimo" in _PROVIDER_PREFIXES
         assert "xiaomi-mimo" in _PROVIDER_PREFIXES
 
     def test_infer_from_url(self):
-        from agent.model_metadata import _infer_provider_from_url
+        from zermes.agent.model_metadata import _infer_provider_from_url
         assert _infer_provider_from_url("https://api.xiaomimimo.com/v1") == "xiaomi"
 
     def test_infer_from_regional_urls(self):
         """Regional token-plan endpoints should also resolve to xiaomi."""
-        from agent.model_metadata import _infer_provider_from_url
+        from zermes.agent.model_metadata import _infer_provider_from_url
         assert _infer_provider_from_url("https://token-plan-ams.xiaomimimo.com/v1") == "xiaomi"
         assert _infer_provider_from_url("https://token-plan-cn.xiaomimimo.com/v1") == "xiaomi"
         assert _infer_provider_from_url("https://token-plan-sgp.xiaomimimo.com/v1") == "xiaomi"
 
 
 # =============================================================================
-# providers.py
+# zermes.providers.py
 # =============================================================================
 
 
@@ -300,7 +300,7 @@ class TestXiaomiProvidersModule:
     """Test Xiaomi in the unified providers module."""
 
     def test_overlay_exists(self):
-        from hermes_cli.providers import HERMES_OVERLAYS
+        from zermes.hermes_cli.providers import HERMES_OVERLAYS
         assert "xiaomi" in HERMES_OVERLAYS
         overlay = HERMES_OVERLAYS["xiaomi"]
         assert overlay.transport == "openai_chat"
@@ -308,18 +308,18 @@ class TestXiaomiProvidersModule:
         assert not overlay.is_aggregator
 
     def test_alias_resolves(self):
-        from hermes_cli.providers import normalize_provider
+        from zermes.hermes_cli.providers import normalize_provider
         assert normalize_provider("mimo") == "xiaomi"
         assert normalize_provider("xiaomi-mimo") == "xiaomi"
 
     def test_label(self):
-        from hermes_cli.providers import get_label
+        from zermes.hermes_cli.providers import get_label
         assert get_label("xiaomi") == "Xiaomi MiMo"
 
     def test_get_provider(self):
         pdef = None
         try:
-            from hermes_cli.providers import get_provider
+            from zermes.hermes_cli.providers import get_provider
             pdef = get_provider("xiaomi")
         except Exception:
             pass
@@ -338,12 +338,12 @@ class TestXiaomiAuxiliary:
 
     def test_no_flash_in_aux_models(self):
         """mimo-v2-flash must NEVER be used for automatic aux routing."""
-        from agent.auxiliary_client import _API_KEY_PROVIDER_AUX_MODELS
+        from zermes.agent.auxiliary_client import _API_KEY_PROVIDER_AUX_MODELS
         assert "xiaomi" not in _API_KEY_PROVIDER_AUX_MODELS
 
     def test_vision_model_override(self):
         """Xiaomi vision tasks should use mimo-v2.5 (multimodal), not the main model."""
-        from agent.auxiliary_client import _PROVIDER_VISION_MODELS
+        from zermes.agent.auxiliary_client import _PROVIDER_VISION_MODELS
         assert "xiaomi" in _PROVIDER_VISION_MODELS
         assert _PROVIDER_VISION_MODELS["xiaomi"] == "mimo-v2.5"
 
@@ -357,7 +357,7 @@ class TestXiaomiDoctor:
     """Verify hermes doctor recognizes Xiaomi env vars."""
 
     def test_provider_env_hints(self):
-        from hermes_cli.doctor import _PROVIDER_ENV_HINTS
+        from zermes.hermes_cli.doctor import _PROVIDER_ENV_HINTS
         assert "XIAOMI_API_KEY" in _PROVIDER_ENV_HINTS
 
 
@@ -370,7 +370,7 @@ class TestXiaomiAgentInit:
         importlib.import_module("run_agent")
 
     def test_api_mode_is_chat_completions(self):
-        from hermes_cli.providers import HERMES_OVERLAYS, TRANSPORT_TO_API_MODE
+        from zermes.hermes_cli.providers import HERMES_OVERLAYS, TRANSPORT_TO_API_MODE
         overlay = HERMES_OVERLAYS["xiaomi"]
         api_mode = TRANSPORT_TO_API_MODE[overlay.transport]
         assert api_mode == "chat_completions"

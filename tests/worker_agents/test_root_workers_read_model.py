@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 
-from worker_agents.management.root_workers import (
+from zermes.worker_agents.management.root_workers import (
     collect_enabled_root_worker_ids,
     load_worker_management_state,
 )

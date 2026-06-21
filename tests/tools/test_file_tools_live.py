@@ -1,4 +1,4 @@
-"""Live integration tests for file operations and terminal tools.
+"""Live integration tests for file operations and terminal zermes.tools.
 
 These tests run REAL commands through the LocalEnvironment -- no mocks.
 They verify that shell noise is properly filtered, commands actually work,
@@ -22,8 +22,8 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from tools.environments.local import LocalEnvironment
-from tools.file_operations import ShellFileOperations
+from zermes.tools.environments.local import LocalEnvironment
+from zermes.tools.file_operations import ShellFileOperations
 
 
 # ── Shared noise detection ───────────────────────────────────────────────

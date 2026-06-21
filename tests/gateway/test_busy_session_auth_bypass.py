@@ -26,7 +26,7 @@ sys.modules.setdefault("telegram", _tg)
 sys.modules.setdefault("telegram.constants", _tg.constants)
 sys.modules.setdefault("telegram.ext", types.ModuleType("telegram.ext"))
 
-from gateway.platforms.base import (
+from zermes.gateway.platforms.base import (
     BasePlatformAdapter,
     MessageEvent,
     MessageType,
@@ -62,7 +62,7 @@ def _make_event(text="hello", chat_id="123", user_id="user1", user_name="TestUse
 
 def _make_runner(authorized_users=None):
     """Build a minimal GatewayRunner with configurable auth."""
-    from gateway.run import GatewayRunner, _AGENT_PENDING_SENTINEL
+    from zermes.gateway.run import GatewayRunner, _AGENT_PENDING_SENTINEL
 
     if authorized_users is None:
         authorized_users = {"user1"}  # only user1 is authorized by default
@@ -106,7 +106,7 @@ class TestBusySessionAuthBypass:
     @pytest.mark.asyncio
     async def test_unauthorized_user_dropped_in_busy_path(self):
         """An unauthorized user's message must be silently dropped, not queued."""
-        from gateway.run import GatewayRunner
+        from zermes.gateway.run import GatewayRunner
 
         runner, sentinel = _make_runner(authorized_users={"user1"})
         runner._busy_input_mode = "interrupt"
@@ -143,7 +143,7 @@ class TestBusySessionAuthBypass:
     @pytest.mark.asyncio
     async def test_authorized_user_still_processed_in_busy_path(self):
         """An authorized user's message must still be processed normally."""
-        from gateway.run import GatewayRunner
+        from zermes.gateway.run import GatewayRunner
 
         runner, sentinel = _make_runner(authorized_users={"user1"})
         runner._busy_input_mode = "interrupt"
@@ -170,7 +170,7 @@ class TestBusySessionAuthBypass:
     @pytest.mark.asyncio
     async def test_unauthorized_user_during_drain_still_blocked(self):
         """Even during drain mode, unauthorized users must be dropped."""
-        from gateway.run import GatewayRunner
+        from zermes.gateway.run import GatewayRunner
 
         runner, sentinel = _make_runner(authorized_users={"user1"})
         runner._draining = True
@@ -198,7 +198,7 @@ class TestBusySessionAuthBypass:
     @pytest.mark.asyncio
     async def test_unauthorized_user_cannot_steer_active_agent(self):
         """Steer mode must not allow unauthorized users to inject mid-run guidance."""
-        from gateway.run import GatewayRunner
+        from zermes.gateway.run import GatewayRunner
 
         runner, sentinel = _make_runner(authorized_users={"user1"})
         runner._busy_input_mode = "steer"

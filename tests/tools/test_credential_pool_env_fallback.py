@@ -20,7 +20,7 @@ def _make_pconfig(provider_id="deepseek", env_vars=None):
     Default provider_id is 'deepseek' because it's a real api_key provider
     in PROVIDER_REGISTRY (needed for _seed_from_env's generic path).
     """
-    from hermes_cli.auth import ProviderConfig
+    from zermes.hermes_cli.auth import ProviderConfig
     return ProviderConfig(
         id=provider_id,
         name=provider_id.title(),
@@ -70,7 +70,7 @@ class TestCredentialPoolSeedsFromDotEnv:
         _write_env_file(isolated_hermes_home, DEEPSEEK_API_KEY="sk-dotenv-only-12345")
         assert "DEEPSEEK_API_KEY" not in os.environ
 
-        from agent.credential_pool import _seed_from_env
+        from zermes.agent.credential_pool import _seed_from_env
         entries = []
         changed, active_sources = _seed_from_env("deepseek", entries)
 
@@ -87,7 +87,7 @@ class TestCredentialPoolSeedsFromDotEnv:
         _write_env_file(isolated_hermes_home, OPENROUTER_API_KEY="sk-or-dotenv-abc")
         assert "OPENROUTER_API_KEY" not in os.environ
 
-        from agent.credential_pool import _seed_from_env
+        from zermes.agent.credential_pool import _seed_from_env
         entries = []
         changed, active_sources = _seed_from_env("openrouter", entries)
 
@@ -99,7 +99,7 @@ class TestCredentialPoolSeedsFromDotEnv:
 
     def test_empty_dotenv_no_entries(self, isolated_hermes_home):
         """No .env file, no env vars → no entries seeded (and no crash)."""
-        from agent.credential_pool import _seed_from_env
+        from zermes.agent.credential_pool import _seed_from_env
         entries = []
         changed, active_sources = _seed_from_env("deepseek", entries)
         assert changed is False
@@ -116,7 +116,7 @@ class TestAuthResolvesFromDotEnv:
         _write_env_file(isolated_hermes_home, DEEPSEEK_API_KEY="sk-dotenv-resolve-789")
         assert "DEEPSEEK_API_KEY" not in os.environ
 
-        from hermes_cli.auth import _resolve_api_key_provider_secret
+        from zermes.hermes_cli.auth import _resolve_api_key_provider_secret
         key, source = _resolve_api_key_provider_secret(
             provider_id="deepseek",
             pconfig=_make_pconfig(),
@@ -138,8 +138,8 @@ class TestAuthCredentialPoolFallback:
         mock_pool.has_credentials.return_value = True
         mock_pool.peek.return_value = mock_entry
 
-        from hermes_cli.auth import _resolve_api_key_provider_secret
-        with patch("agent.credential_pool.load_pool", return_value=mock_pool):
+        from zermes.hermes_cli.auth import _resolve_api_key_provider_secret
+        with patch("zermes.agent.credential_pool.load_pool", return_value=mock_pool):
             key, source = _resolve_api_key_provider_secret(
                 provider_id="deepseek",
                 pconfig=_make_pconfig(),
@@ -152,8 +152,8 @@ class TestAuthCredentialPoolFallback:
         mock_pool = MagicMock()
         mock_pool.has_credentials.return_value = False
 
-        from hermes_cli.auth import _resolve_api_key_provider_secret
-        with patch("agent.credential_pool.load_pool", return_value=mock_pool):
+        from zermes.hermes_cli.auth import _resolve_api_key_provider_secret
+        with patch("zermes.agent.credential_pool.load_pool", return_value=mock_pool):
             key, source = _resolve_api_key_provider_secret(
                 provider_id="deepseek",
                 pconfig=_make_pconfig(),
@@ -167,8 +167,8 @@ class TestAuthCredentialPoolFallback:
         mock_pool = MagicMock()
         mock_pool.has_credentials.return_value = True
 
-        from hermes_cli.auth import _resolve_api_key_provider_secret
-        with patch("agent.credential_pool.load_pool", return_value=mock_pool) as mp:
+        from zermes.hermes_cli.auth import _resolve_api_key_provider_secret
+        with patch("zermes.agent.credential_pool.load_pool", return_value=mock_pool) as mp:
             key, source = _resolve_api_key_provider_secret(
                 provider_id="deepseek",
                 pconfig=_make_pconfig(),
@@ -186,8 +186,8 @@ class TestAuthCredentialPoolFallback:
         mock_pool = MagicMock()
         mock_pool.has_credentials.return_value = True
 
-        from hermes_cli.auth import _resolve_api_key_provider_secret
-        with patch("agent.credential_pool.load_pool", return_value=mock_pool) as mp:
+        from zermes.hermes_cli.auth import _resolve_api_key_provider_secret
+        with patch("zermes.agent.credential_pool.load_pool", return_value=mock_pool) as mp:
             key, source = _resolve_api_key_provider_secret(
                 provider_id="deepseek",
                 pconfig=_make_pconfig(),

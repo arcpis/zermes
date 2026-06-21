@@ -13,7 +13,7 @@ from unittest.mock import patch
 
 import pytest
 
-from hermes_cli.main import _web_ui_build_needed, _build_web_ui
+from zermes.hermes_cli.main import _web_ui_build_needed, _build_web_ui
 
 
 def _touch(path: Path, offset: float = 0.0) -> None:
@@ -102,8 +102,8 @@ class TestBuildWebUISkipsWhenFresh:
         web_dir, dist_dir = _make_web_dir(tmp_path)
         _touch(dist_dir / ".vite" / "manifest.json")
 
-        with patch("hermes_cli.main.shutil.which", return_value="/usr/bin/npm"), \
-             patch("hermes_cli.main.subprocess.run") as mock_run:
+        with patch("zermes.hermes_cli.main.shutil.which", return_value="/usr/bin/npm"), \
+             patch("zermes.hermes_cli.main.subprocess.run") as mock_run:
             result = _build_web_ui(web_dir)
 
         assert result is True
@@ -113,8 +113,8 @@ class TestBuildWebUISkipsWhenFresh:
         web_dir, _ = _make_web_dir(tmp_path)
 
         mock_cp = __import__("subprocess").CompletedProcess([], 0, stdout=b"", stderr=b"")
-        with patch("hermes_cli.main.shutil.which", return_value="/usr/bin/npm"), \
-             patch("hermes_cli.main.subprocess.run", return_value=mock_cp) as mock_run:
+        with patch("zermes.hermes_cli.main.shutil.which", return_value="/usr/bin/npm"), \
+             patch("zermes.hermes_cli.main.subprocess.run", return_value=mock_cp) as mock_run:
             result = _build_web_ui(web_dir)
 
         assert result is True

@@ -37,12 +37,12 @@ class TestProviderSelectionGate:
     """
 
     def test_import_after_config_env_patch_uses_restored_dotenv_loader(self):
-        """Importing STT while hermes_cli.config.get_env_value is patched must
+        """Importing STT while zermes.hermes_cli.config.get_env_value is patched must
         not freeze that temporary helper into this module forever.
         """
         import importlib
-        import hermes_cli.config as config_mod
-        from tools import transcription_tools as tt
+        import zermes.hermes_cli.config as config_mod
+        from zermes.tools import transcription_tools as tt
 
         with pytest.MonkeyPatch.context() as mp:
             mp.setattr(config_mod, "get_env_value", lambda name, default=None: "")
@@ -52,38 +52,38 @@ class TestProviderSelectionGate:
             with patch.object(tt, "_HAS_FASTER_WHISPER", False), \
                  patch.object(tt, "_HAS_OPENAI", True), \
                  patch.object(tt, "_has_local_command", return_value=False), \
-                 patch("hermes_cli.config.load_env",
+                 patch("zermes.hermes_cli.config.load_env",
                        return_value={"GROQ_API_KEY": "dotenv-secret"}):
                 assert tt._get_provider({"enabled": True, "provider": "groq"}) == "groq"
         finally:
             importlib.reload(tt)
 
     def test_explicit_groq_sees_dotenv(self):
-        from tools import transcription_tools as tt
+        from zermes.tools import transcription_tools as tt
 
         with patch.object(tt, "_HAS_FASTER_WHISPER", False), \
              patch.object(tt, "_HAS_OPENAI", True), \
              patch.object(tt, "_has_local_command", return_value=False), \
-             patch("hermes_cli.config.load_env",
+             patch("zermes.hermes_cli.config.load_env",
                    return_value={"GROQ_API_KEY": "dotenv-secret"}):
             assert tt._get_provider({"enabled": True, "provider": "groq"}) == "groq"
 
     def test_explicit_mistral_sees_dotenv(self):
-        from tools import transcription_tools as tt
+        from zermes.tools import transcription_tools as tt
 
         with patch.object(tt, "_HAS_FASTER_WHISPER", False), \
              patch.object(tt, "_HAS_MISTRAL", True), \
              patch.object(tt, "_has_local_command", return_value=False), \
-             patch("hermes_cli.config.load_env",
+             patch("zermes.hermes_cli.config.load_env",
                    return_value={"MISTRAL_API_KEY": "dotenv-secret"}):
             assert tt._get_provider({"enabled": True, "provider": "mistral"}) == "mistral"
 
     def test_explicit_xai_sees_dotenv(self):
-        from tools import transcription_tools as tt
+        from zermes.tools import transcription_tools as tt
 
         with patch.object(tt, "_HAS_FASTER_WHISPER", False), \
              patch.object(tt, "_has_local_command", return_value=False), \
-             patch("hermes_cli.config.load_env",
+             patch("zermes.hermes_cli.config.load_env",
                    return_value={"XAI_API_KEY": "dotenv-secret"}):
             assert tt._get_provider({"enabled": True, "provider": "xai"}) == "xai"
 
@@ -91,14 +91,14 @@ class TestProviderSelectionGate:
         """No local backend, no explicit provider — auto-detect should fall
         through to Groq when its key lives in dotenv only. Before the fix
         it would return 'none'."""
-        from tools import transcription_tools as tt
+        from zermes.tools import transcription_tools as tt
 
         with patch.object(tt, "_HAS_FASTER_WHISPER", False), \
              patch.object(tt, "_HAS_OPENAI", True), \
              patch.object(tt, "_HAS_MISTRAL", False), \
              patch.object(tt, "_has_local_command", return_value=False), \
              patch.object(tt, "_has_openai_audio_backend", return_value=False), \
-             patch("hermes_cli.config.load_env",
+             patch("zermes.hermes_cli.config.load_env",
                    return_value={"GROQ_API_KEY": "dotenv-secret"}):
             # No "provider" key → explicit=False → auto-detect branch
             assert tt._get_provider({"enabled": True}) == "groq"
@@ -110,7 +110,7 @@ class TestTranscribeCallSitesReadDotenv:
     capture what gets passed through."""
 
     def test_transcribe_groq_forwards_dotenv_key(self):
-        from tools import transcription_tools as tt
+        from zermes.tools import transcription_tools as tt
 
         seen_keys: list = []
 
@@ -138,7 +138,7 @@ class TestTranscribeCallSitesReadDotenv:
         assert seen_keys == ["groq-dotenv-key"]
 
     def test_transcribe_mistral_forwards_dotenv_key(self):
-        from tools import transcription_tools as tt
+        from zermes.tools import transcription_tools as tt
 
         seen_keys: list = []
 
@@ -164,7 +164,7 @@ class TestTranscribeCallSitesReadDotenv:
         assert seen_keys == ["mistral-dotenv-key"]
 
     def test_transcribe_xai_forwards_dotenv_key(self):
-        from tools import transcription_tools as tt
+        from zermes.tools import transcription_tools as tt
 
         captured: dict = {}
 
@@ -195,13 +195,13 @@ class TestTranscribeCallSitesReadDotenv:
 
 
 class TestEndToEndRegressionGuard:
-    """End-to-end probe: patch ``hermes_cli.config.load_env`` to simulate
+    """End-to-end probe: patch ``zermes.hermes_cli.config.load_env`` to simulate
     ``~/.hermes/.env`` carrying the key while ``os.environ`` does not.
     Before the fix ``_transcribe_xai`` called ``os.getenv("XAI_API_KEY")``
     directly and returned ``XAI_API_KEY not set``."""
 
     def test_xai_key_only_in_dotenv_before_fix(self, monkeypatch):
-        from tools import transcription_tools as tt
+        from zermes.tools import transcription_tools as tt
 
         monkeypatch.delenv("XAI_API_KEY", raising=False)
 
@@ -215,11 +215,11 @@ class TestEndToEndRegressionGuard:
             response.json.return_value = {"text": "ok"}
             return response
 
-        with patch("hermes_cli.config.load_env",
+        with patch("zermes.hermes_cli.config.load_env",
                    return_value={"XAI_API_KEY": "dotenv-secret"}):
             # Sanity: get_env_value resolves through load_env when
             # os.environ is empty.
-            from hermes_cli.config import get_env_value as live_get
+            from zermes.hermes_cli.config import get_env_value as live_get
             assert live_get("XAI_API_KEY") == "dotenv-secret"
 
             with patch("requests.post", side_effect=fake_post), \

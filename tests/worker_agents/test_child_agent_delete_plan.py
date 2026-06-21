@@ -1,6 +1,6 @@
 import pytest
 
-from worker_agents.organization_evolution import (
+from zermes.worker_agents.organization_evolution import (
     CHILD_AGENT_LIFECYCLE_SCHEMA_VERSION,
     ChildAgentDeleteBlockingCheck,
     ChildAgentDeletionMode,

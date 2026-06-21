@@ -19,7 +19,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 try:
-    from environments.agent_loop import (
+    from zermes.environments.agent_loop import (
         AgentResult,
         HermesAgentLoop,
         ToolError,
@@ -408,7 +408,7 @@ class TestHermesAgentLoop:
 
     @pytest.mark.asyncio
     async def test_memory_tool_blocked(self, basic_tools):
-        """Memory tool should return error in RL environments."""
+        """Memory tool should return error in RL zermes.environments."""
         valid = {"terminal", "read_file", "todo", "memory"}
         server = MockServer([
             make_tool_response("memory", {"action": "add", "target": "user", "content": "test"}),
@@ -432,7 +432,7 @@ class TestHermesAgentLoop:
 
     @pytest.mark.asyncio
     async def test_session_search_blocked(self, basic_tools):
-        """session_search should return error in RL environments."""
+        """session_search should return error in RL zermes.environments."""
         valid = {"terminal", "read_file", "todo", "session_search"}
         server = MockServer([
             make_tool_response("session_search", {"query": "test"}),
@@ -487,7 +487,7 @@ class TestResizeToolPool:
 
     def test_resize_shuts_down_previous_executor(self, monkeypatch):
         """Replacing the global tool executor should shut down the old pool."""
-        import environments.agent_loop as agent_loop_module
+        import zermes.environments.agent_loop as agent_loop_module
 
         old_executor = MagicMock()
         new_executor = MagicMock()

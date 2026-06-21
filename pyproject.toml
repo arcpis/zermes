@@ -102,7 +102,6 @@ termux-all = [
   # Excluded for now:
   # - matrix (mautrix[encryption] -> python-olm build failures on Termux)
   # - voice  (faster-whisper chain requires ctranslate2/av builds not packaged)
-  "hermes-agent[termux]",
   "zermes-agent[termux]",
   "zermes-agent[messaging]",
   "zermes-agent[slack]",
@@ -167,21 +166,22 @@ all = [
 ]
 
 [project.scripts]
-zermes = "hermes_cli.main:main"
-zermes-agent = "run_agent:main"
-hermes = "hermes_cli.main:main"
-hermes-agent = "run_agent:main"
-hermes-acp = "acp_adapter.entry:main"
+zermes = "zermes.hermes_cli.main:main"
+zermes-agent = "zermes.run_agent:main"
+hermes = "zermes.hermes_cli.main:main"
+hermes-agent = "zermes.run_agent:main"
+hermes-acp = "zermes.acp_adapter.entry:main"
 
 [tool.setuptools]
-py-modules = ["run_agent", "model_tools", "toolsets", "batch_runner", "trajectory_compressor", "toolset_distributions", "cli", "hermes_bootstrap", "hermes_constants", "hermes_state", "hermes_time", "hermes_logging", "rl_cli", "utils"]
+package-dir = {"" = "src"}
 
 [tool.setuptools.package-data]
-hermes_cli = ["web_dist/**/*"]
-gateway = ["assets/**/*"]
+"zermes.hermes_cli" = ["web_dist/**/*"]
+"zermes.gateway" = ["assets/**/*"]
 
 [tool.setuptools.packages.find]
-include = ["agent", "agent.*", "tools", "tools.*", "hermes_cli", "gateway", "gateway.*", "tui_gateway", "tui_gateway.*", "cron", "acp_adapter", "plugins", "plugins.*", "providers", "providers.*", "code_modification", "launcher", "worker_agents", "worker_agents.*"]
+where = ["src"]
+include = ["zermes", "zermes.*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -219,8 +219,7 @@ select = ["PLW1514"]
 # Tests can intentionally exercise locale-encoding edge cases.
 "tests/**" = ["PLW1514"]
 # Skills and plugins are partially user-authored 鈥?their own conventions.
-"skills/**" = ["PLW1514"]
-"optional-skills/**" = ["PLW1514"]
+"resources/skills/**" = ["PLW1514"]
 "plugins/**" = ["PLW1514"]
 
 [tool.uv]

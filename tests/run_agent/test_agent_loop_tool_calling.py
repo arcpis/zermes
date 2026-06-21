@@ -36,7 +36,7 @@ if str(_repo_root) not in sys.path:
     sys.path.insert(0, str(_repo_root))
 
 try:
-    from environments.agent_loop import AgentResult, HermesAgentLoop
+    from zermes.environments.agent_loop import AgentResult, HermesAgentLoop
     from atroposlib.envs.server_handling.openai_server import OpenAIServer  # noqa: F401
 except ImportError:
     pytest.skip("atroposlib not installed", allow_module_level=True)
@@ -221,7 +221,7 @@ async def test_single_tool_call():
             {"role": "user", "content": "What's the weather in Tokyo? Use the get_weather tool."},
         ]
 
-        with patch("environments.agent_loop.handle_function_call", side_effect=_fake_tool_handler):
+        with patch("zermes.environments.agent_loop.handle_function_call", side_effect=_fake_tool_handler):
             result = await agent.run(messages)
 
         assert isinstance(result, AgentResult)
@@ -275,7 +275,7 @@ async def test_multi_tool_single_turn():
             )},
         ]
 
-        with patch("environments.agent_loop.handle_function_call", side_effect=_fake_tool_handler):
+        with patch("zermes.environments.agent_loop.handle_function_call", side_effect=_fake_tool_handler):
             result = await agent.run(messages)
 
         # Count distinct tools called
@@ -316,7 +316,7 @@ async def test_multi_turn_conversation():
             )},
         ]
 
-        with patch("environments.agent_loop.handle_function_call", side_effect=_fake_tool_handler):
+        with patch("zermes.environments.agent_loop.handle_function_call", side_effect=_fake_tool_handler):
             result = await agent.run(messages)
 
         # Should have used both tools
@@ -356,7 +356,7 @@ async def test_unknown_tool_rejected():
             {"role": "user", "content": "What's the weather in London? Use get_weather."},
         ]
 
-        with patch("environments.agent_loop.handle_function_call", side_effect=_fake_tool_handler):
+        with patch("zermes.environments.agent_loop.handle_function_call", side_effect=_fake_tool_handler):
             result = await agent.run(messages)
 
         # Check if get_weather was called and rejected
@@ -372,7 +372,7 @@ async def test_unknown_tool_rejected():
 
 @pytest.mark.asyncio
 async def test_max_turns_limit():
-    """Agent should stop after max_turns even if model keeps calling tools."""
+    """Agent should stop after max_turns even if model keeps calling zermes.tools."""
 
     async def _run(server, model):
         agent = HermesAgentLoop(
@@ -391,7 +391,7 @@ async def test_max_turns_limit():
             )},
         ]
 
-        with patch("environments.agent_loop.handle_function_call", side_effect=_fake_tool_handler):
+        with patch("zermes.environments.agent_loop.handle_function_call", side_effect=_fake_tool_handler):
             result = await agent.run(messages)
 
         assert result.turns_used <= 2, f"Should stop at max_turns=2, used {result.turns_used}"
@@ -420,7 +420,7 @@ async def test_no_tools_direct_response():
             {"role": "user", "content": "What is 2 + 2? Just answer directly, no tools needed."},
         ]
 
-        with patch("environments.agent_loop.handle_function_call", side_effect=_fake_tool_handler):
+        with patch("zermes.environments.agent_loop.handle_function_call", side_effect=_fake_tool_handler):
             result = await agent.run(messages)
 
         assert result.finished_naturally, "Should finish naturally with a direct response"
@@ -454,7 +454,7 @@ async def test_tool_error_handling():
             {"role": "user", "content": "Please call the failing_tool with input 'test'."},
         ]
 
-        with patch("environments.agent_loop.handle_function_call", side_effect=_fake_tool_handler):
+        with patch("zermes.environments.agent_loop.handle_function_call", side_effect=_fake_tool_handler):
             result = await agent.run(messages)
 
         # The tool error should be recorded
@@ -490,7 +490,7 @@ async def test_agent_result_structure():
             {"role": "user", "content": "What is 3 + 4? Use the calculate tool."},
         ]
 
-        with patch("environments.agent_loop.handle_function_call", side_effect=_fake_tool_handler):
+        with patch("zermes.environments.agent_loop.handle_function_call", side_effect=_fake_tool_handler):
             result = await agent.run(messages)
 
         # Structural checks
@@ -532,7 +532,7 @@ async def test_conversation_history_preserved():
             {"role": "user", "content": "What's the weather in Berlin? Use get_weather."},
         ]
 
-        with patch("environments.agent_loop.handle_function_call", side_effect=_fake_tool_handler):
+        with patch("zermes.environments.agent_loop.handle_function_call", side_effect=_fake_tool_handler):
             result = await agent.run(messages)
 
         # System message should be preserved

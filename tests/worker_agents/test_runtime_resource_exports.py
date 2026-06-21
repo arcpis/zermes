@@ -1,4 +1,4 @@
-from worker_agents import (
+from zermes.worker_agents import (
     RuntimeBudgetPolicy,
     RuntimeBudgetSource,
     RuntimeCancellationReason,

@@ -1,6 +1,6 @@
 import pytest
 
-from worker_agents.retention import (
+from zermes.worker_agents.retention import (
     RETENTION_POLICY_SCHEMA_VERSION,
     RetentionAction,
     RetentionDataCategory,

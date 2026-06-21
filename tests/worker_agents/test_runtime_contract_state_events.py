@@ -1,6 +1,6 @@
 import pytest
 
-from worker_agents.runtime_contract import (
+from zermes.worker_agents.runtime_contract import (
     RUNTIME_CONTRACT_VERSION,
     RuntimeContractError,
     RuntimeEvent,

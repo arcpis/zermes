@@ -19,7 +19,7 @@ backends reject.
 
 import json
 
-from tools.memory_tool import MEMORY_SCHEMA
+from zermes.tools.memory_tool import MEMORY_SCHEMA
 
 
 _FORBIDDEN_TOP_LEVEL_KEYS = ("allOf", "anyOf", "oneOf", "enum", "not")

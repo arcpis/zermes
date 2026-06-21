@@ -7,10 +7,10 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-import gateway.run as gateway_run
-from gateway.platforms.base import MessageEvent, MessageType
-from gateway.restart import DEFAULT_GATEWAY_RESTART_DRAIN_TIMEOUT
-from gateway.session import SessionEntry, build_session_key
+import zermes.gateway.run as gateway_run
+from zermes.gateway.platforms.base import MessageEvent, MessageType
+from zermes.gateway.restart import DEFAULT_GATEWAY_RESTART_DRAIN_TIMEOUT
+from zermes.gateway.session import SessionEntry, build_session_key
 from tests.gateway.restart_test_helpers import make_restart_runner, make_restart_source
 
 
@@ -293,7 +293,7 @@ async def test_shutdown_notification_skipped_when_no_active_agents():
 @pytest.mark.asyncio
 async def test_shutdown_notification_ignores_pending_sentinels():
     """Pending sentinels (not-yet-started agents) don't trigger notifications."""
-    from gateway.run import _AGENT_PENDING_SENTINEL
+    from zermes.gateway.run import _AGENT_PENDING_SENTINEL
 
     runner, adapter = make_restart_runner()
     runner._running_agents["agent:main:telegram:dm:999"] = _AGENT_PENDING_SENTINEL
@@ -318,7 +318,7 @@ async def test_shutdown_notification_send_failure_does_not_block():
 @pytest.mark.asyncio
 async def test_shutdown_notification_suppressed_when_flag_disabled():
     """Active-session ping is muted when gateway_restart_notification=False on the platform."""
-    from gateway.config import Platform
+    from zermes.gateway.config import Platform
 
     runner, adapter = make_restart_runner()
     runner._restart_requested = True
@@ -334,7 +334,7 @@ async def test_shutdown_notification_suppressed_when_flag_disabled():
 @pytest.mark.asyncio
 async def test_shutdown_notification_home_channel_suppressed_when_flag_disabled():
     """Home-channel ping during shutdown is muted when the flag is False."""
-    from gateway.config import HomeChannel, Platform
+    from zermes.gateway.config import HomeChannel, Platform
 
     runner, adapter = make_restart_runner()
     runner.config.platforms[Platform.TELEGRAM].home_channel = HomeChannel(

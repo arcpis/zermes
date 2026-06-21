@@ -3,12 +3,12 @@ XML stripping added in openclaw/openclaw#67318 port.
 
 The CLI has its own copy of the stripper because it needs to run on the
 final displayed assistant text (after streaming) without depending on the
-AIAgent instance. It must stay in sync with run_agent.py::_strip_think_blocks
+AIAgent instance. It must stay in sync with zermes.run_agent.py::_strip_think_blocks
 for tool-call tag coverage."""
 
 import pytest
 
-from cli import _strip_reasoning_tags
+from zermes.cli import _strip_reasoning_tags
 
 
 class TestToolCallStripping:

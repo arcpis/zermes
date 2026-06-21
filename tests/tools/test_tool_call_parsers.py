@@ -15,7 +15,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 try:
-    from environments.tool_call_parsers import (
+    from zermes.environments.tool_call_parsers import (
         ParseResult,
         ToolCallParser,
         get_parser,
@@ -139,7 +139,7 @@ class TestParseResultContract:
         assert len(result) == 2
 
     def test_no_tools_returns_none_tool_calls(self, parser):
-        content, tool_calls = parser.parse("Just plain text, no tools.")
+        content, tool_calls = parser.parse("Just plain text, no zermes.tools.")
         assert tool_calls is None
         assert content is not None
 

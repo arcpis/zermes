@@ -1,11 +1,11 @@
 import pytest
 
-from worker_agents.internal_runtime_context import (
+from zermes.worker_agents.internal_runtime_context import (
     InternalWorkerRuntimeContextError,
     InternalWorkerRuntimeContextRequest,
     build_internal_worker_runtime_context,
 )
-from worker_agents.profile import (
+from zermes.worker_agents.profile import (
     WorkerAgentProfile,
     WorkerBudgetPolicy,
     WorkerExecutionLimits,
@@ -15,11 +15,11 @@ from worker_agents.profile import (
     WorkerToolPolicy,
     WorkerWorkspacePolicy,
 )
-from worker_agents.registry import WorkerLifecycleStatus
-from worker_agents.registry_service import WorkerRegistryService
-from worker_agents.runtime_contract import runtime_request_context_to_dict
-from worker_agents.storage import WorkerAgentProfileStore, WorkerAgentRuntimeDataStore
-from worker_agents.task_service import WorkerTaskService
+from zermes.worker_agents.registry import WorkerLifecycleStatus
+from zermes.worker_agents.registry_service import WorkerRegistryService
+from zermes.worker_agents.runtime_contract import runtime_request_context_to_dict
+from zermes.worker_agents.storage import WorkerAgentProfileStore, WorkerAgentRuntimeDataStore
+from zermes.worker_agents.task_service import WorkerTaskService
 
 
 def _task_service(tmp_path):

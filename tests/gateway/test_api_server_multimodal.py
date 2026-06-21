@@ -13,8 +13,8 @@ import pytest
 from aiohttp import web
 from aiohttp.test_utils import TestClient, TestServer
 
-from gateway.config import PlatformConfig
-from gateway.platforms.api_server import (
+from zermes.gateway.config import PlatformConfig
+from zermes.gateway.platforms.api_server import (
     APIServerAdapter,
     _content_has_visible_payload,
     _normalize_multimodal_content,

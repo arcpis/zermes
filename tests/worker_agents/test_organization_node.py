@@ -1,6 +1,6 @@
 import pytest
 
-from worker_agents.organization import (
+from zermes.worker_agents.organization import (
     ORGANIZATION_SCHEMA_VERSION,
     OrgLeaderKind,
     OrgLeaderRef,

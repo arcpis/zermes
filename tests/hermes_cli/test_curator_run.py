@@ -16,8 +16,8 @@ def _args(**kwargs):
 
 
 def test_run_defaults_to_synchronous(monkeypatch, capsys):
-    import agent.curator as curator_state
-    import hermes_cli.curator as curator_cli
+    import zermes.agent.curator as curator_state
+    import zermes.hermes_cli.curator as curator_cli
 
     calls = []
     monkeypatch.setattr(curator_state, "is_enabled", lambda: True)
@@ -35,8 +35,8 @@ def test_run_defaults_to_synchronous(monkeypatch, capsys):
 
 
 def test_run_background_opts_into_async(monkeypatch, capsys):
-    import agent.curator as curator_state
-    import hermes_cli.curator as curator_cli
+    import zermes.agent.curator as curator_state
+    import zermes.hermes_cli.curator as curator_cli
 
     calls = []
     monkeypatch.setattr(curator_state, "is_enabled", lambda: True)
@@ -53,8 +53,8 @@ def test_run_background_opts_into_async(monkeypatch, capsys):
 
 
 def test_run_sync_wins_over_background(monkeypatch):
-    import agent.curator as curator_state
-    import hermes_cli.curator as curator_cli
+    import zermes.agent.curator as curator_state
+    import zermes.hermes_cli.curator as curator_cli
 
     calls = []
     monkeypatch.setattr(curator_state, "is_enabled", lambda: True)
@@ -70,8 +70,8 @@ def test_run_sync_wins_over_background(monkeypatch):
 
 
 def test_dry_run_default_reports_synchronous_wording(monkeypatch, capsys):
-    import agent.curator as curator_state
-    import hermes_cli.curator as curator_cli
+    import zermes.agent.curator as curator_state
+    import zermes.hermes_cli.curator as curator_cli
 
     monkeypatch.setattr(curator_state, "is_enabled", lambda: True)
     monkeypatch.setattr(

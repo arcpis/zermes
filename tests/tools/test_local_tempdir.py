@@ -1,6 +1,6 @@
 from unittest.mock import patch
 
-from tools.environments.local import LocalEnvironment
+from zermes.tools.environments.local import LocalEnvironment
 
 
 class TestLocalTempDir:
@@ -41,9 +41,9 @@ class TestLocalTempDir:
         monkeypatch.delenv("TMP", raising=False)
         monkeypatch.delenv("TEMP", raising=False)
 
-        with patch("tools.environments.local.os.path.isdir", return_value=False), \
-             patch("tools.environments.local.os.access", return_value=False), \
-             patch("tools.environments.local.tempfile.gettempdir", return_value="/cache/tmp"), \
+        with patch("zermes.tools.environments.local.os.path.isdir", return_value=False), \
+             patch("zermes.tools.environments.local.os.access", return_value=False), \
+             patch("zermes.tools.environments.local.tempfile.gettempdir", return_value="/cache/tmp"), \
              patch.object(LocalEnvironment, "init_session", autospec=True, return_value=None):
             env = LocalEnvironment(cwd=".", timeout=10)
             assert env.get_temp_dir() == "/cache/tmp"

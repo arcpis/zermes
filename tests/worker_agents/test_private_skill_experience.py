@@ -1,7 +1,7 @@
 import pytest
 
-from worker_agents.private_assets import PrivateAssetError, PrivateAssetSensitivity
-from worker_agents.private_skill_experience import (
+from zermes.worker_agents.private_assets import PrivateAssetError, PrivateAssetSensitivity
+from zermes.worker_agents.private_skill_experience import (
     PrivateSkillExperience,
     SkillExperienceKind,
     skill_experience_proposal_to_dict,

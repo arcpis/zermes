@@ -3,10 +3,10 @@
 import yaml
 import pytest
 
-from gateway.config import Platform
-from gateway.platforms.base import MessageEvent, MessageType
-from gateway.run import GatewayRunner
-from gateway.session import SessionSource
+from zermes.gateway.config import Platform
+from zermes.gateway.platforms.base import MessageEvent, MessageType
+from zermes.gateway.run import GatewayRunner
+from zermes.gateway.session import SessionSource
 
 
 def _make_runner():
@@ -50,10 +50,10 @@ async def test_handle_model_command_lists_saved_custom_provider(tmp_path, monkey
         encoding="utf-8",
     )
 
-    import gateway.run as gateway_run
+    import zermes.gateway.run as gateway_run
 
     monkeypatch.setattr(gateway_run, "_hermes_home", hermes_home)
-    monkeypatch.setattr("agent.models_dev.fetch_models_dev", lambda: {})
+    monkeypatch.setattr("zermes.agent.models_dev.fetch_models_dev", lambda: {})
 
     result = await _make_runner()._handle_model_command(_make_event())
 

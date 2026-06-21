@@ -2,7 +2,7 @@ import json
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
-from gateway.config import Platform, PlatformConfig, load_gateway_config
+from zermes.gateway.config import Platform, PlatformConfig, load_gateway_config
 
 
 def _make_adapter(
@@ -13,7 +13,7 @@ def _make_adapter(
     allow_from=None,
     group_allow_from=None,
 ):
-    from gateway.platforms.telegram import TelegramAdapter
+    from zermes.gateway.platforms.telegram import TelegramAdapter
 
     extra = {}
     if require_mention is not None:
@@ -284,7 +284,7 @@ def test_top_level_require_mention_bridges_to_telegram(monkeypatch, tmp_path):
 
     # The adapter's extra dict must also carry the setting so that
     # _telegram_require_mention() works even without the env var.
-    tg_cfg = config.platforms.get(__import__("gateway.config", fromlist=["Platform"]).Platform.TELEGRAM)
+    tg_cfg = config.platforms.get(__import__("zermes.gateway.config", fromlist=["Platform"]).Platform.TELEGRAM)
     if tg_cfg is not None:
         assert tg_cfg.extra.get("require_mention") is True
 

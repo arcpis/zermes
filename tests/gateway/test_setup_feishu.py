@@ -1,4 +1,4 @@
-"""Tests for _setup_feishu() in hermes_cli/gateway.py.
+"""Tests for _setup_feishu() in hermes_cli/zermes.gateway.py.
 
 Verifies that the interactive setup writes env vars that correctly drive the
 Feishu adapter: credentials, connection mode, DM policy, and group policy.
@@ -39,19 +39,19 @@ def _run_setup_feishu(
     def mock_get(name):
         return existing_env.get(name, "")
 
-    with patch("hermes_cli.gateway.save_env_value", side_effect=mock_save), \
-         patch("hermes_cli.gateway.get_env_value", side_effect=mock_get), \
-         patch("hermes_cli.gateway.prompt_yes_no", side_effect=prompt_yes_no_responses), \
-         patch("hermes_cli.gateway.prompt_choice", side_effect=prompt_choice_responses), \
-         patch("hermes_cli.gateway.prompt", side_effect=prompt_responses), \
-         patch("hermes_cli.gateway.print_info"), \
-         patch("hermes_cli.gateway.print_success"), \
-         patch("hermes_cli.gateway.print_warning"), \
-         patch("hermes_cli.gateway.print_error"), \
-         patch("hermes_cli.gateway.color", side_effect=lambda t, c: t), \
-         patch("gateway.platforms.feishu.qr_register", return_value=qr_result):
+    with patch("zermes.hermes_cli.gateway.save_env_value", side_effect=mock_save), \
+         patch("zermes.hermes_cli.gateway.get_env_value", side_effect=mock_get), \
+         patch("zermes.hermes_cli.gateway.prompt_yes_no", side_effect=prompt_yes_no_responses), \
+         patch("zermes.hermes_cli.gateway.prompt_choice", side_effect=prompt_choice_responses), \
+         patch("zermes.hermes_cli.gateway.prompt", side_effect=prompt_responses), \
+         patch("zermes.hermes_cli.gateway.print_info"), \
+         patch("zermes.hermes_cli.gateway.print_success"), \
+         patch("zermes.hermes_cli.gateway.print_warning"), \
+         patch("zermes.hermes_cli.gateway.print_error"), \
+         patch("zermes.hermes_cli.gateway.color", side_effect=lambda t, c: t), \
+         patch("zermes.gateway.platforms.feishu.qr_register", return_value=qr_result):
 
-        from hermes_cli.gateway import _setup_feishu
+        from zermes.hermes_cli.gateway import _setup_feishu
         _setup_feishu()
 
     return saved_env
@@ -120,7 +120,7 @@ class TestSetupFeishuConnectionMode:
         )
         assert env["FEISHU_CONNECTION_MODE"] == "websocket"
 
-    @patch("gateway.platforms.feishu.probe_bot", return_value=None)
+    @patch("zermes.gateway.platforms.feishu.probe_bot", return_value=None)
     def test_manual_path_websocket(self, _mock_probe):
         env = _run_setup_feishu(
             qr_result=None,
@@ -129,7 +129,7 @@ class TestSetupFeishuConnectionMode:
         )
         assert env["FEISHU_CONNECTION_MODE"] == "websocket"
 
-    @patch("gateway.platforms.feishu.probe_bot", return_value=None)
+    @patch("zermes.gateway.platforms.feishu.probe_bot", return_value=None)
     def test_manual_path_webhook(self, _mock_probe):
         env = _run_setup_feishu(
             qr_result=None,
@@ -247,8 +247,8 @@ class TestSetupFeishuAdapterIntegration:
         env = self._make_env_from_setup()
 
         with patch.dict(os.environ, env, clear=True):
-            from gateway.config import PlatformConfig
-            from gateway.platforms.feishu import FeishuAdapter
+            from zermes.gateway.config import PlatformConfig
+            from zermes.gateway.platforms.feishu import FeishuAdapter
             adapter = FeishuAdapter(PlatformConfig())
             assert adapter._app_id == "cli_test_app"
             assert adapter._app_secret == "test_secret_value"
@@ -261,8 +261,8 @@ class TestSetupFeishuAdapterIntegration:
         env = self._make_env_from_setup(dm_idx=1)
 
         with patch.dict(os.environ, env, clear=True):
-            from gateway.platforms.feishu import FeishuAdapter
-            from gateway.config import PlatformConfig
+            from zermes.gateway.platforms.feishu import FeishuAdapter
+            from zermes.gateway.config import PlatformConfig
             # Verify adapter initializes without error and env var is correct.
             FeishuAdapter(PlatformConfig())
             assert os.getenv("FEISHU_ALLOW_ALL_USERS") == "true"
@@ -273,7 +273,7 @@ class TestSetupFeishuAdapterIntegration:
         env = self._make_env_from_setup(group_idx=0)
 
         with patch.dict(os.environ, env, clear=True):
-            from gateway.config import PlatformConfig
-            from gateway.platforms.feishu import FeishuAdapter
+            from zermes.gateway.config import PlatformConfig
+            from zermes.gateway.platforms.feishu import FeishuAdapter
             adapter = FeishuAdapter(PlatformConfig())
             assert adapter._group_policy == "open"

@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from cli import _detect_file_drop
+from zermes.cli import _detect_file_drop
 
 
 # ---------------------------------------------------------------------------

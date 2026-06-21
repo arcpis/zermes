@@ -1,13 +1,13 @@
 import pytest
 
-from worker_agents.message_router import MessageRouter
-from worker_agents.result_routing import (
+from zermes.worker_agents.message_router import MessageRouter
+from zermes.worker_agents.result_routing import (
     ResultRoutingError,
     classify_runtime_result,
     message_router_result_route_to_dict,
     route_user_visible_result_messages,
 )
-from worker_agents.runtime_contract import (
+from zermes.worker_agents.runtime_contract import (
     RuntimeErrorCode,
     RuntimeErrorInfo,
     RuntimeResult,

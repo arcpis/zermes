@@ -1,4 +1,4 @@
-from worker_agents.management import (
+from zermes.worker_agents.management import (
     at_message_tracking_item_to_dict,
     broadcast_tracking_item_to_dict,
     build_at_message_tracking_item,
@@ -9,13 +9,13 @@ from worker_agents.management import (
     managed_chat_thread_summary_to_dict,
     thread_archive_summary_view_to_dict,
 )
-from worker_agents.message_router import (
+from zermes.worker_agents.message_router import (
     ChatParticipantKind,
     ChatParticipantRef,
     ChatThreadType,
     WorkerChatThread,
 )
-from worker_agents.organization import MAIN_AGENT_ID
+from zermes.worker_agents.organization import MAIN_AGENT_ID
 
 
 def test_chat_thread_summary_maps_private_department_and_project_threads():

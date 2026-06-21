@@ -1,5 +1,5 @@
 """Provider parity tests: verify that AIAgent builds correct API kwargs
-and handles responses properly for all supported providers.
+and handles responses properly for all supported zermes.providers.
 
 Ensures changes to one provider path don't silently break another.
 """
@@ -12,13 +12,13 @@ from types import SimpleNamespace
 from unittest.mock import patch, MagicMock
 
 import pytest
-from agent.codex_responses_adapter import _chat_content_to_responses_parts, _chat_messages_to_responses_input, _normalize_codex_response, _preflight_codex_input_items
+from zermes.agent.codex_responses_adapter import _chat_content_to_responses_parts, _chat_messages_to_responses_input, _normalize_codex_response, _preflight_codex_input_items
 
 sys.modules.setdefault("fire", types.SimpleNamespace(Fire=lambda *a, **k: None))
 sys.modules.setdefault("firecrawl", types.SimpleNamespace(Firecrawl=object))
 sys.modules.setdefault("fal_client", types.SimpleNamespace())
 
-from run_agent import AIAgent
+from zermes.run_agent import AIAgent
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
@@ -46,9 +46,9 @@ class _FakeOpenAI:
 
 
 def _make_agent(monkeypatch, provider, api_mode="chat_completions", base_url="https://openrouter.ai/api/v1", model=None):
-    monkeypatch.setattr("run_agent.get_tool_definitions", lambda **kw: _tool_defs("web_search", "terminal"))
-    monkeypatch.setattr("run_agent.check_toolset_requirements", lambda: {})
-    monkeypatch.setattr("run_agent.OpenAI", _FakeOpenAI)
+    monkeypatch.setattr("zermes.run_agent.get_tool_definitions", lambda **kw: _tool_defs("web_search", "terminal"))
+    monkeypatch.setattr("zermes.run_agent.check_toolset_requirements", lambda: {})
+    monkeypatch.setattr("zermes.run_agent.OpenAI", _FakeOpenAI)
     kwargs = dict(
         api_key="test-key",
         base_url=base_url,
@@ -309,7 +309,7 @@ class TestBuildApiKwargsKimiNoTemperatureOverride:
 
 class TestBuildApiKwargsAIGateway:
     def test_uses_chat_completions_format(self, monkeypatch):
-        agent = _make_agent(monkeypatch, "ai-gateway", base_url="https://ai-gateway.vercel.sh/v1", model="gpt-4o")
+        agent = _make_agent(monkeypatch, "ai-gateway", base_url="https://ai-zermes.gateway.vercel.sh/v1", model="gpt-4o")
         messages = [{"role": "user", "content": "hi"}]
         kwargs = agent._build_api_kwargs(messages)
         assert "messages" in kwargs
@@ -317,7 +317,7 @@ class TestBuildApiKwargsAIGateway:
         assert kwargs["messages"][-1]["content"] == "hi"
 
     def test_no_responses_api_fields(self, monkeypatch):
-        agent = _make_agent(monkeypatch, "ai-gateway", base_url="https://ai-gateway.vercel.sh/v1", model="gpt-4o")
+        agent = _make_agent(monkeypatch, "ai-gateway", base_url="https://ai-zermes.gateway.vercel.sh/v1", model="gpt-4o")
         messages = [{"role": "user", "content": "hi"}]
         kwargs = agent._build_api_kwargs(messages)
         assert "input" not in kwargs
@@ -325,7 +325,7 @@ class TestBuildApiKwargsAIGateway:
         assert "store" not in kwargs
 
     def test_includes_reasoning_in_extra_body(self, monkeypatch):
-        agent = _make_agent(monkeypatch, "ai-gateway", base_url="https://ai-gateway.vercel.sh/v1", model="gpt-4o")
+        agent = _make_agent(monkeypatch, "ai-gateway", base_url="https://ai-zermes.gateway.vercel.sh/v1", model="gpt-4o")
         messages = [{"role": "user", "content": "hi"}]
         kwargs = agent._build_api_kwargs(messages)
         extra = kwargs.get("extra_body", {})
@@ -333,7 +333,7 @@ class TestBuildApiKwargsAIGateway:
         assert extra["reasoning"]["enabled"] is True
 
     def test_includes_tools(self, monkeypatch):
-        agent = _make_agent(monkeypatch, "ai-gateway", base_url="https://ai-gateway.vercel.sh/v1", model="gpt-4o")
+        agent = _make_agent(monkeypatch, "ai-gateway", base_url="https://ai-zermes.gateway.vercel.sh/v1", model="gpt-4o")
         messages = [{"role": "user", "content": "hi"}]
         kwargs = agent._build_api_kwargs(messages)
         assert "tools" in kwargs
@@ -935,17 +935,17 @@ class TestAuxiliaryClientProviderPriority:
 
     def test_openrouter_always_wins(self, monkeypatch):
         monkeypatch.setenv("OPENROUTER_API_KEY", "or-key")
-        from agent.auxiliary_client import get_text_auxiliary_client
-        with patch("agent.auxiliary_client.OpenAI") as mock:
+        from zermes.agent.auxiliary_client import get_text_auxiliary_client
+        with patch("zermes.agent.auxiliary_client.OpenAI") as mock:
             client, model = get_text_auxiliary_client()
         assert model == "google/gemini-3-flash-preview"
         assert "openrouter" in str(mock.call_args.kwargs["base_url"]).lower()
 
     def test_nous_when_no_openrouter(self, monkeypatch):
         monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
-        from agent.auxiliary_client import get_text_auxiliary_client
-        with patch("agent.auxiliary_client._read_nous_auth", return_value={"access_token": "nous-tok"}), \
-             patch("agent.auxiliary_client.OpenAI") as mock:
+        from zermes.agent.auxiliary_client import get_text_auxiliary_client
+        with patch("zermes.agent.auxiliary_client._read_nous_auth", return_value={"access_token": "nous-tok"}),\
+             patch("zermes.agent.auxiliary_client.OpenAI") as mock:
             client, model = get_text_auxiliary_client()
         assert model == "google/gemini-3-flash-preview"
 
@@ -958,11 +958,11 @@ class TestAuxiliaryClientProviderPriority:
         """
         monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
         monkeypatch.setenv("OPENAI_API_KEY", "local-key")
-        from agent.auxiliary_client import get_text_auxiliary_client
-        with patch("agent.auxiliary_client._read_nous_auth", return_value=None), \
-             patch("agent.auxiliary_client._resolve_custom_runtime",
-                   return_value=("http://localhost:1234/v1", "local-key")), \
-             patch("agent.auxiliary_client.OpenAI") as mock:
+        from zermes.agent.auxiliary_client import get_text_auxiliary_client
+        with patch("zermes.agent.auxiliary_client._read_nous_auth", return_value=None),\
+             patch("zermes.agent.auxiliary_client._resolve_custom_runtime",
+                   return_value=("http://localhost:1234/v1", "local-key")),\
+             patch("zermes.agent.auxiliary_client.OpenAI") as mock:
             client, model = get_text_auxiliary_client()
         assert mock.call_args.kwargs["base_url"] == "http://localhost:1234/v1"
 
@@ -978,10 +978,10 @@ class TestAuxiliaryClientProviderPriority:
         monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
         monkeypatch.delenv("OPENAI_BASE_URL", raising=False)
         monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-        from agent.auxiliary_client import get_text_auxiliary_client
-        with patch("agent.auxiliary_client._read_nous_auth", return_value=None), \
-             patch("agent.auxiliary_client._read_codex_access_token", return_value="codex-tok"), \
-             patch("agent.auxiliary_client.OpenAI"):
+        from zermes.agent.auxiliary_client import get_text_auxiliary_client
+        with patch("zermes.agent.auxiliary_client._read_nous_auth", return_value=None),\
+             patch("zermes.agent.auxiliary_client._read_codex_access_token", return_value="codex-tok"),\
+             patch("zermes.agent.auxiliary_client.OpenAI"):
             client, model = get_text_auxiliary_client()
         assert client is None
         assert model is None
@@ -1031,8 +1031,8 @@ class TestProviderRouting:
     def test_no_routing_when_unset(self, monkeypatch):
         agent = _make_agent(monkeypatch, "openrouter")
         kwargs = agent._build_api_kwargs([{"role": "user", "content": "hi"}])
-        assert "provider" not in kwargs.get("extra_body", {}).get("provider", {}) or \
-               kwargs.get("extra_body", {}).get("provider") is None or \
+        assert "provider" not in kwargs.get("extra_body", {}).get("provider", {}) or\
+               kwargs.get("extra_body", {}).get("provider") is None or\
                "only" not in kwargs.get("extra_body", {}).get("provider", {})
 
     def test_combined_routing(self, monkeypatch):

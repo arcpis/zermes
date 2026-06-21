@@ -11,7 +11,7 @@ sys.modules.setdefault("fire", types.SimpleNamespace(Fire=lambda *a, **k: None))
 sys.modules.setdefault("firecrawl", types.SimpleNamespace(Firecrawl=object))
 sys.modules.setdefault("fal_client", types.SimpleNamespace())
 
-import run_agent
+import zermes.run_agent as run_agent
 
 
 class FakeRequestClient:
@@ -49,7 +49,7 @@ class OpenAIFactory:
 
 
 def _build_agent(shared_client=None):
-    agent = run_agent.AIAgent.__new__(run_agent.AIAgent)
+    agent = zermes.run_agent.AIAgent.__new__(zermes.run_agent.AIAgent)
     agent.api_mode = "chat_completions"
     agent.provider = "openai-codex"
     agent.base_url = "https://chatgpt.com/backend-api/codex"

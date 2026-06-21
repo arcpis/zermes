@@ -3,10 +3,10 @@
 import os
 import pytest
 
-import tools.approval as approval_module
-import tools.tirith_security
+import zermes.tools.approval as approval_module
+import zermes.tools.tirith_security
 
-from tools.approval import (
+from zermes.tools.approval import (
     check_all_command_guards,
     check_dangerous_command,
     detect_dangerous_command,
@@ -99,7 +99,7 @@ class TestYoloMode:
             called["value"] = True
             return {"action": "block", "findings": [], "summary": "should never run"}
 
-        monkeypatch.setattr(tools.tirith_security, "check_command_security", fake_check)
+        monkeypatch.setattr(zermes.tools.tirith_security, "check_command_security", fake_check)
 
         # Non-hardline dangerous command — yolo should bypass tirith+dangerous.
         result = check_all_command_guards("rm -rf /tmp/stuff", "local")

@@ -9,10 +9,10 @@ from unittest.mock import AsyncMock
 import pytest
 import yaml
 
-import gateway.run as gateway_run
-from gateway.config import Platform
-from gateway.platforms.base import MessageEvent
-from gateway.session import SessionSource
+import zermes.gateway.run as gateway_run
+from zermes.gateway.config import Platform
+from zermes.gateway.platforms.base import MessageEvent
+from zermes.gateway.session import SessionSource
 
 
 class _CapturingAgent:
@@ -160,7 +160,7 @@ async def test_run_agent_passes_priority_processing_to_gateway_agent(monkeypatch
         },
     )
 
-    import hermes_cli.tools_config as tools_config
+    import zermes.hermes_cli.tools_config as tools_config
     monkeypatch.setattr(tools_config, "_get_platform_tools", lambda user_config, platform_key: {"core"})
 
     _CapturingAgent.last_init = None

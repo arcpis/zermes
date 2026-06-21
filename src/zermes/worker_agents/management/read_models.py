@@ -1,0 +1,2206 @@
+"""Read-only management view models for worker agent operations.
+
+The builders in this module intentionally accept already-loaded records and
+summaries. They never open profile-home files or mutate stores; callers remain
+responsible for using the governed lifecycle, approval, and retention services.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from enum import StrEnum
+from typing import Any, Iterable, Mapping, Sequence
+
+from zermes.worker_agents.organization import (
+    OrgLeaderKind,
+    OrgLifecycleState,
+    OrgNode,
+    OrgNodeType,
+    OrgTree,
+)
+from zermes.worker_agents.registry import WorkerLifecycleStatus, WorkerRegistryRecord
+from zermes.worker_agents.message_router import (
+    ChatParticipantKind,
+    ChatThreadType,
+    WorkerChatThread,
+)
+
+
+SENSITIVE_FIELD_MARKERS = (
+    "api_key",
+    "authorization",
+    "body",
+    "content",
+    "credential",
+    "env",
+    "memory_text",
+    "private",
+    "raw",
+    "secret",
+    "token",
+    "transcript",
+)
+
+
+class ManagementRiskSeverity(StrEnum):
+    """Small severity scale shared by management views."""
+
+    INFO = "info"
+    WARNING = "warning"
+    BLOCKER = "blocker"
+
+
+class ApprovalSourceKind(StrEnum):
+    """Proposal source families shown in the approval center."""
+
+    ORGANIZATION_EVOLUTION = "organization_evolution"
+    DEPARTMENT_MEMORY = "department_memory"
+    DEPARTMENT_SKILL = "department_skill"
+    DEPARTMENT_TOOL_POLICY = "department_tool_policy"
+    BUDGET = "budget"
+    EXTERNAL_AGENT = "external_agent"
+
+
+class ApprovalDecision(StrEnum):
+    """Supported approval center decisions."""
+
+    APPROVE = "approve"
+    REJECT = "reject"
+    REQUEST_CHANGES = "request_changes"
+    DELEGATE_REVIEW = "delegate_review"
+    EXPIRE = "expire"
+
+
+class AssetProposalKind(StrEnum):
+    """Department asset proposal kinds shown in the asset review console."""
+
+    MEMORY = "memory"
+    SKILL_BINDING = "skill_binding"
+    SKILL_EXPERIENCE = "skill_experience"
+    TOOL_POLICY = "tool_policy"
+    WORKING_STANDARD = "working_standard"
+
+
+class AssetReviewDecision(StrEnum):
+    """Supported asset review decisions."""
+
+    ACCEPT = "accept"
+    REJECT = "reject"
+    PARTIAL_ACCEPT = "partial_accept"
+    REQUEST_REDACTION = "request_redaction"
+    EXPIRE = "expire"
+    ARCHIVE = "archive"
+
+
+class EvolutionProposalKind(StrEnum):
+    """Organization evolution proposal kinds shown in operations console."""
+
+    CREATE_CHILD_AGENT = "create_child_agent"
+    DELETE_CHILD_AGENT = "delete_child_agent"
+    MERGE_DEPARTMENT = "merge_department"
+    ARCHIVE_NODE = "archive_node"
+    MEMORY_MERGE = "memory_merge"
+
+
+@dataclass(frozen=True)
+class ManagementSourceRef:
+    """Low-sensitivity reference to the source data used by a view model."""
+
+    source_kind: str
+    source_id: str
+    revision: str = ""
+    updated_at: str | None = None
+
+
+@dataclass(frozen=True)
+class ManagementRiskBadge:
+    """User-visible risk or status badge without secret-bearing detail."""
+
+    code: str
+    label: str
+    severity: ManagementRiskSeverity | str = ManagementRiskSeverity.INFO
+    source_refs: tuple[ManagementSourceRef, ...] = ()
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "severity", ManagementRiskSeverity(self.severity))
+        object.__setattr__(self, "source_refs", tuple(self.source_refs))
+
+
+@dataclass(frozen=True)
+class WorkerManagementSummary:
+    """Low-sensitivity worker row used by dashboard and list views."""
+
+    worker_id: str
+    display_name: str
+    role: str
+    runtime_type: str
+    status: str
+    department_ids: tuple[str, ...] = ()
+    owner_worker_id: str | None = None
+    health_status: str = "unknown"
+    policy_summary: str = ""
+    risk_badges: tuple[ManagementRiskBadge, ...] = ()
+    source_ref: ManagementSourceRef | None = None
+    public_metadata: Mapping[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "department_ids", tuple(self.department_ids))
+        object.__setattr__(self, "risk_badges", tuple(self.risk_badges))
+        object.__setattr__(
+            self,
+            "public_metadata",
+            _redact_sensitive_mapping(self.public_metadata),
+        )
+
+
+@dataclass(frozen=True)
+class WorkerManagementListItem:
+    """Operational worker list row with only controlled action targets."""
+
+    worker_id: str
+    display_name: str
+    role: str
+    runtime_type: str
+    status: str
+    department_ids: tuple[str, ...]
+    health_status: str
+    policy_summary: str
+    risk_badges: tuple[ManagementRiskBadge, ...]
+    action_links: Mapping[str, str] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "department_ids", tuple(self.department_ids))
+        object.__setattr__(self, "risk_badges", tuple(self.risk_badges))
+        object.__setattr__(
+            self,
+            "action_links",
+            _controlled_worker_action_links(self.worker_id, self.action_links),
+        )
+
+
+@dataclass(frozen=True)
+class OrganizationManagementNodeSummary:
+    """Low-sensitivity organization node summary for the dashboard snapshot."""
+
+    org_node_id: str
+    name: str
+    node_type: str
+    lifecycle: str
+    parent_id: str | None
+    child_ids: tuple[str, ...] = ()
+    leader_kind: str = OrgLeaderKind.NONE.value
+    leader_worker_id: str | None = None
+    member_worker_ids: tuple[str, ...] = ()
+    individual_worker_id: str | None = None
+    collaboration_mode: str = "none"
+    read_only: bool = False
+    risk_badges: tuple[ManagementRiskBadge, ...] = ()
+    source_ref: ManagementSourceRef | None = None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "child_ids", tuple(self.child_ids))
+        object.__setattr__(self, "member_worker_ids", tuple(self.member_worker_ids))
+        object.__setattr__(self, "risk_badges", tuple(self.risk_badges))
+
+
+@dataclass(frozen=True)
+class OrganizationTreeViewNode:
+    """Nested organization tree node for management UI rendering."""
+
+    summary: OrganizationManagementNodeSummary
+    children: tuple["OrganizationTreeViewNode", ...] = ()
+    warnings: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "children", tuple(self.children))
+        object.__setattr__(self, "warnings", tuple(self.warnings))
+
+
+@dataclass(frozen=True)
+class ManagedChatThreadSummary:
+    """Low-sensitive chat thread row for routing operations."""
+
+    thread_id: str
+    thread_type: str
+    status: str
+    title: str = ""
+    participant_count: int = 0
+    worker_count: int = 0
+    organization_node_count: int = 0
+    user_present: bool = False
+    main_agent_visible: bool = False
+    valid_management_boundary: bool = False
+    read_only: bool = False
+    last_summary: str = ""
+    risk_badges: tuple[ManagementRiskBadge, ...] = ()
+    source_ref: ManagementSourceRef | None = None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "risk_badges", tuple(self.risk_badges))
+        object.__setattr__(self, "last_summary", _redact_sensitive_text(self.last_summary))
+
+
+@dataclass(frozen=True)
+class AtMessageTrackingItem:
+    """Read-only tracking row for one @ mention handling record."""
+
+    tracking_id: str
+    thread_id: str
+    message_id: str
+    status: str
+    target_id: str
+    delegated_to: str | None = None
+    overdue: bool = False
+    risk_badges: tuple[ManagementRiskBadge, ...] = ()
+    source_ref: ManagementSourceRef | None = None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "risk_badges", tuple(self.risk_badges))
+
+
+@dataclass(frozen=True)
+class BroadcastTrackingItem:
+    """Read-only tracking row for broadcast delivery status."""
+
+    tracking_id: str
+    thread_id: str
+    message_id: str
+    status: str
+    target_scope: str
+    recipient_count: int = 0
+    acknowledged_count: int = 0
+    requires_all_acknowledgement: bool = False
+    failed_count: int = 0
+    overdue: bool = False
+    risk_badges: tuple[ManagementRiskBadge, ...] = ()
+    source_ref: ManagementSourceRef | None = None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "risk_badges", tuple(self.risk_badges))
+
+
+@dataclass(frozen=True)
+class ApprovalQueueItem:
+    """Low-sensitive approval center queue row."""
+
+    approval_id: str
+    source_kind: ApprovalSourceKind | str
+    source_id: str
+    status: str
+    requestor_id: str
+    recommended_approver_id: str | None = None
+    impact_summary: str = ""
+    risk_badges: tuple[ManagementRiskBadge, ...] = ()
+    blockers: tuple[str, ...] = ()
+    warnings: tuple[str, ...] = ()
+    deadline_at: str | None = None
+    user_confirmation_required: bool = False
+    source_refs: tuple[ManagementSourceRef, ...] = ()
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "source_kind", ApprovalSourceKind(self.source_kind))
+        object.__setattr__(self, "impact_summary", _redact_sensitive_text(self.impact_summary))
+        object.__setattr__(self, "risk_badges", tuple(self.risk_badges))
+        object.__setattr__(self, "blockers", tuple(self.blockers))
+        object.__setattr__(self, "warnings", tuple(self.warnings))
+        object.__setattr__(self, "source_refs", tuple(self.source_refs))
+
+
+@dataclass(frozen=True)
+class ApprovalActionRequest:
+    """User or agent request to change an approval record through a service."""
+
+    approval_id: str
+    decision: ApprovalDecision | str
+    actor_id: str
+    reason: str
+    explicit_high_risk_confirmation: bool = False
+    delegated_reviewer_id: str | None = None
+    decided_at: str | None = None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "decision", ApprovalDecision(self.decision))
+        object.__setattr__(self, "reason", _redact_sensitive_text(self.reason))
+
+
+@dataclass(frozen=True)
+class ApprovalAuditRecord:
+    """Immutable low-sensitive audit summary for an approval action."""
+
+    approval_id: str
+    actor_id: str
+    decision: ApprovalDecision | str
+    reason: str
+    timestamp: str
+    risk_summary: str
+    source_refs: tuple[ManagementSourceRef, ...] = ()
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "decision", ApprovalDecision(self.decision))
+        object.__setattr__(self, "reason", _redact_sensitive_text(self.reason))
+        object.__setattr__(self, "risk_summary", _redact_sensitive_text(self.risk_summary))
+        object.__setattr__(self, "source_refs", tuple(self.source_refs))
+
+
+@dataclass(frozen=True)
+class ApprovalRiskPresentation:
+    """UI-ready risk and blocker summary for one approval item."""
+
+    approval_id: str
+    risks: tuple[ManagementRiskBadge, ...]
+    blockers: tuple[str, ...]
+    warnings: tuple[str, ...]
+    user_required_summary: str = ""
+    disabled_action_reason: str = ""
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "risks", tuple(self.risks))
+        object.__setattr__(self, "blockers", tuple(self.blockers))
+        object.__setattr__(self, "warnings", tuple(self.warnings))
+
+
+@dataclass(frozen=True)
+class AssetReviewItem:
+    """Low-sensitive asset proposal row for department asset review."""
+
+    proposal_id: str
+    proposal_kind: AssetProposalKind | str
+    status: str
+    target_department_id: str
+    summary: str
+    source_refs: tuple[ManagementSourceRef, ...] = ()
+    sensitivity: str = "low"
+    reviewer_id: str | None = None
+    conflict_refs: tuple[str, ...] = ()
+    redaction_required: bool = False
+    user_approval_required: bool = False
+    blocked: bool = False
+    risk_badges: tuple[ManagementRiskBadge, ...] = ()
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "proposal_kind", AssetProposalKind(self.proposal_kind))
+        object.__setattr__(self, "summary", _redact_sensitive_text(self.summary))
+        object.__setattr__(self, "source_refs", tuple(self.source_refs))
+        object.__setattr__(self, "conflict_refs", tuple(self.conflict_refs))
+        object.__setattr__(self, "risk_badges", tuple(self.risk_badges))
+
+
+@dataclass(frozen=True)
+class AssetReviewActionRequest:
+    """Controlled request produced by the asset review console."""
+
+    proposal_id: str
+    decision: AssetReviewDecision | str
+    actor_id: str
+    reason: str
+    accepted_refs: tuple[str, ...] = ()
+    rejected_refs: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "decision", AssetReviewDecision(self.decision))
+        object.__setattr__(self, "reason", _redact_sensitive_text(self.reason))
+        object.__setattr__(self, "accepted_refs", tuple(self.accepted_refs))
+        object.__setattr__(self, "rejected_refs", tuple(self.rejected_refs))
+
+
+@dataclass(frozen=True)
+class AssetMemoryReviewDetail:
+    proposal_id: str
+    classification: str
+    redaction_required: bool
+    conflict_refs: tuple[str, ...] = ()
+    summary: str = ""
+    action_request: AssetReviewActionRequest | None = None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "conflict_refs", tuple(self.conflict_refs))
+        object.__setattr__(self, "summary", _redact_sensitive_text(self.summary))
+
+
+@dataclass(frozen=True)
+class AssetSkillReviewDetail:
+    proposal_id: str
+    skill_id: str
+    skill_available: bool
+    applicability_summary: str
+    tool_dependency_warnings: tuple[str, ...] = ()
+    action_request: AssetReviewActionRequest | None = None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "tool_dependency_warnings",
+            tuple(self.tool_dependency_warnings),
+        )
+
+
+@dataclass(frozen=True)
+class AssetToolPolicyReviewDetail:
+    proposal_id: str
+    permission_impact: str
+    approval_requirement: str
+    profile_cross_check_summary: str
+    high_risk: bool = False
+    action_request: AssetReviewActionRequest | None = None
+
+
+@dataclass(frozen=True)
+class AssetAdoptionHistoryItem:
+    """Low-sensitive history row linking accepted/rejected assets to proposals."""
+
+    asset_id: str
+    proposal_id: str
+    department_id: str
+    asset_kind: AssetProposalKind | str
+    decision: AssetReviewDecision | str
+    reviewer_id: str
+    reason: str
+    decided_at: str
+    source_refs: tuple[ManagementSourceRef, ...] = ()
+    accepted_refs: tuple[str, ...] = ()
+    rejected_refs: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "asset_kind", AssetProposalKind(self.asset_kind))
+        object.__setattr__(self, "decision", AssetReviewDecision(self.decision))
+        object.__setattr__(self, "reason", _redact_sensitive_text(self.reason))
+        object.__setattr__(self, "source_refs", tuple(self.source_refs))
+        object.__setattr__(self, "accepted_refs", tuple(self.accepted_refs))
+        object.__setattr__(self, "rejected_refs", tuple(self.rejected_refs))
+
+
+@dataclass(frozen=True)
+class EvolutionProposalWorkbenchItem:
+    """Read-only operations workbench row for organization evolution."""
+
+    proposal_id: str
+    proposal_kind: EvolutionProposalKind | str
+    status: str
+    target_node_id: str | None = None
+    approval_requirement: str = ""
+    impact_summary: str = ""
+    risk_badges: tuple[ManagementRiskBadge, ...] = ()
+    blockers: tuple[str, ...] = ()
+    report_refs: tuple[str, ...] = ()
+    can_execute: bool = False
+    disabled_reason: str = ""
+    next_required_action: str = ""
+    source_refs: tuple[ManagementSourceRef, ...] = ()
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "proposal_kind", EvolutionProposalKind(self.proposal_kind))
+        object.__setattr__(self, "impact_summary", _redact_sensitive_text(self.impact_summary))
+        object.__setattr__(self, "risk_badges", tuple(self.risk_badges))
+        object.__setattr__(self, "blockers", tuple(self.blockers))
+        object.__setattr__(self, "report_refs", tuple(self.report_refs))
+        object.__setattr__(self, "source_refs", tuple(self.source_refs))
+
+
+@dataclass(frozen=True)
+class EvolutionWizardInput:
+    """Console wizard input for drafting an evolution proposal."""
+
+    proposal_kind: EvolutionProposalKind | str
+    actor_id: str
+    target_node_id: str
+    requested_worker_id: str | None = None
+    destination_node_id: str | None = None
+    asset_disposition_ref: str | None = None
+    rollback_plan_ref: str | None = None
+    active_task_refs: tuple[str, ...] = ()
+    reason: str = ""
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "proposal_kind", EvolutionProposalKind(self.proposal_kind))
+        object.__setattr__(self, "active_task_refs", tuple(self.active_task_refs))
+        object.__setattr__(self, "reason", _redact_sensitive_text(self.reason))
+
+
+@dataclass(frozen=True)
+class EvolutionProposalDraft:
+    """Validation result from an evolution wizard, before store writes."""
+
+    proposal_kind: EvolutionProposalKind | str
+    actor_id: str
+    target_node_id: str
+    proposal_type: str
+    blockers: tuple[str, ...] = ()
+    risk_badges: tuple[ManagementRiskBadge, ...] = ()
+    approval_requirement: str = "main_agent_review"
+    user_approval_required: bool = False
+    source_refs: tuple[ManagementSourceRef, ...] = ()
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "proposal_kind", EvolutionProposalKind(self.proposal_kind))
+        object.__setattr__(self, "blockers", tuple(self.blockers))
+        object.__setattr__(self, "risk_badges", tuple(self.risk_badges))
+        object.__setattr__(self, "source_refs", tuple(self.source_refs))
+
+
+@dataclass(frozen=True)
+class EvolutionExecutionView:
+    """Read-only executor state and report view."""
+
+    execution_id: str
+    proposal_id: str
+    proposal_status: str
+    execution_status: str
+    locks: tuple[str, ...] = ()
+    steps: tuple[str, ...] = ()
+    current_step: str | None = None
+    failed_step: str | None = None
+    manual_recovery_hint: str = ""
+    report_refs: tuple[str, ...] = ()
+    audit_refs: tuple[str, ...] = ()
+    action_availability: Mapping[str, bool] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "locks", tuple(self.locks))
+        object.__setattr__(self, "steps", tuple(self.steps))
+        object.__setattr__(self, "manual_recovery_hint", _redact_sensitive_text(self.manual_recovery_hint))
+        object.__setattr__(self, "report_refs", tuple(self.report_refs))
+        object.__setattr__(self, "audit_refs", tuple(self.audit_refs))
+        object.__setattr__(self, "action_availability", dict(self.action_availability))
+
+
+@dataclass(frozen=True)
+class ThreadArchiveSummaryView:
+    """Read-only thread summary, retention, and archive state view."""
+
+    thread_id: str
+    status: str
+    summary: str
+    manifest_refs: tuple[str, ...] = ()
+    retention_hint: str = ""
+    archive_actor: str | None = None
+    archive_reason: str = ""
+    evolution_audit_refs: tuple[str, ...] = ()
+    new_task_entry_enabled: bool = True
+    read_only: bool = False
+    source_ref: ManagementSourceRef | None = None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "summary", _redact_sensitive_text(self.summary))
+        object.__setattr__(self, "manifest_refs", tuple(self.manifest_refs))
+        object.__setattr__(
+            self,
+            "evolution_audit_refs",
+            tuple(self.evolution_audit_refs),
+        )
+
+
+@dataclass(frozen=True)
+class DepartmentManagementSummary:
+    """Low-sensitivity department state and asset summary."""
+
+    department_id: str
+    display_name: str
+    owner_worker_id: str | None = None
+    member_count: int = 0
+    active_asset_count: int = 0
+    accepted_asset_count: int = 0
+    default_chat_available: bool = False
+    collaboration_mode: str = "none"
+    policy_summary: str = ""
+    risk_badges: tuple[ManagementRiskBadge, ...] = ()
+    source_ref: ManagementSourceRef | None = None
+    public_metadata: Mapping[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "risk_badges", tuple(self.risk_badges))
+        object.__setattr__(
+            self,
+            "public_metadata",
+            _redact_sensitive_mapping(self.public_metadata),
+        )
+
+
+@dataclass(frozen=True)
+class DashboardDataSources:
+    """Inputs used to build a management dashboard snapshot."""
+
+    worker_records: Mapping[str, WorkerRegistryRecord | Mapping[str, Any]]
+    organization_tree: OrgTree | Mapping[str, Any] | None = None
+    department_summaries: Sequence[DepartmentManagementSummary | Mapping[str, Any]] = ()
+    health_summaries: Mapping[str, Mapping[str, Any] | str] = field(default_factory=dict)
+    policy_summaries: Mapping[str, str] = field(default_factory=dict)
+    source_revision: str = ""
+    source_updated_at: str | None = None
+
+
+@dataclass(frozen=True)
+class DashboardSnapshot:
+    """Read-only dashboard snapshot for worker and organization management."""
+
+    workers: tuple[WorkerManagementSummary, ...]
+    organization_nodes: tuple[OrganizationManagementNodeSummary, ...]
+    departments: tuple[DepartmentManagementSummary, ...]
+    risk_badges: tuple[ManagementRiskBadge, ...]
+    warnings: tuple[str, ...]
+    source_ref: ManagementSourceRef
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "workers", tuple(self.workers))
+        object.__setattr__(self, "organization_nodes", tuple(self.organization_nodes))
+        object.__setattr__(self, "departments", tuple(self.departments))
+        object.__setattr__(self, "risk_badges", tuple(self.risk_badges))
+        object.__setattr__(self, "warnings", tuple(self.warnings))
+
+
+def build_dashboard_snapshot(sources: DashboardDataSources) -> DashboardSnapshot:
+    """Build a read-only management dashboard from loaded low-sensitivity data."""
+
+    source_ref = ManagementSourceRef(
+        source_kind="management_dashboard",
+        source_id="worker_agents",
+        revision=sources.source_revision,
+        updated_at=sources.source_updated_at,
+    )
+    workers = tuple(
+        _build_worker_summary(
+            worker_id,
+            record,
+            health=sources.health_summaries.get(worker_id),
+            policy_summary=sources.policy_summaries.get(worker_id, ""),
+        )
+        for worker_id, record in sorted(sources.worker_records.items())
+    )
+    worker_ids = {worker.worker_id for worker in workers}
+    departments = tuple(
+        _coerce_department_summary(summary)
+        for summary in sources.department_summaries
+    )
+    organization_nodes, warnings = _build_organization_summaries(
+        sources.organization_tree,
+        worker_ids=worker_ids,
+    )
+    risk_badges = tuple(
+        badge
+        for item in (*workers, *organization_nodes, *departments)
+        for badge in item.risk_badges
+    )
+    return DashboardSnapshot(
+        workers=workers,
+        organization_nodes=organization_nodes,
+        departments=departments,
+        risk_badges=risk_badges,
+        warnings=tuple(warnings),
+        source_ref=source_ref,
+    )
+
+
+def dashboard_snapshot_to_dict(snapshot: DashboardSnapshot) -> dict[str, Any]:
+    """Serialize a dashboard snapshot deterministically for APIs and tests."""
+
+    return {
+        "source_ref": source_ref_to_dict(snapshot.source_ref),
+        "workers": [worker_summary_to_dict(worker) for worker in snapshot.workers],
+        "organization_nodes": [
+            organization_node_summary_to_dict(node)
+            for node in snapshot.organization_nodes
+        ],
+        "departments": [
+            department_summary_to_dict(department)
+            for department in snapshot.departments
+        ],
+        "risk_badges": [risk_badge_to_dict(badge) for badge in snapshot.risk_badges],
+        "warnings": list(snapshot.warnings),
+    }
+
+
+def build_worker_management_list(
+    snapshot: DashboardSnapshot,
+) -> tuple[WorkerManagementListItem, ...]:
+    """Return list-view rows derived from the dashboard snapshot."""
+
+    return tuple(_worker_list_item(worker) for worker in snapshot.workers)
+
+
+def build_managed_chat_thread_summary(
+    thread: WorkerChatThread | Mapping[str, Any],
+    *,
+    status: str = "active",
+    last_summary: str = "",
+    source_revision: str = "",
+) -> ManagedChatThreadSummary:
+    """Build a chat thread management summary without reading transcript content."""
+
+    thread_id = _string_from_record(thread, "thread_id", "")
+    thread_type = _chat_thread_type_value(_value_from_record(thread, "thread_type"))
+    participants = _participants_from_thread(thread)
+    user_present = _participant_kind_count(participants, ChatParticipantKind.USER.value) > 0
+    main_agent_visible = bool(_value_from_record(thread, "main_agent_visible"))
+    has_main_agent = (
+        _participant_kind_count(participants, ChatParticipantKind.MAIN_AGENT.value) > 0
+        or main_agent_visible
+    )
+    risks: list[ManagementRiskBadge] = []
+    if not user_present or not has_main_agent:
+        risks.append(
+            ManagementRiskBadge(
+                code="invalid_management_boundary",
+                label="Thread is missing the required user or main-agent boundary",
+                severity=ManagementRiskSeverity.BLOCKER,
+                source_refs=(ManagementSourceRef("chat_thread", thread_id),),
+            )
+        )
+    normalized_status = status.lower().replace(" ", "_")
+    return ManagedChatThreadSummary(
+        thread_id=thread_id,
+        thread_type=thread_type,
+        status=normalized_status,
+        title=_string_from_record(thread, "title", ""),
+        participant_count=len(participants),
+        worker_count=_participant_kind_count(participants, ChatParticipantKind.WORKER.value),
+        organization_node_count=_participant_kind_count(
+            participants,
+            ChatParticipantKind.ORGANIZATION_NODE.value,
+        ),
+        user_present=user_present,
+        main_agent_visible=main_agent_visible,
+        valid_management_boundary=user_present and has_main_agent,
+        read_only=normalized_status == "archived",
+        last_summary=last_summary or _string_from_record(thread, "audit_summary", ""),
+        risk_badges=tuple(risks),
+        source_ref=ManagementSourceRef("chat_thread", thread_id, source_revision),
+    )
+
+
+def managed_chat_thread_summary_to_dict(
+    summary: ManagedChatThreadSummary,
+) -> dict[str, Any]:
+    return {
+        "thread_id": summary.thread_id,
+        "thread_type": summary.thread_type,
+        "status": summary.status,
+        "title": summary.title,
+        "participant_count": summary.participant_count,
+        "worker_count": summary.worker_count,
+        "organization_node_count": summary.organization_node_count,
+        "user_present": summary.user_present,
+        "main_agent_visible": summary.main_agent_visible,
+        "valid_management_boundary": summary.valid_management_boundary,
+        "read_only": summary.read_only,
+        "last_summary": summary.last_summary,
+        "risk_badges": [risk_badge_to_dict(badge) for badge in summary.risk_badges],
+        "source_ref": _optional_source_ref_to_dict(summary.source_ref),
+    }
+
+
+def build_at_message_tracking_item(
+    record: Mapping[str, Any],
+) -> AtMessageTrackingItem:
+    """Build a read-only @ tracking row from a router status summary."""
+
+    status = str(record.get("status", "pending"))
+    tracking_id = str(record.get("tracking_id", record.get("delivery_id", "")))
+    thread_id = str(record.get("thread_id", ""))
+    risks = _delivery_risk_badges(
+        status=status,
+        thread_id=thread_id,
+        overdue=bool(record.get("overdue", False)),
+        delegated_to=_optional_string(record.get("delegated_to")),
+    )
+    return AtMessageTrackingItem(
+        tracking_id=tracking_id,
+        thread_id=thread_id,
+        message_id=str(record.get("message_id", "")),
+        status=status,
+        target_id=str(record.get("target_id", record.get("worker_id", ""))),
+        delegated_to=_optional_string(record.get("delegated_to")),
+        overdue=bool(record.get("overdue", False)),
+        risk_badges=tuple(risks),
+        source_ref=ManagementSourceRef("mention_tracking", tracking_id),
+    )
+
+
+def build_broadcast_tracking_item(
+    record: Mapping[str, Any],
+) -> BroadcastTrackingItem:
+    """Build a read-only broadcast tracking row from delivery summaries."""
+
+    status = str(record.get("status", "pending"))
+    tracking_id = str(record.get("tracking_id", record.get("delivery_id", "")))
+    thread_id = str(record.get("thread_id", ""))
+    failed_count = _int_value(record.get("failed_count", 0))
+    risks = _delivery_risk_badges(
+        status=status,
+        thread_id=thread_id,
+        overdue=bool(record.get("overdue", False)),
+    )
+    if failed_count:
+        risks.append(
+            ManagementRiskBadge(
+                code="broadcast_failed",
+                label="Broadcast has failed deliveries",
+                severity=ManagementRiskSeverity.WARNING,
+                source_refs=(ManagementSourceRef("broadcast_tracking", tracking_id),),
+            )
+        )
+    return BroadcastTrackingItem(
+        tracking_id=tracking_id,
+        thread_id=thread_id,
+        message_id=str(record.get("message_id", "")),
+        status=status,
+        target_scope=str(record.get("target_scope", "")),
+        recipient_count=_int_value(record.get("recipient_count", 0)),
+        acknowledged_count=_int_value(record.get("acknowledged_count", 0)),
+        requires_all_acknowledgement=bool(
+            record.get("requires_all_acknowledgement", False)
+        ),
+        failed_count=failed_count,
+        overdue=bool(record.get("overdue", False)),
+        risk_badges=tuple(risks),
+        source_ref=ManagementSourceRef("broadcast_tracking", tracking_id),
+    )
+
+
+def filter_at_message_tracking_items(
+    items: Iterable[AtMessageTrackingItem],
+    *,
+    status: str | None = None,
+    target_id: str | None = None,
+    thread_id: str | None = None,
+) -> tuple[AtMessageTrackingItem, ...]:
+    return tuple(
+        item
+        for item in items
+        if (status is None or item.status == status)
+        and (target_id is None or item.target_id == target_id)
+        and (thread_id is None or item.thread_id == thread_id)
+    )
+
+
+def filter_broadcast_tracking_items(
+    items: Iterable[BroadcastTrackingItem],
+    *,
+    status: str | None = None,
+    target_scope: str | None = None,
+    thread_id: str | None = None,
+) -> tuple[BroadcastTrackingItem, ...]:
+    return tuple(
+        item
+        for item in items
+        if (status is None or item.status == status)
+        and (target_scope is None or item.target_scope == target_scope)
+        and (thread_id is None or item.thread_id == thread_id)
+    )
+
+
+def at_message_tracking_item_to_dict(item: AtMessageTrackingItem) -> dict[str, Any]:
+    return {
+        "tracking_id": item.tracking_id,
+        "thread_id": item.thread_id,
+        "message_id": item.message_id,
+        "status": item.status,
+        "target_id": item.target_id,
+        "delegated_to": item.delegated_to,
+        "overdue": item.overdue,
+        "risk_badges": [risk_badge_to_dict(badge) for badge in item.risk_badges],
+        "source_ref": _optional_source_ref_to_dict(item.source_ref),
+    }
+
+
+def broadcast_tracking_item_to_dict(item: BroadcastTrackingItem) -> dict[str, Any]:
+    return {
+        "tracking_id": item.tracking_id,
+        "thread_id": item.thread_id,
+        "message_id": item.message_id,
+        "status": item.status,
+        "target_scope": item.target_scope,
+        "recipient_count": item.recipient_count,
+        "acknowledged_count": item.acknowledged_count,
+        "requires_all_acknowledgement": item.requires_all_acknowledgement,
+        "failed_count": item.failed_count,
+        "overdue": item.overdue,
+        "risk_badges": [risk_badge_to_dict(badge) for badge in item.risk_badges],
+        "source_ref": _optional_source_ref_to_dict(item.source_ref),
+    }
+
+
+def build_approval_queue_item(data: Mapping[str, Any]) -> ApprovalQueueItem:
+    """Build an approval queue row from a low-sensitive proposal summary."""
+
+    source_kind = ApprovalSourceKind(str(data.get("source_kind")))
+    source_id = str(data.get("source_id", data.get("proposal_id", "")))
+    risks = tuple(
+        _risk_badge_from_mapping(risk, source_kind.value, source_id)
+        for risk in data.get("risks", ())
+        if isinstance(risk, Mapping)
+    )
+    user_required = bool(data.get("user_confirmation_required", False)) or any(
+        badge.severity == ManagementRiskSeverity.BLOCKER
+        and badge.code in {"permission_expansion", "budget_increase", "external_agent"}
+        for badge in risks
+    )
+    return ApprovalQueueItem(
+        approval_id=str(data.get("approval_id", source_id)),
+        source_kind=source_kind,
+        source_id=source_id,
+        status=str(data.get("status", "pending")),
+        requestor_id=str(data.get("requestor_id", "")),
+        recommended_approver_id=_optional_string(data.get("recommended_approver_id")),
+        impact_summary=str(data.get("impact_summary", "")),
+        risk_badges=risks,
+        blockers=_string_tuple(data.get("blockers", ())),
+        warnings=_string_tuple(data.get("warnings", ())),
+        deadline_at=_optional_string(data.get("deadline_at")),
+        user_confirmation_required=user_required,
+        source_refs=(ManagementSourceRef(source_kind.value, source_id),),
+    )
+
+
+def filter_approval_queue_items(
+    items: Iterable[ApprovalQueueItem],
+    *,
+    status: str | None = None,
+    source_kind: ApprovalSourceKind | str | None = None,
+    high_risk: bool | None = None,
+) -> tuple[ApprovalQueueItem, ...]:
+    expected_kind = ApprovalSourceKind(source_kind) if source_kind is not None else None
+    return tuple(
+        item
+        for item in items
+        if (status is None or item.status == status)
+        and (expected_kind is None or item.source_kind == expected_kind)
+        and (
+            high_risk is None
+            or any(badge.severity == ManagementRiskSeverity.BLOCKER for badge in item.risk_badges)
+            is high_risk
+        )
+    )
+
+
+def sort_approval_queue_items(
+    items: Iterable[ApprovalQueueItem],
+) -> tuple[ApprovalQueueItem, ...]:
+    """Sort pending/high-risk approvals first while staying deterministic."""
+
+    status_rank = {"pending": 0, "expired": 1, "approved": 2, "rejected": 3}
+    return tuple(
+        sorted(
+            items,
+            key=lambda item: (
+                status_rank.get(item.status, 9),
+                not item.user_confirmation_required,
+                item.deadline_at or "",
+                item.approval_id,
+            ),
+        )
+    )
+
+
+def approval_queue_item_to_dict(item: ApprovalQueueItem) -> dict[str, Any]:
+    return {
+        "approval_id": item.approval_id,
+        "source_kind": item.source_kind.value,
+        "source_id": item.source_id,
+        "status": item.status,
+        "requestor_id": item.requestor_id,
+        "recommended_approver_id": item.recommended_approver_id,
+        "impact_summary": item.impact_summary,
+        "risk_badges": [risk_badge_to_dict(badge) for badge in item.risk_badges],
+        "blockers": list(item.blockers),
+        "warnings": list(item.warnings),
+        "deadline_at": item.deadline_at,
+        "user_confirmation_required": item.user_confirmation_required,
+        "source_refs": [source_ref_to_dict(ref) for ref in item.source_refs],
+    }
+
+
+def validate_approval_action_request(
+    item: ApprovalQueueItem,
+    request: ApprovalActionRequest,
+    *,
+    allowed_actor_ids: Iterable[str],
+) -> None:
+    """Validate approval action policy before a caller invokes a proposal service."""
+
+    if item.status in {"approved", "rejected", "expired"}:
+        raise ValueError(f"approval {item.approval_id!r} is already terminal")
+    if request.actor_id not in set(allowed_actor_ids):
+        raise ValueError("approval actor is not allowed for this item")
+    if request.decision == ApprovalDecision.APPROVE:
+        if item.blockers:
+            raise ValueError("blocked approvals cannot be approved")
+        if item.user_confirmation_required and not request.explicit_high_risk_confirmation:
+            raise ValueError("high-risk approval requires explicit confirmation")
+    if request.decision == ApprovalDecision.DELEGATE_REVIEW and not request.delegated_reviewer_id:
+        raise ValueError("delegate_review requires delegated_reviewer_id")
+
+
+def create_approval_audit_record(
+    item: ApprovalQueueItem,
+    request: ApprovalActionRequest,
+    *,
+    timestamp: str,
+) -> ApprovalAuditRecord:
+    """Create a low-sensitive audit record after validation succeeds."""
+
+    risk_codes = ", ".join(badge.code for badge in item.risk_badges) or "none"
+    return ApprovalAuditRecord(
+        approval_id=item.approval_id,
+        actor_id=request.actor_id,
+        decision=request.decision,
+        reason=request.reason,
+        timestamp=request.decided_at or timestamp,
+        risk_summary=risk_codes,
+        source_refs=item.source_refs,
+    )
+
+
+def approval_action_request_to_dict(request: ApprovalActionRequest) -> dict[str, Any]:
+    return {
+        "approval_id": request.approval_id,
+        "decision": request.decision.value,
+        "actor_id": request.actor_id,
+        "reason": request.reason,
+        "explicit_high_risk_confirmation": request.explicit_high_risk_confirmation,
+        "delegated_reviewer_id": request.delegated_reviewer_id,
+        "decided_at": request.decided_at,
+    }
+
+
+def approval_audit_record_to_dict(record: ApprovalAuditRecord) -> dict[str, Any]:
+    return {
+        "approval_id": record.approval_id,
+        "actor_id": record.actor_id,
+        "decision": record.decision.value,
+        "reason": record.reason,
+        "timestamp": record.timestamp,
+        "risk_summary": record.risk_summary,
+        "source_refs": [source_ref_to_dict(ref) for ref in record.source_refs],
+    }
+
+
+def build_approval_risk_presentation(item: ApprovalQueueItem) -> ApprovalRiskPresentation:
+    """Separate approval blockers, warnings, and user-confirmation hints."""
+
+    risk_warnings = tuple(
+        badge.label
+        for badge in item.risk_badges
+        if badge.severity == ManagementRiskSeverity.WARNING
+    )
+    user_summary = (
+        "Explicit user confirmation is required before approval."
+        if item.user_confirmation_required
+        else ""
+    )
+    disabled_reason = ""
+    if item.blockers:
+        disabled_reason = "; ".join(item.blockers)
+    elif item.status in {"rejected", "expired"}:
+        disabled_reason = f"{item.status} proposals cannot be executed"
+    return ApprovalRiskPresentation(
+        approval_id=item.approval_id,
+        risks=item.risk_badges,
+        blockers=item.blockers,
+        warnings=tuple((*item.warnings, *risk_warnings)),
+        user_required_summary=user_summary,
+        disabled_action_reason=disabled_reason,
+    )
+
+
+def approval_risk_presentation_to_dict(
+    presentation: ApprovalRiskPresentation,
+) -> dict[str, Any]:
+    return {
+        "approval_id": presentation.approval_id,
+        "risks": [risk_badge_to_dict(badge) for badge in presentation.risks],
+        "blockers": list(presentation.blockers),
+        "warnings": list(presentation.warnings),
+        "user_required_summary": presentation.user_required_summary,
+        "disabled_action_reason": presentation.disabled_action_reason,
+    }
+
+
+def build_asset_review_item(data: Mapping[str, Any]) -> AssetReviewItem:
+    """Build a low-sensitive department asset proposal review row."""
+
+    proposal_kind = AssetProposalKind(str(data.get("proposal_kind")))
+    proposal_id = str(data.get("proposal_id", ""))
+    sensitivity = str(data.get("sensitivity", "low"))
+    conflicts = _string_tuple(data.get("conflict_refs", ()))
+    redaction_required = bool(data.get("redaction_required", False)) or sensitivity in {
+        "sensitive",
+        "high",
+    }
+    blocked = bool(data.get("blocked", False)) or (
+        redaction_required and bool(data.get("requires_redaction_before_accept", False))
+    )
+    risks: list[ManagementRiskBadge] = []
+    if redaction_required:
+        risks.append(
+            ManagementRiskBadge(
+                code="redaction_required",
+                label="Sensitive asset summary needs redaction review",
+                severity=ManagementRiskSeverity.WARNING,
+                source_refs=(ManagementSourceRef(proposal_kind.value, proposal_id),),
+            )
+        )
+    if conflicts:
+        risks.append(
+            ManagementRiskBadge(
+                code="conflict_refs",
+                label="Proposal has conflicting asset refs",
+                severity=ManagementRiskSeverity.WARNING,
+                source_refs=(ManagementSourceRef(proposal_kind.value, proposal_id),),
+            )
+        )
+    return AssetReviewItem(
+        proposal_id=proposal_id,
+        proposal_kind=proposal_kind,
+        status=str(data.get("status", "pending")),
+        target_department_id=str(data.get("target_department_id", "")),
+        summary=str(data.get("summary", "")),
+        source_refs=(ManagementSourceRef(proposal_kind.value, proposal_id),),
+        sensitivity=sensitivity,
+        reviewer_id=_optional_string(data.get("reviewer_id")),
+        conflict_refs=conflicts,
+        redaction_required=redaction_required,
+        user_approval_required=bool(data.get("user_approval_required", False)),
+        blocked=blocked,
+        risk_badges=tuple(risks),
+    )
+
+
+def asset_review_item_to_dict(item: AssetReviewItem) -> dict[str, Any]:
+    return {
+        "proposal_id": item.proposal_id,
+        "proposal_kind": item.proposal_kind.value,
+        "status": item.status,
+        "target_department_id": item.target_department_id,
+        "summary": item.summary,
+        "source_refs": [source_ref_to_dict(ref) for ref in item.source_refs],
+        "sensitivity": item.sensitivity,
+        "reviewer_id": item.reviewer_id,
+        "conflict_refs": list(item.conflict_refs),
+        "redaction_required": item.redaction_required,
+        "user_approval_required": item.user_approval_required,
+        "blocked": item.blocked,
+        "risk_badges": [risk_badge_to_dict(badge) for badge in item.risk_badges],
+    }
+
+
+def build_memory_review_detail(data: Mapping[str, Any]) -> AssetMemoryReviewDetail:
+    return AssetMemoryReviewDetail(
+        proposal_id=str(data.get("proposal_id", "")),
+        classification=str(data.get("classification", "low")),
+        redaction_required=bool(data.get("redaction_required", False))
+        or str(data.get("classification", "")).lower() in {"sensitive", "private"},
+        conflict_refs=_string_tuple(data.get("conflict_refs", ())),
+        summary=str(data.get("summary", "")),
+        action_request=_asset_action_request(data.get("action_request")),
+    )
+
+
+def build_skill_review_detail(data: Mapping[str, Any]) -> AssetSkillReviewDetail:
+    return AssetSkillReviewDetail(
+        proposal_id=str(data.get("proposal_id", "")),
+        skill_id=str(data.get("skill_id", "")),
+        skill_available=bool(data.get("skill_available", False)),
+        applicability_summary=str(data.get("applicability_summary", "")),
+        tool_dependency_warnings=_string_tuple(data.get("tool_dependency_warnings", ())),
+        action_request=_asset_action_request(data.get("action_request")),
+    )
+
+
+def build_tool_policy_review_detail(data: Mapping[str, Any]) -> AssetToolPolicyReviewDetail:
+    return AssetToolPolicyReviewDetail(
+        proposal_id=str(data.get("proposal_id", "")),
+        permission_impact=str(data.get("permission_impact", "")),
+        approval_requirement=str(data.get("approval_requirement", "")),
+        profile_cross_check_summary=str(data.get("profile_cross_check_summary", "")),
+        high_risk=bool(data.get("high_risk", False)),
+        action_request=_asset_action_request(data.get("action_request")),
+    )
+
+
+def memory_review_detail_to_dict(detail: AssetMemoryReviewDetail) -> dict[str, Any]:
+    return {
+        "proposal_id": detail.proposal_id,
+        "classification": detail.classification,
+        "redaction_required": detail.redaction_required,
+        "conflict_refs": list(detail.conflict_refs),
+        "summary": detail.summary,
+        "action_request": _optional_asset_action_request_to_dict(detail.action_request),
+    }
+
+
+def skill_review_detail_to_dict(detail: AssetSkillReviewDetail) -> dict[str, Any]:
+    return {
+        "proposal_id": detail.proposal_id,
+        "skill_id": detail.skill_id,
+        "skill_available": detail.skill_available,
+        "applicability_summary": detail.applicability_summary,
+        "tool_dependency_warnings": list(detail.tool_dependency_warnings),
+        "action_request": _optional_asset_action_request_to_dict(detail.action_request),
+    }
+
+
+def tool_policy_review_detail_to_dict(
+    detail: AssetToolPolicyReviewDetail,
+) -> dict[str, Any]:
+    return {
+        "proposal_id": detail.proposal_id,
+        "permission_impact": detail.permission_impact,
+        "approval_requirement": detail.approval_requirement,
+        "profile_cross_check_summary": detail.profile_cross_check_summary,
+        "high_risk": detail.high_risk,
+        "action_request": _optional_asset_action_request_to_dict(detail.action_request),
+    }
+
+
+def build_asset_adoption_history_item(data: Mapping[str, Any]) -> AssetAdoptionHistoryItem:
+    return AssetAdoptionHistoryItem(
+        asset_id=str(data.get("asset_id", "")),
+        proposal_id=str(data.get("proposal_id", "")),
+        department_id=str(data.get("department_id", "")),
+        asset_kind=str(data.get("asset_kind", data.get("proposal_kind", "memory"))),
+        decision=str(data.get("decision", "reject")),
+        reviewer_id=str(data.get("reviewer_id", "")),
+        reason=str(data.get("reason", "")),
+        decided_at=str(data.get("decided_at", "")),
+        source_refs=(
+            ManagementSourceRef(
+                str(data.get("asset_kind", data.get("proposal_kind", "memory"))),
+                str(data.get("proposal_id", "")),
+            ),
+        ),
+        accepted_refs=_string_tuple(data.get("accepted_refs", ())),
+        rejected_refs=_string_tuple(data.get("rejected_refs", ())),
+    )
+
+
+def filter_asset_adoption_history(
+    items: Iterable[AssetAdoptionHistoryItem],
+    *,
+    department_id: str | None = None,
+    asset_kind: AssetProposalKind | str | None = None,
+    decision: AssetReviewDecision | str | None = None,
+) -> tuple[AssetAdoptionHistoryItem, ...]:
+    expected_kind = AssetProposalKind(asset_kind) if asset_kind is not None else None
+    expected_decision = AssetReviewDecision(decision) if decision is not None else None
+    return tuple(
+        item
+        for item in items
+        if (department_id is None or item.department_id == department_id)
+        and (expected_kind is None or item.asset_kind == expected_kind)
+        and (expected_decision is None or item.decision == expected_decision)
+    )
+
+
+def asset_adoption_history_item_to_dict(
+    item: AssetAdoptionHistoryItem,
+) -> dict[str, Any]:
+    return {
+        "asset_id": item.asset_id,
+        "proposal_id": item.proposal_id,
+        "department_id": item.department_id,
+        "asset_kind": item.asset_kind.value,
+        "decision": item.decision.value,
+        "reviewer_id": item.reviewer_id,
+        "reason": item.reason,
+        "decided_at": item.decided_at,
+        "source_refs": [source_ref_to_dict(ref) for ref in item.source_refs],
+        "accepted_refs": list(item.accepted_refs),
+        "rejected_refs": list(item.rejected_refs),
+    }
+
+
+def build_evolution_proposal_workbench_item(
+    data: Mapping[str, Any],
+) -> EvolutionProposalWorkbenchItem:
+    """Build an operations workbench item without reading sensitive reports."""
+
+    proposal_kind = EvolutionProposalKind(str(data.get("proposal_kind")))
+    proposal_id = str(data.get("proposal_id", ""))
+    status = str(data.get("status", "draft"))
+    blockers = _string_tuple(data.get("blockers", ()))
+    risks = tuple(
+        _risk_badge_from_mapping(risk, proposal_kind.value, proposal_id)
+        for risk in data.get("risks", ())
+        if isinstance(risk, Mapping)
+    )
+    can_execute = status == "approved" and not blockers
+    disabled_reason = ""
+    if blockers:
+        disabled_reason = "; ".join(blockers)
+    elif status != "approved":
+        disabled_reason = f"proposal status is {status}"
+    return EvolutionProposalWorkbenchItem(
+        proposal_id=proposal_id,
+        proposal_kind=proposal_kind,
+        status=status,
+        target_node_id=_optional_string(data.get("target_node_id")),
+        approval_requirement=str(data.get("approval_requirement", "")),
+        impact_summary=str(data.get("impact_summary", "")),
+        risk_badges=risks,
+        blockers=blockers,
+        report_refs=_string_tuple(data.get("report_refs", ())),
+        can_execute=can_execute,
+        disabled_reason="" if can_execute else disabled_reason,
+        next_required_action="execute_approved_proposal"
+        if can_execute
+        else "resolve_blockers_or_approval",
+        source_refs=(ManagementSourceRef("evolution_proposal", proposal_id),),
+    )
+
+
+def filter_evolution_workbench_items(
+    items: Iterable[EvolutionProposalWorkbenchItem],
+    *,
+    status: str | None = None,
+    proposal_kind: EvolutionProposalKind | str | None = None,
+    risk_code: str | None = None,
+    target_node_id: str | None = None,
+) -> tuple[EvolutionProposalWorkbenchItem, ...]:
+    expected_kind = EvolutionProposalKind(proposal_kind) if proposal_kind is not None else None
+    return tuple(
+        item
+        for item in items
+        if (status is None or item.status == status)
+        and (expected_kind is None or item.proposal_kind == expected_kind)
+        and (target_node_id is None or item.target_node_id == target_node_id)
+        and (
+            risk_code is None
+            or any(badge.code == risk_code for badge in item.risk_badges)
+        )
+    )
+
+
+def evolution_proposal_workbench_item_to_dict(
+    item: EvolutionProposalWorkbenchItem,
+) -> dict[str, Any]:
+    return {
+        "proposal_id": item.proposal_id,
+        "proposal_kind": item.proposal_kind.value,
+        "status": item.status,
+        "target_node_id": item.target_node_id,
+        "approval_requirement": item.approval_requirement,
+        "impact_summary": item.impact_summary,
+        "risk_badges": [risk_badge_to_dict(badge) for badge in item.risk_badges],
+        "blockers": list(item.blockers),
+        "report_refs": list(item.report_refs),
+        "can_execute": item.can_execute,
+        "disabled_reason": item.disabled_reason,
+        "next_required_action": item.next_required_action,
+        "source_refs": [source_ref_to_dict(ref) for ref in item.source_refs],
+    }
+
+
+def build_evolution_proposal_draft(
+    wizard_input: EvolutionWizardInput,
+) -> EvolutionProposalDraft:
+    """Validate wizard input and return a draft proposal without store writes."""
+
+    blockers: list[str] = []
+    risks: list[ManagementRiskBadge] = []
+    kind = wizard_input.proposal_kind
+    user_approval_required = False
+    if kind == EvolutionProposalKind.DELETE_CHILD_AGENT:
+        if not wizard_input.asset_disposition_ref:
+            blockers.append("asset disposition plan is required before deleting a child agent")
+        effective_target = wizard_input.requested_worker_id or wizard_input.target_node_id
+        risks.append(_evolution_risk("destructive_change", "Child agent deletion is destructive", effective_target))
+        user_approval_required = True
+    elif kind == EvolutionProposalKind.MERGE_DEPARTMENT:
+        if not wizard_input.destination_node_id:
+            blockers.append("destination node is required for department merge")
+        if not wizard_input.rollback_plan_ref:
+            blockers.append("rollback plan is required for department merge")
+        risks.append(_evolution_risk("department_merge", "Department merge changes ownership boundaries", wizard_input.target_node_id))
+        user_approval_required = True
+    elif kind == EvolutionProposalKind.ARCHIVE_NODE:
+        if wizard_input.active_task_refs:
+            blockers.append("active tasks must finish before archiving a node")
+        risks.append(_evolution_risk("destructive_change", "Archiving disables member workers", wizard_input.target_node_id))
+        user_approval_required = True
+    elif kind == EvolutionProposalKind.CREATE_CHILD_AGENT:
+        if not wizard_input.requested_worker_id:
+            blockers.append("requested worker id is required for child agent creation")
+    return EvolutionProposalDraft(
+        proposal_kind=kind,
+        actor_id=wizard_input.actor_id,
+        target_node_id=wizard_input.target_node_id,
+        proposal_type=kind.value,
+        blockers=tuple(blockers),
+        risk_badges=tuple(risks),
+        approval_requirement="user_confirmation"
+        if user_approval_required
+        else "main_agent_review",
+        user_approval_required=user_approval_required,
+        source_refs=(ManagementSourceRef("evolution_wizard", wizard_input.target_node_id),),
+    )
+
+
+def evolution_proposal_draft_to_dict(draft: EvolutionProposalDraft) -> dict[str, Any]:
+    return {
+        "proposal_kind": draft.proposal_kind.value,
+        "actor_id": draft.actor_id,
+        "target_node_id": draft.target_node_id,
+        "proposal_type": draft.proposal_type,
+        "blockers": list(draft.blockers),
+        "risk_badges": [risk_badge_to_dict(badge) for badge in draft.risk_badges],
+        "approval_requirement": draft.approval_requirement,
+        "user_approval_required": draft.user_approval_required,
+        "source_refs": [source_ref_to_dict(ref) for ref in draft.source_refs],
+    }
+
+
+def build_evolution_execution_view(data: Mapping[str, Any]) -> EvolutionExecutionView:
+    """Build a read-only executor state view and controlled action availability."""
+
+    proposal_status = str(data.get("proposal_status", "draft"))
+    execution_status = str(data.get("execution_status", "not_started"))
+    failed_step = _optional_string(data.get("failed_step"))
+    safe_retry = bool(data.get("safe_retry", False))
+    actions = {
+        "execute": proposal_status == "approved"
+        and execution_status in {"not_started", "ready"}
+        and not data.get("blockers"),
+        "retry_safe_step": execution_status == "failed" and failed_step is not None and safe_retry,
+        "mark_manual_recovery": execution_status == "failed",
+        "view_audit": True,
+    }
+    return EvolutionExecutionView(
+        execution_id=str(data.get("execution_id", "")),
+        proposal_id=str(data.get("proposal_id", "")),
+        proposal_status=proposal_status,
+        execution_status=execution_status,
+        locks=_string_tuple(data.get("locks", ())),
+        steps=_string_tuple(data.get("steps", ())),
+        current_step=_optional_string(data.get("current_step")),
+        failed_step=failed_step,
+        manual_recovery_hint=str(data.get("manual_recovery_hint", "")),
+        report_refs=_string_tuple(data.get("report_refs", ())),
+        audit_refs=_string_tuple(data.get("audit_refs", ())),
+        action_availability=actions,
+    )
+
+
+def evolution_execution_view_to_dict(view: EvolutionExecutionView) -> dict[str, Any]:
+    return {
+        "execution_id": view.execution_id,
+        "proposal_id": view.proposal_id,
+        "proposal_status": view.proposal_status,
+        "execution_status": view.execution_status,
+        "locks": list(view.locks),
+        "steps": list(view.steps),
+        "current_step": view.current_step,
+        "failed_step": view.failed_step,
+        "manual_recovery_hint": view.manual_recovery_hint,
+        "report_refs": list(view.report_refs),
+        "audit_refs": list(view.audit_refs),
+        "action_availability": dict(view.action_availability),
+    }
+
+
+def build_thread_archive_summary_view(
+    data: Mapping[str, Any],
+) -> ThreadArchiveSummaryView:
+    """Build a thread archive/summary view without exposing raw transcript."""
+
+    status = str(data.get("status", "active")).lower().replace(" ", "_")
+    thread_id = str(data.get("thread_id", ""))
+    return ThreadArchiveSummaryView(
+        thread_id=thread_id,
+        status=status,
+        summary=str(data.get("summary", data.get("last_summary", ""))),
+        manifest_refs=_string_tuple(data.get("manifest_refs", ())),
+        retention_hint=str(data.get("retention_hint", "")),
+        archive_actor=_optional_string(data.get("archive_actor")),
+        archive_reason=str(data.get("archive_reason", "")),
+        evolution_audit_refs=_string_tuple(data.get("evolution_audit_refs", ())),
+        new_task_entry_enabled=status not in {"frozen", "archived"},
+        read_only=status == "archived",
+        source_ref=ManagementSourceRef("chat_thread_archive", thread_id),
+    )
+
+
+def thread_archive_summary_view_to_dict(
+    view: ThreadArchiveSummaryView,
+) -> dict[str, Any]:
+    return {
+        "thread_id": view.thread_id,
+        "status": view.status,
+        "summary": view.summary,
+        "manifest_refs": list(view.manifest_refs),
+        "retention_hint": view.retention_hint,
+        "archive_actor": view.archive_actor,
+        "archive_reason": view.archive_reason,
+        "evolution_audit_refs": list(view.evolution_audit_refs),
+        "new_task_entry_enabled": view.new_task_entry_enabled,
+        "read_only": view.read_only,
+        "source_ref": _optional_source_ref_to_dict(view.source_ref),
+    }
+
+
+def filter_worker_management_list(
+    workers: Iterable[WorkerManagementListItem],
+    *,
+    status: str | None = None,
+    department_id: str | None = None,
+    runtime_type: str | None = None,
+    risk_badge: str | None = None,
+    include_archived: bool = True,
+) -> tuple[WorkerManagementListItem, ...]:
+    """Filter worker list rows without hiding archived workers by default."""
+
+    result = []
+    for worker in workers:
+        if not include_archived and worker.status == WorkerLifecycleStatus.ARCHIVED.value:
+            continue
+        if status is not None and worker.status != status:
+            continue
+        if department_id is not None and department_id not in worker.department_ids:
+            continue
+        if runtime_type is not None and worker.runtime_type != runtime_type:
+            continue
+        if risk_badge is not None and all(
+            badge.code != risk_badge for badge in worker.risk_badges
+        ):
+            continue
+        result.append(worker)
+    return tuple(result)
+
+
+def sort_worker_management_list(
+    workers: Iterable[WorkerManagementListItem],
+    *,
+    sort_key: str = "display_name",
+) -> tuple[WorkerManagementListItem, ...]:
+    """Sort worker list rows by a stable public field."""
+
+    allowed_keys = {
+        "display_name",
+        "health_status",
+        "runtime_type",
+        "status",
+        "worker_id",
+    }
+    key = sort_key if sort_key in allowed_keys else "display_name"
+    return tuple(sorted(workers, key=lambda worker: (getattr(worker, key), worker.worker_id)))
+
+
+def build_organization_tree_view(
+    nodes: Iterable[OrganizationManagementNodeSummary],
+    *,
+    root_node_id: str | None = None,
+) -> tuple[OrganizationTreeViewNode, ...]:
+    """Build nested organization tree view nodes without editing the active tree."""
+
+    node_map = {node.org_node_id: node for node in nodes}
+    children_by_parent: dict[str | None, list[OrganizationManagementNodeSummary]] = {}
+    for node in node_map.values():
+        children_by_parent.setdefault(node.parent_id, []).append(node)
+    for children in children_by_parent.values():
+        children.sort(key=lambda child: (child.name, child.org_node_id))
+
+    explicit_roots = [node_map[root_node_id]] if root_node_id in node_map else []
+    roots = explicit_roots or children_by_parent.get(None, [])
+    if not roots:
+        referenced_children = {
+            child_id for node in node_map.values() for child_id in node.child_ids
+        }
+        roots = [
+            node
+            for node in sorted(node_map.values(), key=lambda item: item.org_node_id)
+            if node.org_node_id not in referenced_children
+        ]
+    return tuple(
+        _organization_tree_node(root, children_by_parent, visiting=set())
+        for root in roots
+    )
+
+
+def organization_tree_view_node_to_dict(
+    node: OrganizationTreeViewNode,
+) -> dict[str, Any]:
+    return {
+        "summary": organization_node_summary_to_dict(node.summary),
+        "children": [
+            organization_tree_view_node_to_dict(child) for child in node.children
+        ],
+        "warnings": list(node.warnings),
+    }
+
+
+def worker_management_list_item_to_dict(
+    item: WorkerManagementListItem,
+) -> dict[str, Any]:
+    return {
+        "worker_id": item.worker_id,
+        "display_name": item.display_name,
+        "role": item.role,
+        "runtime_type": item.runtime_type,
+        "status": item.status,
+        "department_ids": list(item.department_ids),
+        "health_status": item.health_status,
+        "policy_summary": item.policy_summary,
+        "risk_badges": [risk_badge_to_dict(badge) for badge in item.risk_badges],
+        "action_links": dict(item.action_links),
+    }
+
+
+def worker_summary_to_dict(summary: WorkerManagementSummary) -> dict[str, Any]:
+    return {
+        "worker_id": summary.worker_id,
+        "display_name": summary.display_name,
+        "role": summary.role,
+        "runtime_type": summary.runtime_type,
+        "status": summary.status,
+        "department_ids": list(summary.department_ids),
+        "owner_worker_id": summary.owner_worker_id,
+        "health_status": summary.health_status,
+        "policy_summary": summary.policy_summary,
+        "risk_badges": [risk_badge_to_dict(badge) for badge in summary.risk_badges],
+        "source_ref": _optional_source_ref_to_dict(summary.source_ref),
+        "public_metadata": dict(summary.public_metadata),
+    }
+
+
+def organization_node_summary_to_dict(
+    summary: OrganizationManagementNodeSummary,
+) -> dict[str, Any]:
+    return {
+        "org_node_id": summary.org_node_id,
+        "name": summary.name,
+        "node_type": summary.node_type,
+        "lifecycle": summary.lifecycle,
+        "parent_id": summary.parent_id,
+        "child_ids": list(summary.child_ids),
+        "leader_kind": summary.leader_kind,
+        "leader_worker_id": summary.leader_worker_id,
+        "member_worker_ids": list(summary.member_worker_ids),
+        "individual_worker_id": summary.individual_worker_id,
+        "collaboration_mode": summary.collaboration_mode,
+        "read_only": summary.read_only,
+        "risk_badges": [risk_badge_to_dict(badge) for badge in summary.risk_badges],
+        "source_ref": _optional_source_ref_to_dict(summary.source_ref),
+    }
+
+
+def department_summary_to_dict(summary: DepartmentManagementSummary) -> dict[str, Any]:
+    return {
+        "department_id": summary.department_id,
+        "display_name": summary.display_name,
+        "owner_worker_id": summary.owner_worker_id,
+        "member_count": summary.member_count,
+        "active_asset_count": summary.active_asset_count,
+        "accepted_asset_count": summary.accepted_asset_count,
+        "default_chat_available": summary.default_chat_available,
+        "collaboration_mode": summary.collaboration_mode,
+        "policy_summary": summary.policy_summary,
+        "risk_badges": [risk_badge_to_dict(badge) for badge in summary.risk_badges],
+        "source_ref": _optional_source_ref_to_dict(summary.source_ref),
+        "public_metadata": dict(summary.public_metadata),
+    }
+
+
+def risk_badge_to_dict(badge: ManagementRiskBadge) -> dict[str, Any]:
+    return {
+        "code": badge.code,
+        "label": badge.label,
+        "severity": badge.severity.value,
+        "source_refs": [source_ref_to_dict(ref) for ref in badge.source_refs],
+    }
+
+
+def source_ref_to_dict(ref: ManagementSourceRef) -> dict[str, Any]:
+    return {
+        "source_kind": ref.source_kind,
+        "source_id": ref.source_id,
+        "revision": ref.revision,
+        "updated_at": ref.updated_at,
+    }
+
+
+def _build_worker_summary(
+    worker_id: str,
+    record: WorkerRegistryRecord | Mapping[str, Any],
+    *,
+    health: Mapping[str, Any] | str | None,
+    policy_summary: str,
+) -> WorkerManagementSummary:
+    status = _string_from_record(record, "status", WorkerLifecycleStatus.REGISTERED.value)
+    if isinstance(getattr(record, "status", None), WorkerLifecycleStatus):
+        status = getattr(record, "status").value
+    health_status = _health_status(health)
+    risks: list[ManagementRiskBadge] = []
+    if health_status in {"unhealthy", "failed", "offline"}:
+        risks.append(
+            ManagementRiskBadge(
+                code="external_unhealthy",
+                label="External runtime health needs attention",
+                severity=ManagementRiskSeverity.WARNING,
+                source_refs=(
+                    ManagementSourceRef("worker_health", worker_id),
+                ),
+            )
+        )
+    return WorkerManagementSummary(
+        worker_id=_string_from_record(record, "worker_id", worker_id),
+        display_name=_string_from_record(record, "display_name", worker_id),
+        role=_string_from_record(record, "role", ""),
+        runtime_type=_string_from_record(record, "runtime_type", ""),
+        status=status,
+        department_ids=_string_tuple_from_metadata(record, "department_ids"),
+        owner_worker_id=_optional_string_from_record(record, "owner_worker_id"),
+        health_status=health_status,
+        policy_summary=policy_summary,
+        risk_badges=tuple(risks),
+        source_ref=ManagementSourceRef(
+            "worker_registry",
+            worker_id,
+            updated_at=_optional_string_from_record(record, "updated_at"),
+        ),
+        public_metadata=_mapping_from_record(record, "metadata"),
+    )
+
+
+def _worker_list_item(summary: WorkerManagementSummary) -> WorkerManagementListItem:
+    return WorkerManagementListItem(
+        worker_id=summary.worker_id,
+        display_name=summary.display_name,
+        role=summary.role,
+        runtime_type=summary.runtime_type,
+        status=summary.status,
+        department_ids=summary.department_ids,
+        health_status=summary.health_status,
+        policy_summary=summary.policy_summary,
+        risk_badges=summary.risk_badges,
+        action_links=_controlled_worker_action_links(summary.worker_id, {}),
+    )
+
+
+def _controlled_worker_action_links(
+    worker_id: str,
+    requested_links: Mapping[str, str],
+) -> dict[str, str]:
+    safe_links = {
+        "view_approvals": f"approval-center?worker_id={worker_id}",
+        "view_operations": f"operations-console?worker_id={worker_id}",
+        "view_assets": f"asset-review?worker_id={worker_id}",
+    }
+    for name, target in requested_links.items():
+        if name in safe_links and isinstance(target, str):
+            safe_links[name] = target
+    return safe_links
+
+
+def _build_organization_summaries(
+    organization_tree: OrgTree | Mapping[str, Any] | None,
+    *,
+    worker_ids: set[str],
+) -> tuple[tuple[OrganizationManagementNodeSummary, ...], list[str]]:
+    if organization_tree is None:
+        return (), []
+    tree = organization_tree if isinstance(organization_tree, OrgTree) else None
+    raw_nodes: Iterable[OrgNode | Mapping[str, Any]]
+    revision = ""
+    updated_at = None
+    if tree is not None:
+        raw_nodes = (node for _, node in sorted(tree.nodes.items()))
+        revision = str(tree.revision)
+        updated_at = tree.updated_at
+    else:
+        raw_nodes = _mapping_values(organization_tree.get("nodes", ()))
+        revision = str(organization_tree.get("revision", ""))
+        updated_at = _optional_string(organization_tree.get("updated_at"))
+
+    nodes = tuple(
+        _build_organization_node_summary(node, worker_ids, revision, updated_at)
+        for node in raw_nodes
+    )
+    node_ids = {node.org_node_id for node in nodes}
+    warnings = [
+        f"organization node {node.org_node_id!r} references missing child {child_id!r}"
+        for node in nodes
+        for child_id in node.child_ids
+        if child_id not in node_ids
+    ]
+    warnings.extend(
+        f"organization node {node.org_node_id!r} references missing parent {node.parent_id!r}"
+        for node in nodes
+        if node.parent_id is not None and node.parent_id not in node_ids
+    )
+    warnings.extend(
+        f"organization node {node.org_node_id!r} references missing worker {worker_id!r}"
+        for node in nodes
+        for worker_id in _node_worker_refs(node)
+        if worker_id not in worker_ids
+    )
+    return nodes, warnings
+
+
+def _build_organization_node_summary(
+    node: OrgNode | Mapping[str, Any],
+    worker_ids: set[str],
+    revision: str,
+    updated_at: str | None,
+) -> OrganizationManagementNodeSummary:
+    org_node_id = _string_from_record(node, "org_node_id", "")
+    lifecycle = _enum_value(_value_from_record(node, "lifecycle"), OrgLifecycleState.DRAFT.value)
+    node_type = _enum_value(_value_from_record(node, "node_type"), "")
+    leader = _value_from_record(node, "leader")
+    leader_kind = _leader_kind(leader)
+    leader_worker_id = _leader_worker_id(leader)
+    member_worker_ids = _string_tuple_from_record(node, "member_worker_ids")
+    individual_worker_id = _optional_string_from_record(node, "individual_worker_id")
+    child_ids = _string_tuple_from_record(node, "child_ids")
+    risks: list[ManagementRiskBadge] = []
+    if leader_kind == OrgLeaderKind.WORKER.value and leader_worker_id not in worker_ids:
+        risks.append(_node_risk("missing_owner", "Owner worker is missing", org_node_id))
+    for worker_id in (*member_worker_ids, *(() if individual_worker_id is None else (individual_worker_id,))):
+        if worker_id not in worker_ids:
+            risks.append(_node_risk("missing_worker", "Referenced worker is missing", org_node_id))
+    collaboration_mode = _collaboration_mode(node_type, member_worker_ids, individual_worker_id, child_ids)
+    if collaboration_mode == "department_group_chat_unavailable":
+        risks.append(_node_risk("chat_binding_invalid", "Default group chat is unavailable", org_node_id))
+    return OrganizationManagementNodeSummary(
+        org_node_id=org_node_id,
+        name=_string_from_record(node, "name", org_node_id),
+        node_type=node_type,
+        lifecycle=lifecycle,
+        parent_id=_optional_string_from_record(node, "parent_id"),
+        child_ids=child_ids,
+        leader_kind=leader_kind,
+        leader_worker_id=leader_worker_id,
+        member_worker_ids=member_worker_ids,
+        individual_worker_id=individual_worker_id,
+        collaboration_mode=collaboration_mode,
+        read_only=lifecycle in {OrgLifecycleState.ARCHIVED.value, OrgLifecycleState.DEPRECATED.value},
+        risk_badges=tuple(risks),
+        source_ref=ManagementSourceRef("organization_tree", org_node_id, revision, updated_at),
+    )
+
+
+def _coerce_department_summary(
+    summary: DepartmentManagementSummary | Mapping[str, Any],
+) -> DepartmentManagementSummary:
+    if isinstance(summary, DepartmentManagementSummary):
+        return summary
+    member_count = _int_value(summary.get("member_count", 0))
+    requested_group_chat = bool(summary.get("default_chat_available", False))
+    default_chat_available = requested_group_chat and member_count > 1
+    collaboration_mode = _optional_string(summary.get("collaboration_mode")) or (
+        "department_group_chat" if default_chat_available else "private_or_parent_chat"
+    )
+    return DepartmentManagementSummary(
+        department_id=str(summary.get("department_id", "")),
+        display_name=str(summary.get("display_name", summary.get("department_id", ""))),
+        owner_worker_id=_optional_string(summary.get("owner_worker_id")),
+        member_count=member_count,
+        active_asset_count=_int_value(summary.get("active_asset_count", 0)),
+        accepted_asset_count=_int_value(summary.get("accepted_asset_count", 0)),
+        default_chat_available=default_chat_available,
+        collaboration_mode=collaboration_mode,
+        policy_summary=str(summary.get("policy_summary", "")),
+        public_metadata=_redact_sensitive_mapping(
+            _mapping(summary.get("public_metadata", {}))
+        ),
+    )
+
+
+def _redact_sensitive_mapping(data: Mapping[str, Any]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for key, value in data.items():
+        key_text = str(key)
+        if _is_sensitive_key(key_text):
+            continue
+        if isinstance(value, Mapping):
+            result[key_text] = _redact_sensitive_mapping(value)
+        elif isinstance(value, (list, tuple)):
+            result[key_text] = [
+                _redact_sensitive_mapping(item) if isinstance(item, Mapping) else item
+                for item in value
+            ]
+        else:
+            result[key_text] = value
+    return result
+
+
+def _redact_sensitive_text(value: str) -> str:
+    lowered = value.lower()
+    if any(marker in lowered for marker in SENSITIVE_FIELD_MARKERS):
+        return "[redacted summary]"
+    return value
+
+
+def _delivery_risk_badges(
+    *,
+    status: str,
+    thread_id: str,
+    overdue: bool,
+    delegated_to: str | None = None,
+) -> list[ManagementRiskBadge]:
+    risks: list[ManagementRiskBadge] = []
+    source = (ManagementSourceRef("chat_thread", thread_id),)
+    normalized_status = status.lower().replace(" ", "_")
+    if overdue or normalized_status in {"timed_out", "timeout"}:
+        risks.append(
+            ManagementRiskBadge(
+                code="delivery_overdue",
+                label="Delivery handling is overdue",
+                severity=ManagementRiskSeverity.WARNING,
+                source_refs=source,
+            )
+        )
+    if normalized_status in {"failed", "declined"}:
+        risks.append(
+            ManagementRiskBadge(
+                code="delivery_failed",
+                label="Delivery handling failed or was declined",
+                severity=ManagementRiskSeverity.WARNING,
+                source_refs=source,
+            )
+        )
+    if delegated_to:
+        risks.append(
+            ManagementRiskBadge(
+                code="delivery_delegated",
+                label="Delivery was delegated",
+                severity=ManagementRiskSeverity.INFO,
+                source_refs=source,
+            )
+        )
+    return risks
+
+
+def _risk_badge_from_mapping(
+    data: Mapping[str, Any],
+    source_kind: str,
+    source_id: str,
+) -> ManagementRiskBadge:
+    return ManagementRiskBadge(
+        code=str(data.get("code", "risk")),
+        label=str(data.get("label", data.get("summary", "Approval risk"))),
+        severity=str(data.get("severity", ManagementRiskSeverity.WARNING.value)),
+        source_refs=(ManagementSourceRef(source_kind, source_id),),
+    )
+
+
+def _asset_action_request(data: Any) -> AssetReviewActionRequest | None:
+    if not isinstance(data, Mapping):
+        return None
+    return AssetReviewActionRequest(
+        proposal_id=str(data.get("proposal_id", "")),
+        decision=str(data.get("decision", "reject")),
+        actor_id=str(data.get("actor_id", "")),
+        reason=str(data.get("reason", "")),
+        accepted_refs=_string_tuple(data.get("accepted_refs", ())),
+        rejected_refs=_string_tuple(data.get("rejected_refs", ())),
+    )
+
+
+def _evolution_risk(code: str, label: str, target_node_id: str) -> ManagementRiskBadge:
+    return ManagementRiskBadge(
+        code=code,
+        label=label,
+        severity=ManagementRiskSeverity.BLOCKER,
+        source_refs=(ManagementSourceRef("organization_node", target_node_id),),
+    )
+
+
+def _optional_asset_action_request_to_dict(
+    request: AssetReviewActionRequest | None,
+) -> dict[str, Any] | None:
+    if request is None:
+        return None
+    return {
+        "proposal_id": request.proposal_id,
+        "decision": request.decision.value,
+        "actor_id": request.actor_id,
+        "reason": request.reason,
+        "accepted_refs": list(request.accepted_refs),
+        "rejected_refs": list(request.rejected_refs),
+    }
+
+
+def _chat_thread_type_value(value: Any) -> str:
+    if isinstance(value, ChatThreadType):
+        if value == ChatThreadType.DIRECT:
+            return "private"
+        if value == ChatThreadType.ORGANIZATION_GROUP:
+            return "department"
+        return "project"
+    if value == "direct":
+        return "private"
+    if value == "organization_group":
+        return "department"
+    if value == "project_group":
+        return "project"
+    return value if isinstance(value, str) and value else "private"
+
+
+def _participants_from_thread(thread: WorkerChatThread | Mapping[str, Any]) -> tuple[Mapping[str, Any], ...]:
+    participants = _value_from_record(thread, "participants") or ()
+    result = []
+    for participant in participants:
+        if isinstance(participant, Mapping):
+            result.append(participant)
+        else:
+            result.append(
+                {
+                    "kind": _enum_value(getattr(participant, "kind", ""), ""),
+                    "participant_id": getattr(participant, "participant_id", ""),
+                }
+            )
+    return tuple(result)
+
+
+def _participant_kind_count(participants: Iterable[Mapping[str, Any]], kind: str) -> int:
+    return sum(1 for participant in participants if participant.get("kind") == kind)
+
+
+def _is_sensitive_key(key: str) -> bool:
+    lowered = key.lower()
+    return any(marker in lowered for marker in SENSITIVE_FIELD_MARKERS)
+
+
+def _node_risk(code: str, label: str, node_id: str) -> ManagementRiskBadge:
+    return ManagementRiskBadge(
+        code=code,
+        label=label,
+        severity=ManagementRiskSeverity.WARNING,
+        source_refs=(ManagementSourceRef("organization_node", node_id),),
+    )
+
+
+def _organization_tree_node(
+    summary: OrganizationManagementNodeSummary,
+    children_by_parent: Mapping[str | None, list[OrganizationManagementNodeSummary]],
+    *,
+    visiting: set[str],
+) -> OrganizationTreeViewNode:
+    warnings: list[str] = []
+    if summary.org_node_id in visiting:
+        warnings.append(f"organization tree cycle detected at {summary.org_node_id!r}")
+        return OrganizationTreeViewNode(summary=summary, warnings=tuple(warnings))
+    visiting.add(summary.org_node_id)
+    children = tuple(
+        _organization_tree_node(child, children_by_parent, visiting=visiting)
+        for child in children_by_parent.get(summary.org_node_id, [])
+    )
+    visiting.remove(summary.org_node_id)
+    if summary.read_only:
+        warnings.append(f"organization node {summary.org_node_id!r} is read-only")
+    return OrganizationTreeViewNode(
+        summary=summary,
+        children=children,
+        warnings=tuple(warnings),
+    )
+
+
+def _collaboration_mode(
+    node_type: str,
+    member_worker_ids: tuple[str, ...],
+    individual_worker_id: str | None,
+    child_ids: tuple[str, ...] = (),
+) -> str:
+    if node_type == OrgNodeType.INDIVIDUAL.value or individual_worker_id:
+        return "private_chat"
+    has_children = len(child_ids) > 0
+    if not has_children and len(member_worker_ids) <= 1:
+        return "private_or_parent_chat"
+    if node_type == OrgNodeType.DEPARTMENT.value:
+        return "department_group_chat"
+    return "parent_chat"
+
+
+def _node_worker_refs(node: OrganizationManagementNodeSummary) -> tuple[str, ...]:
+    refs = list(node.member_worker_ids)
+    if node.individual_worker_id:
+        refs.append(node.individual_worker_id)
+    if node.leader_worker_id:
+        refs.append(node.leader_worker_id)
+    return tuple(refs)
+
+
+def _mapping_values(value: Any) -> tuple[Any, ...]:
+    if isinstance(value, Mapping):
+        return tuple(value[key] for key in sorted(value))
+    if isinstance(value, (list, tuple)):
+        return tuple(value)
+    return ()
+
+
+def _health_status(health: Mapping[str, Any] | str | None) -> str:
+    if health is None:
+        return "unknown"
+    if isinstance(health, str):
+        return health
+    raw = health.get("status", "unknown")
+    return raw if isinstance(raw, str) else "unknown"
+
+
+def _string_tuple_from_metadata(record: WorkerRegistryRecord | Mapping[str, Any], key: str) -> tuple[str, ...]:
+    metadata = _mapping_from_record(record, "metadata")
+    return _string_tuple(metadata.get(key, ()))
+
+
+def _string_tuple_from_record(record: Any, key: str) -> tuple[str, ...]:
+    return _string_tuple(_value_from_record(record, key) or ())
+
+
+def _string_tuple(value: Any) -> tuple[str, ...]:
+    if not isinstance(value, (list, tuple)):
+        return ()
+    return tuple(str(item) for item in value if isinstance(item, str) and item)
+
+
+def _mapping_from_record(record: Any, key: str) -> Mapping[str, Any]:
+    value = _value_from_record(record, key)
+    return value if isinstance(value, Mapping) else {}
+
+
+def _string_from_record(record: Any, key: str, default: str) -> str:
+    value = _value_from_record(record, key)
+    if isinstance(value, StrEnum):
+        return value.value
+    return value if isinstance(value, str) and value else default
+
+
+def _optional_string_from_record(record: Any, key: str) -> str | None:
+    return _optional_string(_value_from_record(record, key))
+
+
+def _optional_string(value: Any) -> str | None:
+    return value if isinstance(value, str) and value else None
+
+
+def _value_from_record(record: Any, key: str) -> Any:
+    if isinstance(record, Mapping):
+        return record.get(key)
+    return getattr(record, key, None)
+
+
+def _enum_value(value: Any, default: str) -> str:
+    if isinstance(value, StrEnum):
+        return value.value
+    return value if isinstance(value, str) and value else default
+
+
+def _leader_kind(leader: Any) -> str:
+    if isinstance(leader, Mapping):
+        return _enum_value(leader.get("kind"), OrgLeaderKind.NONE.value)
+    return _enum_value(getattr(leader, "kind", None), OrgLeaderKind.NONE.value)
+
+
+def _leader_worker_id(leader: Any) -> str | None:
+    if isinstance(leader, Mapping):
+        return _optional_string(leader.get("worker_id"))
+    return _optional_string(getattr(leader, "worker_id", None))
+
+
+def _mapping(value: Any) -> Mapping[str, Any]:
+    return value if isinstance(value, Mapping) else {}
+
+
+def _int_value(value: Any) -> int:
+    return value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else 0
+
+
+def _optional_source_ref_to_dict(ref: ManagementSourceRef | None) -> dict[str, Any] | None:
+    return source_ref_to_dict(ref) if ref is not None else None

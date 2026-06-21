@@ -1,6 +1,6 @@
 import pytest
 
-from worker_agents.profile import (
+from zermes.worker_agents.profile import (
     WORKER_PROFILE_SCHEMA_VERSION,
     WorkerAgentProfile,
     WorkerProfileError,
@@ -22,7 +22,7 @@ def test_default_worker_profile_uses_minimum_permissions():
     )
 
     assert profile.schema_version == WORKER_PROFILE_SCHEMA_VERSION
-    assert profile.tools.allowed_tools == ()
+    assert profile.zermes.tools.allowed_tools == ()
     assert profile.workspace.write_roots == ()
     assert profile.communication.allow_direct_user_chat is False
     assert profile.communication.allow_group_chat is False
@@ -80,7 +80,7 @@ def test_worker_profile_from_dict_applies_minimum_permission_defaults():
         }
     )
 
-    assert profile.tools.allowed_tools == ()
+    assert profile.zermes.tools.allowed_tools == ()
     assert profile.workspace.write_roots == ()
     assert profile.delegation.allow_temporary_child_agents is False
     assert profile.budgets.max_task_tokens == 0

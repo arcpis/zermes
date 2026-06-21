@@ -5,8 +5,8 @@ import pytest
 from unittest.mock import MagicMock, patch
 from dataclasses import dataclass
 
-from gateway.platform_registry import PlatformRegistry, PlatformEntry, platform_registry
-from gateway.config import Platform, PlatformConfig, GatewayConfig
+from zermes.gateway.platform_registry import PlatformRegistry, PlatformEntry, platform_registry
+from zermes.gateway.config import Platform, PlatformConfig, GatewayConfig
 
 
 # ── Platform enum dynamic members ─────────────────────────────────────────
@@ -39,7 +39,7 @@ class TestPlatformEnumDynamic:
 
     def test_dynamic_member_with_hyphens(self):
         """Registered plugin platforms with hyphens work once registered."""
-        from gateway.platform_registry import platform_registry as _reg
+        from zermes.gateway.platform_registry import platform_registry as _reg
 
         entry = PlatformEntry(
             name="my-platform",
@@ -223,7 +223,7 @@ class TestGatewayConfigPluginPlatform:
     def test_get_connected_platforms_includes_registered_plugin(self):
         """Plugin platform with registry entry passes get_connected_platforms."""
         # Register a fake plugin platform
-        from gateway.platform_registry import platform_registry as _reg
+        from zermes.gateway.platform_registry import platform_registry as _reg
 
         test_entry = PlatformEntry(
             name="testplat",
@@ -261,7 +261,7 @@ class TestGatewayConfigPluginPlatform:
 
     def test_get_connected_platforms_excludes_invalid_config(self):
         """Plugin platform with failing validate_config is excluded."""
-        from gateway.platform_registry import platform_registry as _reg
+        from zermes.gateway.platform_registry import platform_registry as _reg
 
         test_entry = PlatformEntry(
             name="badconfig",
@@ -353,14 +353,14 @@ class TestPlatformsMerge:
     """Test get_all_platforms() merges with registry."""
 
     def test_get_all_platforms_includes_builtins(self):
-        from hermes_cli.platforms import get_all_platforms, PLATFORMS
+        from zermes.hermes_cli.platforms import get_all_platforms, PLATFORMS
         merged = get_all_platforms()
         for key in PLATFORMS:
             assert key in merged
 
     def test_get_all_platforms_includes_plugin(self):
-        from hermes_cli.platforms import get_all_platforms
-        from gateway.platform_registry import platform_registry as _reg
+        from zermes.hermes_cli.platforms import get_all_platforms
+        from zermes.gateway.platform_registry import platform_registry as _reg
 
         _reg.register(PlatformEntry(
             name="testmerge",
@@ -378,8 +378,8 @@ class TestPlatformsMerge:
             _reg.unregister("testmerge")
 
     def test_platform_label_plugin_fallback(self):
-        from hermes_cli.platforms import platform_label
-        from gateway.platform_registry import platform_registry as _reg
+        from zermes.hermes_cli.platforms import platform_label
+        from zermes.gateway.platform_registry import platform_registry as _reg
 
         _reg.register(PlatformEntry(
             name="labeltest",

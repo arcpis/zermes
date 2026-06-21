@@ -1,11 +1,11 @@
-"""Tests for model_tools.py — function call dispatch, agent-loop interception, legacy toolsets."""
+"""Tests for zermes.model_tools.py — function call dispatch, agent-loop interception, legacy zermes.toolsets."""
 
 import json
 from unittest.mock import ANY, call, patch
 
 import pytest
 
-from model_tools import (
+from zermes.model_tools import (
     handle_function_call,
     get_all_tool_names,
     get_tool_description,
@@ -43,8 +43,8 @@ class TestHandleFunctionCall:
 
     def test_tool_hooks_receive_session_and_tool_call_ids(self):
         with (
-            patch("model_tools.registry.dispatch", return_value='{"ok":true}'),
-            patch("hermes_cli.plugins.invoke_hook") as mock_invoke_hook,
+            patch("zermes.model_tools.registry.dispatch", return_value='{"ok":true}'),
+            patch("zermes.hermes_cli.plugins.invoke_hook") as mock_invoke_hook,
         ):
             result = handle_function_call(
                 "web_search",
@@ -93,8 +93,8 @@ class TestHandleFunctionCall:
         ``duration_ms`` to its PostToolUse hook inputs.
         """
         with (
-            patch("model_tools.registry.dispatch", return_value='{"ok":true}'),
-            patch("hermes_cli.plugins.invoke_hook") as mock_invoke_hook,
+            patch("zermes.model_tools.registry.dispatch", return_value='{"ok":true}'),
+            patch("zermes.hermes_cli.plugins.invoke_hook") as mock_invoke_hook,
         ):
             handle_function_call("web_search", {"q": "test"}, task_id="t1")
 
@@ -151,8 +151,8 @@ class TestPreToolCallBlocking:
             dispatch_called = True
             raise AssertionError("dispatch should not run when blocked")
 
-        monkeypatch.setattr("hermes_cli.plugins.invoke_hook", fake_invoke_hook)
-        monkeypatch.setattr("model_tools.registry.dispatch", fake_dispatch)
+        monkeypatch.setattr("zermes.hermes_cli.plugins.invoke_hook", fake_invoke_hook)
+        monkeypatch.setattr("zermes.model_tools.registry.dispatch", fake_dispatch)
 
         result = json.loads(handle_function_call("read_file", {"path": "test.txt"}, task_id="t1"))
         assert result == {"error": "Blocked by policy"}
@@ -166,10 +166,10 @@ class TestPreToolCallBlocking:
                 return [{"action": "block", "message": "Blocked"}]
             return []
 
-        monkeypatch.setattr("hermes_cli.plugins.invoke_hook", fake_invoke_hook)
-        monkeypatch.setattr("model_tools.registry.dispatch",
+        monkeypatch.setattr("zermes.hermes_cli.plugins.invoke_hook", fake_invoke_hook)
+        monkeypatch.setattr("zermes.model_tools.registry.dispatch",
                             lambda *a, **kw: (_ for _ in ()).throw(AssertionError("should not run")))
-        monkeypatch.setattr("tools.file_tools.notify_other_tool_call",
+        monkeypatch.setattr("zermes.tools.file_tools.notify_other_tool_call",
                             lambda task_id: notifications.append(task_id))
 
         result = json.loads(handle_function_call("web_search", {"q": "test"}, task_id="t1"))
@@ -187,8 +187,8 @@ class TestPreToolCallBlocking:
                 ]
             return []
 
-        monkeypatch.setattr("hermes_cli.plugins.invoke_hook", fake_invoke_hook)
-        monkeypatch.setattr("model_tools.registry.dispatch",
+        monkeypatch.setattr("zermes.hermes_cli.plugins.invoke_hook", fake_invoke_hook)
+        monkeypatch.setattr("zermes.model_tools.registry.dispatch",
                             lambda *a, **kw: json.dumps({"ok": True}))
 
         result = json.loads(handle_function_call("read_file", {"path": "test.txt"}, task_id="t1"))
@@ -197,7 +197,7 @@ class TestPreToolCallBlocking:
     def test_skip_flag_prevents_double_fire(self, monkeypatch):
         """When skip_pre_tool_call_hook=True, the hook does not fire again.
 
-        The caller (e.g. run_agent._invoke_tool) has already called
+        The caller (e.g. zermes.run_agent._invoke_tool) has already called
         get_pre_tool_call_block_message(), which fires the hook once.
         handle_function_call must NOT fire it a second time — that was
         the classic double-fire bug where observer hooks logged every
@@ -209,8 +209,8 @@ class TestPreToolCallBlocking:
             hook_calls.append(hook_name)
             return []
 
-        monkeypatch.setattr("hermes_cli.plugins.invoke_hook", fake_invoke_hook)
-        monkeypatch.setattr("model_tools.registry.dispatch",
+        monkeypatch.setattr("zermes.hermes_cli.plugins.invoke_hook", fake_invoke_hook)
+        monkeypatch.setattr("zermes.model_tools.registry.dispatch",
                             lambda *a, **kw: json.dumps({"ok": True}))
 
         handle_function_call("web_search", {"q": "test"}, task_id="t1",
@@ -231,7 +231,7 @@ class TestPreToolCallBlocking:
     def test_run_agent_pattern_fires_pre_tool_call_exactly_once(self, monkeypatch):
         """End-to-end regression for the double-fire bug.
 
-        Mirrors run_agent._invoke_tool: first calls
+        Mirrors zermes.run_agent._invoke_tool: first calls
         get_pre_tool_call_block_message() (which fires the hook as part of
         its block-directive poll), then calls
         handle_function_call(skip_pre_tool_call_hook=True).  The plugin
@@ -239,7 +239,7 @@ class TestPreToolCallBlocking:
         did before the fix (observer plugins were seeing every tool
         execution logged twice).
         """
-        from hermes_cli.plugins import get_pre_tool_call_block_message
+        from zermes.hermes_cli.plugins import get_pre_tool_call_block_message
 
         hook_calls = []
 
@@ -247,8 +247,8 @@ class TestPreToolCallBlocking:
             hook_calls.append(hook_name)
             return []
 
-        monkeypatch.setattr("hermes_cli.plugins.invoke_hook", fake_invoke_hook)
-        monkeypatch.setattr("model_tools.registry.dispatch",
+        monkeypatch.setattr("zermes.hermes_cli.plugins.invoke_hook", fake_invoke_hook)
+        monkeypatch.setattr("zermes.model_tools.registry.dispatch",
                             lambda *a, **kw: json.dumps({"ok": True}))
 
         # Step 1: caller checks for a block directive (this fires pre_tool_call once).
@@ -365,33 +365,33 @@ class TestCoerceNumberInfNan:
     float('nan') are not JSON-compliant under strict serialization."""
 
     def test_inf_returns_original_string(self):
-        from model_tools import _coerce_number
+        from zermes.model_tools import _coerce_number
         assert _coerce_number("inf") == "inf"
 
     def test_negative_inf_returns_original_string(self):
-        from model_tools import _coerce_number
+        from zermes.model_tools import _coerce_number
         assert _coerce_number("-inf") == "-inf"
 
     def test_nan_returns_original_string(self):
-        from model_tools import _coerce_number
+        from zermes.model_tools import _coerce_number
         assert _coerce_number("nan") == "nan"
 
     def test_infinity_spelling_returns_original_string(self):
-        from model_tools import _coerce_number
+        from zermes.model_tools import _coerce_number
         # Python's float() parses "Infinity" too — still not JSON-safe.
         assert _coerce_number("Infinity") == "Infinity"
 
     def test_coerced_result_is_strict_json_safe(self):
         """Whatever _coerce_number returns for inf/nan must round-trip
         through strict (allow_nan=False) json.dumps without raising."""
-        from model_tools import _coerce_number
+        from zermes.model_tools import _coerce_number
         for s in ("inf", "-inf", "nan", "Infinity"):
             result = _coerce_number(s)
             json.dumps({"x": result}, allow_nan=False)  # must not raise
 
     def test_normal_numbers_still_coerce(self):
         """Guard against over-correction — real numbers still coerce."""
-        from model_tools import _coerce_number
+        from zermes.model_tools import _coerce_number
         assert _coerce_number("42") == 42
         assert _coerce_number("3.14") == 3.14
         assert _coerce_number("1e3") == 1000

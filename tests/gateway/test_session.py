@@ -4,8 +4,8 @@ import json
 import pytest
 from pathlib import Path
 from unittest.mock import patch, MagicMock
-from gateway.config import Platform, HomeChannel, GatewayConfig, PlatformConfig
-from gateway.session import (
+from zermes.gateway.config import Platform, HomeChannel, GatewayConfig, PlatformConfig
+from zermes.gateway.session import (
     SessionSource,
     SessionStore,
     build_session_context,
@@ -322,7 +322,7 @@ class TestBuildSessionContextPrompt:
         )
         ctx = build_session_context(source, config)
 
-        with patch("hermes_constants.display_hermes_home", return_value="~/.hermes/profiles/coder"):
+        with patch("zermes.hermes_constants.display_hermes_home", return_value="~/.hermes/profiles/coder"):
             prompt = build_session_context_prompt(ctx)
 
         assert "~/.hermes/profiles/coder/cron/output/" in prompt
@@ -436,7 +436,7 @@ class TestSessionStoreRewriteTranscript:
     @pytest.fixture()
     def store(self, tmp_path):
         config = GatewayConfig()
-        with patch("gateway.session.SessionStore._ensure_loaded"):
+        with patch("zermes.gateway.session.SessionStore._ensure_loaded"):
             s = SessionStore(sessions_dir=tmp_path, config=config)
         s._db = None  # no SQLite for these tests
         s._loaded = True
@@ -481,7 +481,7 @@ class TestLoadTranscriptCorruptLines:
     @pytest.fixture()
     def store(self, tmp_path):
         config = GatewayConfig()
-        with patch("gateway.session.SessionStore._ensure_loaded"):
+        with patch("zermes.gateway.session.SessionStore._ensure_loaded"):
             s = SessionStore(sessions_dir=tmp_path, config=config)
         s._db = None
         s._loaded = True
@@ -531,10 +531,10 @@ class TestLoadTranscriptPreferLongerSource:
     @pytest.fixture()
     def store_with_db(self, tmp_path):
         """SessionStore with both SQLite and JSONL active."""
-        from hermes_state import SessionDB
+        from zermes.hermes_state import SessionDB
 
         config = GatewayConfig()
-        with patch("gateway.session.SessionStore._ensure_loaded"):
+        with patch("zermes.gateway.session.SessionStore._ensure_loaded"):
             s = SessionStore(sessions_dir=tmp_path, config=config)
         s._db = SessionDB(db_path=tmp_path / "state.db")
         s._loaded = True
@@ -622,10 +622,10 @@ class TestSessionStoreSwitchSession:
     """Regression coverage for gateway /resume session switching semantics."""
 
     def test_switch_session_reopens_target_session_in_db(self, tmp_path):
-        from hermes_state import SessionDB
+        from zermes.hermes_state import SessionDB
 
         config = GatewayConfig()
-        with patch("gateway.session.SessionStore._ensure_loaded"):
+        with patch("zermes.gateway.session.SessionStore._ensure_loaded"):
             store = SessionStore(sessions_dir=tmp_path / "sessions", config=config)
         db = SessionDB(db_path=tmp_path / "state.db")
         store._db = db
@@ -664,7 +664,7 @@ class TestWhatsAppSessionKeyConsistency:
     @pytest.fixture()
     def store(self, tmp_path):
         config = GatewayConfig()
-        with patch("gateway.session.SessionStore._ensure_loaded"):
+        with patch("zermes.gateway.session.SessionStore._ensure_loaded"):
             s = SessionStore(sessions_dir=tmp_path, config=config)
         s._db = None
         s._loaded = True
@@ -975,7 +975,7 @@ class TestWhatsAppIdentifierPublicHelpers:
 
     These helpers are part of the public API for plugins that need
     WhatsApp identity awareness. Breaking these contracts is a
-    breaking change for downstream plugins.
+    breaking change for downstream zermes.plugins.
     """
 
     def test_normalize_strips_jid_suffix(self):
@@ -1026,7 +1026,7 @@ class TestSessionStoreEntriesAttribute:
 
     def test_entries_attribute_exists(self):
         config = GatewayConfig()
-        with patch("gateway.session.SessionStore._ensure_loaded"):
+        with patch("zermes.gateway.session.SessionStore._ensure_loaded"):
             store = SessionStore(sessions_dir=Path("/tmp"), config=config)
         store._loaded = True
         assert hasattr(store, "_entries")
@@ -1040,7 +1040,7 @@ class TestHasAnySessions:
     def store_with_mock_db(self, tmp_path):
         """SessionStore with a mocked database."""
         config = GatewayConfig()
-        with patch("gateway.session.SessionStore._ensure_loaded"):
+        with patch("zermes.gateway.session.SessionStore._ensure_loaded"):
             s = SessionStore(sessions_dir=tmp_path, config=config)
         s._loaded = True
         s._entries = {}
@@ -1070,7 +1070,7 @@ class TestHasAnySessions:
     def test_fallback_without_database(self, tmp_path):
         """Should fall back to len(_entries) when DB is not available."""
         config = GatewayConfig()
-        with patch("gateway.session.SessionStore._ensure_loaded"):
+        with patch("zermes.gateway.session.SessionStore._ensure_loaded"):
             store = SessionStore(sessions_dir=tmp_path, config=config)
         store._loaded = True
         store._db = None
@@ -1088,7 +1088,7 @@ class TestLastPromptTokens:
 
     def test_session_entry_default(self):
         """New sessions should have last_prompt_tokens=0."""
-        from gateway.session import SessionEntry
+        from zermes.gateway.session import SessionEntry
         from datetime import datetime
         entry = SessionEntry(
             session_key="test",
@@ -1100,7 +1100,7 @@ class TestLastPromptTokens:
 
     def test_session_entry_roundtrip(self):
         """last_prompt_tokens should survive serialization/deserialization."""
-        from gateway.session import SessionEntry
+        from zermes.gateway.session import SessionEntry
         from datetime import datetime
         entry = SessionEntry(
             session_key="test",
@@ -1116,7 +1116,7 @@ class TestLastPromptTokens:
 
     def test_session_entry_from_old_data(self):
         """Old session data without last_prompt_tokens should default to 0."""
-        from gateway.session import SessionEntry
+        from zermes.gateway.session import SessionEntry
         data = {
             "session_key": "test",
             "session_id": "s1",
@@ -1133,13 +1133,13 @@ class TestLastPromptTokens:
     def test_update_session_sets_last_prompt_tokens(self, tmp_path):
         """update_session should store the actual prompt token count."""
         config = GatewayConfig()
-        with patch("gateway.session.SessionStore._ensure_loaded"):
+        with patch("zermes.gateway.session.SessionStore._ensure_loaded"):
             store = SessionStore(sessions_dir=tmp_path, config=config)
         store._loaded = True
         store._db = None
         store._save = MagicMock()
 
-        from gateway.session import SessionEntry
+        from zermes.gateway.session import SessionEntry
         from datetime import datetime
         entry = SessionEntry(
             session_key="k1",
@@ -1155,13 +1155,13 @@ class TestLastPromptTokens:
     def test_update_session_none_does_not_change(self, tmp_path):
         """update_session with default (None) should not change last_prompt_tokens."""
         config = GatewayConfig()
-        with patch("gateway.session.SessionStore._ensure_loaded"):
+        with patch("zermes.gateway.session.SessionStore._ensure_loaded"):
             store = SessionStore(sessions_dir=tmp_path, config=config)
         store._loaded = True
         store._db = None
         store._save = MagicMock()
 
-        from gateway.session import SessionEntry
+        from zermes.gateway.session import SessionEntry
         from datetime import datetime
         entry = SessionEntry(
             session_key="k1",
@@ -1178,13 +1178,13 @@ class TestLastPromptTokens:
     def test_update_session_zero_resets(self, tmp_path):
         """update_session with last_prompt_tokens=0 should reset the field."""
         config = GatewayConfig()
-        with patch("gateway.session.SessionStore._ensure_loaded"):
+        with patch("zermes.gateway.session.SessionStore._ensure_loaded"):
             store = SessionStore(sessions_dir=tmp_path, config=config)
         store._loaded = True
         store._db = None
         store._save = MagicMock()
 
-        from gateway.session import SessionEntry
+        from zermes.gateway.session import SessionEntry
         from datetime import datetime
         entry = SessionEntry(
             session_key="k1",
@@ -1202,7 +1202,7 @@ class TestRewriteTranscriptPreservesReasoning:
     """rewrite_transcript must not drop reasoning fields from SQLite."""
 
     def test_reasoning_survives_rewrite(self, tmp_path):
-        from hermes_state import SessionDB
+        from zermes.hermes_state import SessionDB
 
         db = SessionDB(db_path=tmp_path / "test.db")
         session_id = "reasoning-test"
@@ -1228,7 +1228,7 @@ class TestRewriteTranscriptPreservesReasoning:
 
         # Now simulate /retry: build the SessionStore and call rewrite_transcript
         config = GatewayConfig()
-        with patch("gateway.session.SessionStore._ensure_loaded"):
+        with patch("zermes.gateway.session.SessionStore._ensure_loaded"):
             store = SessionStore(sessions_dir=tmp_path, config=config)
         store._db = db
         store._loaded = True
@@ -1244,7 +1244,7 @@ class TestRewriteTranscriptPreservesReasoning:
         assert after[0].get("codex_reasoning_items") == [{"id": "r1", "type": "reasoning"}]
 
     def test_db_rewrite_is_atomic_on_insert_failure(self, tmp_path, monkeypatch):
-        from hermes_state import SessionDB
+        from zermes.hermes_state import SessionDB
 
         db = SessionDB(db_path=tmp_path / "test.db")
         session_id = "atomic-rewrite-test"
@@ -1253,7 +1253,7 @@ class TestRewriteTranscriptPreservesReasoning:
         db.append_message(session_id=session_id, role="assistant", content="before assistant")
 
         config = GatewayConfig()
-        with patch("gateway.session.SessionStore._ensure_loaded"):
+        with patch("zermes.gateway.session.SessionStore._ensure_loaded"):
             store = SessionStore(sessions_dir=tmp_path, config=config)
         store._db = db
         store._loaded = True

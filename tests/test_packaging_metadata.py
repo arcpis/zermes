@@ -20,10 +20,10 @@ def test_zermes_package_metadata_keeps_hermes_compatibility_entrypoints():
 
     assert data["project"]["name"] == "zermes-agent"
     scripts = data["project"]["scripts"]
-    assert scripts["zermes"] == "hermes_cli.main:main"
-    assert scripts["zermes-agent"] == "run_agent:main"
-    assert scripts["hermes"] == "hermes_cli.main:main"
-    assert scripts["hermes-agent"] == "run_agent:main"
+    assert scripts["zermes"] == "zermes.hermes_cli.main:main"
+    assert scripts["zermes-agent"] == "zermes.run_agent:main"
+    assert scripts["hermes"] == "zermes.hermes_cli.main:main"
+    assert scripts["hermes-agent"] == "zermes.run_agent:main"
 
 
 def test_optional_dependency_self_references_use_zermes_package_name():
@@ -41,5 +41,4 @@ def test_optional_dependency_self_references_use_zermes_package_name():
 def test_manifest_includes_bundled_skills():
     manifest = (REPO_ROOT / "MANIFEST.in").read_text(encoding="utf-8")
 
-    assert "graft skills" in manifest
-    assert "graft optional-skills" in manifest
+    assert "graft resources/skills" in manifest

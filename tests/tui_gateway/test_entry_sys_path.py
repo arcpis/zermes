@@ -17,7 +17,7 @@ def _reload_entry_with_env(env_overrides: dict) -> None:
     # We only want to exercise the sys.path fixup block, not the signal/import
     # machinery that follows.  We do this by running the fixup code verbatim in
     # a fresh copy of sys.path rather than importing the real module (which
-    # would trigger tui_gateway.server imports requiring heavy mocks).
+    # would trigger zermes.tui_gateway.server imports requiring heavy mocks).
     original_path = sys.path[:]
     original_env = {k: os.environ.get(k) for k in env_overrides}
     try:

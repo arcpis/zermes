@@ -16,8 +16,8 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from gateway.config import Platform
-from gateway.run import GatewayRunner
+from zermes.gateway.config import Platform
+from zermes.gateway.run import GatewayRunner
 
 
 @pytest.fixture
@@ -72,7 +72,7 @@ async def test_safe_disconnect_times_out_and_continues(bare_runner, monkeypatch,
 
     adapter.disconnect = AsyncMock(side_effect=hang)
 
-    with caplog.at_level(logging.WARNING, logger="gateway.run"):
+    with caplog.at_level(logging.WARNING, logger="zermes.gateway.run"):
         await bare_runner._safe_adapter_disconnect(adapter, Platform.FEISHU)
 
     adapter.disconnect.assert_awaited_once()

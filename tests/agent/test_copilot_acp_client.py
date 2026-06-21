@@ -10,7 +10,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from agent.copilot_acp_client import CopilotACPClient
+from zermes.agent.copilot_acp_client import CopilotACPClient
 
 
 class _FakeProcess:
@@ -80,10 +80,10 @@ class CopilotACPClientSafetyTests(unittest.TestCase):
             secret_file = root / "config.env"
             secret_file.write_text("OPENAI_API_KEY=sk-proj-abc123def456ghi789jkl012")
 
-            # agent.redact snapshots HERMES_REDACT_SECRETS at import time into
+            # zermes.agent.redact snapshots HERMES_REDACT_SECRETS at import time into
             # _REDACT_ENABLED, so patching os.environ is a no-op. Flip the
             # module-level constant directly for the duration of the call.
-            with patch("agent.redact._REDACT_ENABLED", True):
+            with patch("zermes.agent.redact._REDACT_ENABLED", True):
                 response = self._dispatch(
                     {
                         "jsonrpc": "2.0",
@@ -104,7 +104,7 @@ class CopilotACPClientSafetyTests(unittest.TestCase):
             target = home / ".ssh" / "id_rsa"
             target.parent.mkdir(parents=True, exist_ok=True)
 
-            with patch("agent.copilot_acp_client.is_write_denied", return_value=True, create=True):
+            with patch("zermes.agent.copilot_acp_client.is_write_denied", return_value=True, create=True):
                 response = self._dispatch(
                     {
                         "jsonrpc": "2.0",
@@ -185,7 +185,7 @@ def test_run_prompt_prefers_profile_home_when_available(monkeypatch, tmp_path):
     captured = {}
     client = _make_home_client(tmp_path)
 
-    with _patch("agent.copilot_acp_client.subprocess.Popen", side_effect=_fake_popen_capture(captured)):
+    with _patch("zermes.agent.copilot_acp_client.subprocess.Popen", side_effect=_fake_popen_capture(captured)):
         with pytest.raises(RuntimeError, match="Could not start Copilot ACP command"):
             client._run_prompt("hello", timeout_seconds=1)
 
@@ -199,7 +199,7 @@ def test_run_prompt_passes_home_when_parent_env_is_clean(monkeypatch, tmp_path):
     captured = {}
     client = _make_home_client(tmp_path)
 
-    with _patch("agent.copilot_acp_client.subprocess.Popen", side_effect=_fake_popen_capture(captured)):
+    with _patch("zermes.agent.copilot_acp_client.subprocess.Popen", side_effect=_fake_popen_capture(captured)):
         with pytest.raises(RuntimeError, match="Could not start Copilot ACP command"):
             client._run_prompt("hello", timeout_seconds=1)
 

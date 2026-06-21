@@ -1,6 +1,6 @@
 import pytest
 
-from worker_agents.runtime_resources import (
+from zermes.worker_agents.runtime_resources import (
     RuntimeResourceError,
     RuntimeTranscriptKind,
     RuntimeTranscriptPolicy,
@@ -9,7 +9,7 @@ from worker_agents.runtime_resources import (
     runtime_transcript_ref_to_dict,
     sanitize_runtime_text,
 )
-from worker_agents.storage import WorkerAgentRuntimeDataStore
+from zermes.worker_agents.storage import WorkerAgentRuntimeDataStore
 
 
 def _sink(tmp_path, **policy_overrides):

@@ -3,13 +3,13 @@
 Verifies that subagents cannot gain tools that the parent does not have.
 The LLM controls the `toolsets` parameter — without intersection with the
 parent's enabled_toolsets, it can escalate privileges by requesting
-arbitrary toolsets.
+arbitrary zermes.toolsets.
 """
 
 from unittest.mock import MagicMock, patch
 from types import SimpleNamespace
 
-from tools.delegate_tool import _strip_blocked_tools
+from zermes.tools.delegate_tool import _strip_blocked_tools
 
 
 class TestToolsetIntersection:

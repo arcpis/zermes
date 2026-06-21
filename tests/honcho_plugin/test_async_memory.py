@@ -18,8 +18,8 @@ from unittest.mock import MagicMock, patch, call
 
 import pytest
 
-from plugins.memory.honcho.client import HonchoClientConfig
-from plugins.memory.honcho.session import (
+from zermes.plugins.memory.honcho.client import HonchoClientConfig
+from zermes.plugins.memory.honcho.session import (
     HonchoSession,
     HonchoSessionManager,
     _ASYNC_SHUTDOWN,

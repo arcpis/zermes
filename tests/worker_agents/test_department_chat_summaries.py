@@ -1,6 +1,6 @@
 import pytest
 
-from worker_agents.department_chats import (
+from zermes.worker_agents.department_chats import (
     DepartmentChatError,
     DepartmentChatSummaryType,
     DepartmentProjectChat,
@@ -8,7 +8,7 @@ from worker_agents.department_chats import (
     plan_department_chat_summary,
     plan_final_department_chat_archive_summary,
 )
-from worker_agents.organization import (
+from zermes.worker_agents.organization import (
     OrgLeaderKind,
     OrgLeaderRef,
     OrgLifecycleState,

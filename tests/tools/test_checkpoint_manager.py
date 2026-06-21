@@ -9,7 +9,7 @@ import pytest
 from pathlib import Path
 from unittest.mock import patch
 
-from tools.checkpoint_manager import (
+from zermes.tools.checkpoint_manager import (
     CheckpointManager,
     _shadow_repo_path,
     _init_shadow_repo,
@@ -65,13 +65,13 @@ def fake_home(tmp_path, monkeypatch):
 
 @pytest.fixture()
 def mgr(work_dir, checkpoint_base, monkeypatch):
-    monkeypatch.setattr("tools.checkpoint_manager.CHECKPOINT_BASE", checkpoint_base)
+    monkeypatch.setattr("zermes.tools.checkpoint_manager.CHECKPOINT_BASE", checkpoint_base)
     return CheckpointManager(enabled=True, max_snapshots=50)
 
 
 @pytest.fixture()
 def disabled_mgr(checkpoint_base, monkeypatch):
-    monkeypatch.setattr("tools.checkpoint_manager.CHECKPOINT_BASE", checkpoint_base)
+    monkeypatch.setattr("zermes.tools.checkpoint_manager.CHECKPOINT_BASE", checkpoint_base)
     return CheckpointManager(enabled=False)
 
 
@@ -81,7 +81,7 @@ def disabled_mgr(checkpoint_base, monkeypatch):
 
 class TestStorePath:
     def test_store_is_single_shared_path(self, work_dir, checkpoint_base, monkeypatch):
-        monkeypatch.setattr("tools.checkpoint_manager.CHECKPOINT_BASE", checkpoint_base)
+        monkeypatch.setattr("zermes.tools.checkpoint_manager.CHECKPOINT_BASE", checkpoint_base)
         # All projects resolve to the same store.
         p1 = _shadow_repo_path(str(work_dir))
         p2 = _shadow_repo_path(str(work_dir.parent / "other"))
@@ -96,7 +96,7 @@ class TestStorePath:
     def test_tilde_and_expanded_home_share_project_hash(
         self, fake_home, checkpoint_base, monkeypatch,
     ):
-        monkeypatch.setattr("tools.checkpoint_manager.CHECKPOINT_BASE", checkpoint_base)
+        monkeypatch.setattr("zermes.tools.checkpoint_manager.CHECKPOINT_BASE", checkpoint_base)
         project = fake_home / "project"
         project.mkdir()
         tilde = f"~/{project.name}"
@@ -109,7 +109,7 @@ class TestStorePath:
 
 class TestStoreInit:
     def test_creates_git_store(self, work_dir, checkpoint_base, monkeypatch):
-        monkeypatch.setattr("tools.checkpoint_manager.CHECKPOINT_BASE", checkpoint_base)
+        monkeypatch.setattr("zermes.tools.checkpoint_manager.CHECKPOINT_BASE", checkpoint_base)
         store = _store_path(checkpoint_base)
         err = _init_store(store, str(work_dir))
         assert err is None
@@ -119,20 +119,20 @@ class TestStoreInit:
         assert "node_modules/" in (store / "info" / "exclude").read_text()
 
     def test_no_git_in_project_dir(self, work_dir, checkpoint_base, monkeypatch):
-        monkeypatch.setattr("tools.checkpoint_manager.CHECKPOINT_BASE", checkpoint_base)
+        monkeypatch.setattr("zermes.tools.checkpoint_manager.CHECKPOINT_BASE", checkpoint_base)
         store = _store_path(checkpoint_base)
         _init_store(store, str(work_dir))
         assert not (work_dir / ".git").exists()
 
     def test_init_idempotent(self, work_dir, checkpoint_base, monkeypatch):
-        monkeypatch.setattr("tools.checkpoint_manager.CHECKPOINT_BASE", checkpoint_base)
+        monkeypatch.setattr("zermes.tools.checkpoint_manager.CHECKPOINT_BASE", checkpoint_base)
         store = _store_path(checkpoint_base)
         assert _init_store(store, str(work_dir)) is None
         assert _init_store(store, str(work_dir)) is None
 
     def test_bc_init_shadow_repo_shim(self, work_dir, checkpoint_base, monkeypatch):
         """Backward-compatible helper still works for old callers/tests."""
-        monkeypatch.setattr("tools.checkpoint_manager.CHECKPOINT_BASE", checkpoint_base)
+        monkeypatch.setattr("zermes.tools.checkpoint_manager.CHECKPOINT_BASE", checkpoint_base)
         store = _shadow_repo_path(str(work_dir))
         err = _init_shadow_repo(store, str(work_dir))
         assert err is None
@@ -223,7 +223,7 @@ class TestTakeCheckpoint:
 
         # Only one "store" directory exists.
         bases = list(Path(mgr._checkpointed_dirs).__iter__()) if False else None
-        from tools.checkpoint_manager import CHECKPOINT_BASE as BASE
+        from zermes.tools.checkpoint_manager import CHECKPOINT_BASE as BASE
         # Exactly one store dir + two project metas
         assert (BASE / "store" / "HEAD").exists()
         assert (BASE / "store" / "projects" / f"{_project_hash(str(a))}.json").exists()
@@ -278,7 +278,7 @@ class TestListCheckpoints:
         assert [c["reason"] for c in mgr.list_checkpoints(str(b))] == ["B-1"]
 
     def test_tilde_path_lists_same_checkpoints(self, checkpoint_base, fake_home, monkeypatch):
-        monkeypatch.setattr("tools.checkpoint_manager.CHECKPOINT_BASE", checkpoint_base)
+        monkeypatch.setattr("zermes.tools.checkpoint_manager.CHECKPOINT_BASE", checkpoint_base)
         m = CheckpointManager(enabled=True, max_snapshots=50)
         project = fake_home / "project"
         project.mkdir()
@@ -295,7 +295,7 @@ class TestListCheckpoints:
 
 class TestRealPruning:
     def test_max_snapshots_trims_history(self, work_dir, checkpoint_base, monkeypatch):
-        monkeypatch.setattr("tools.checkpoint_manager.CHECKPOINT_BASE", checkpoint_base)
+        monkeypatch.setattr("zermes.tools.checkpoint_manager.CHECKPOINT_BASE", checkpoint_base)
         # Tiny cap to test enforcement.
         m = CheckpointManager(enabled=True, max_snapshots=3)
 
@@ -314,7 +314,7 @@ class TestRealPruning:
     def test_max_file_size_mb_skips_large_files(
         self, tmp_path, checkpoint_base, monkeypatch,
     ):
-        monkeypatch.setattr("tools.checkpoint_manager.CHECKPOINT_BASE", checkpoint_base)
+        monkeypatch.setattr("zermes.tools.checkpoint_manager.CHECKPOINT_BASE", checkpoint_base)
         wd = tmp_path / "proj"
         wd.mkdir()
         (wd / "small.py").write_text("tiny\n")
@@ -379,7 +379,7 @@ class TestRestore:
     def test_tilde_path_supports_diff_and_restore_flow(
         self, checkpoint_base, fake_home, monkeypatch,
     ):
-        monkeypatch.setattr("tools.checkpoint_manager.CHECKPOINT_BASE", checkpoint_base)
+        monkeypatch.setattr("zermes.tools.checkpoint_manager.CHECKPOINT_BASE", checkpoint_base)
         m = CheckpointManager(enabled=True, max_snapshots=50)
         project = fake_home / "project"
         project.mkdir()
@@ -543,7 +543,7 @@ class TestDirFileCount:
 
 class TestErrorResilience:
     def test_no_git_installed(self, work_dir, checkpoint_base, monkeypatch):
-        monkeypatch.setattr("tools.checkpoint_manager.CHECKPOINT_BASE", checkpoint_base)
+        monkeypatch.setattr("zermes.tools.checkpoint_manager.CHECKPOINT_BASE", checkpoint_base)
         m = CheckpointManager(enabled=True)
         monkeypatch.setattr("shutil.which", lambda x: None)
         m._git_available = None
@@ -558,8 +558,8 @@ class TestErrorResilience:
             args=["git", "diff", "--cached", "--quiet"],
             returncode=1, stdout="", stderr="",
         )
-        with patch("tools.checkpoint_manager.subprocess.run", return_value=completed):
-            with caplog.at_level(logging.ERROR, logger="tools.checkpoint_manager"):
+        with patch("zermes.tools.checkpoint_manager.subprocess.run", return_value=completed):
+            with caplog.at_level(logging.ERROR, logger="zermes.tools.checkpoint_manager"):
                 ok, stdout, stderr = _run_git(
                     ["diff", "--cached", "--quiet"],
                     tmp_path / "store", str(work),
@@ -571,7 +571,7 @@ class TestErrorResilience:
 
     def test_run_git_invalid_working_dir_reports_path_error(self, tmp_path, caplog):
         missing = tmp_path / "missing"
-        with caplog.at_level(logging.ERROR, logger="tools.checkpoint_manager"):
+        with caplog.at_level(logging.ERROR, logger="zermes.tools.checkpoint_manager"):
             ok, _, stderr = _run_git(
                 ["status"], tmp_path / "store", str(missing),
             )
@@ -590,8 +590,8 @@ class TestErrorResilience:
         def raise_missing_git(*args, **kwargs):
             raise FileNotFoundError(2, "No such file or directory", "git")
 
-        monkeypatch.setattr("tools.checkpoint_manager.subprocess.run", raise_missing_git)
-        with caplog.at_level(logging.ERROR, logger="tools.checkpoint_manager"):
+        monkeypatch.setattr("zermes.tools.checkpoint_manager.subprocess.run", raise_missing_git)
+        with caplog.at_level(logging.ERROR, logger="zermes.tools.checkpoint_manager"):
             ok, _, stderr = _run_git(
                 ["status"], tmp_path / "store", str(work),
             )
@@ -604,7 +604,7 @@ class TestErrorResilience:
     def test_checkpoint_failure_does_not_raise(self, mgr, work_dir, monkeypatch):
         def broken_run_git(*args, **kwargs):
             raise OSError("git exploded")
-        monkeypatch.setattr("tools.checkpoint_manager._run_git", broken_run_git)
+        monkeypatch.setattr("zermes.tools.checkpoint_manager._run_git", broken_run_git)
         assert mgr.ensure_checkpoint(str(work_dir), "test") is False
 
 
@@ -676,7 +676,7 @@ class TestGpgAndGlobalConfigIsolation:
         assert env["GIT_CONFIG_NOSYSTEM"] == "1"
 
     def test_init_sets_commit_gpgsign_false(self, work_dir, checkpoint_base, monkeypatch):
-        monkeypatch.setattr("tools.checkpoint_manager.CHECKPOINT_BASE", checkpoint_base)
+        monkeypatch.setattr("zermes.tools.checkpoint_manager.CHECKPOINT_BASE", checkpoint_base)
         store = _store_path(checkpoint_base)
         _init_store(store, str(work_dir))
         result = subprocess.run(
@@ -687,7 +687,7 @@ class TestGpgAndGlobalConfigIsolation:
         assert result.stdout.strip() == "false"
 
     def test_init_sets_tag_gpgsign_false(self, work_dir, checkpoint_base, monkeypatch):
-        monkeypatch.setattr("tools.checkpoint_manager.CHECKPOINT_BASE", checkpoint_base)
+        monkeypatch.setattr("zermes.tools.checkpoint_manager.CHECKPOINT_BASE", checkpoint_base)
         store = _store_path(checkpoint_base)
         _init_store(store, str(work_dir))
         result = subprocess.run(
@@ -700,7 +700,7 @@ class TestGpgAndGlobalConfigIsolation:
     def test_checkpoint_works_with_global_gpgsign_and_broken_gpg(
         self, work_dir, checkpoint_base, monkeypatch, tmp_path,
     ):
-        monkeypatch.setattr("tools.checkpoint_manager.CHECKPOINT_BASE", checkpoint_base)
+        monkeypatch.setattr("zermes.tools.checkpoint_manager.CHECKPOINT_BASE", checkpoint_base)
         fake_home = tmp_path / "fake_home"
         fake_home.mkdir()
         (fake_home / ".gitconfig").write_text(
@@ -819,7 +819,7 @@ class TestPruneCheckpointsV2:
 
     def test_deletes_orphan_project_entry(self, tmp_path, monkeypatch):
         base = tmp_path / "checkpoints"
-        monkeypatch.setattr("tools.checkpoint_manager.CHECKPOINT_BASE", base)
+        monkeypatch.setattr("zermes.tools.checkpoint_manager.CHECKPOINT_BASE", base)
 
         alive = tmp_path / "alive"
         alive.mkdir()
@@ -849,7 +849,7 @@ class TestPruneCheckpointsV2:
 
     def test_deletes_stale_project_by_last_touch(self, tmp_path, monkeypatch):
         base = tmp_path / "checkpoints"
-        monkeypatch.setattr("tools.checkpoint_manager.CHECKPOINT_BASE", base)
+        monkeypatch.setattr("zermes.tools.checkpoint_manager.CHECKPOINT_BASE", base)
 
         fresh = tmp_path / "fresh"
         fresh.mkdir()
@@ -883,7 +883,7 @@ class TestPruneCheckpointsV2:
         """legacy-<ts>/ dirs older than retention_days get wiped."""
         base = tmp_path / "checkpoints"
         base.mkdir()
-        monkeypatch.setattr("tools.checkpoint_manager.CHECKPOINT_BASE", base)
+        monkeypatch.setattr("zermes.tools.checkpoint_manager.CHECKPOINT_BASE", base)
 
         old_legacy = base / "legacy-20200101-000000"
         old_legacy.mkdir()
@@ -949,14 +949,14 @@ class TestMaybeAutoPruneCheckpoints:
 class TestStoreStatus:
     def test_empty_base(self, tmp_path, monkeypatch):
         base = tmp_path / "checkpoints"
-        monkeypatch.setattr("tools.checkpoint_manager.CHECKPOINT_BASE", base)
+        monkeypatch.setattr("zermes.tools.checkpoint_manager.CHECKPOINT_BASE", base)
         info = store_status()
         assert info["project_count"] == 0
         assert info["total_size_bytes"] == 0
 
     def test_reports_projects_and_legacy(self, tmp_path, monkeypatch, work_dir):
         base = tmp_path / "checkpoints"
-        monkeypatch.setattr("tools.checkpoint_manager.CHECKPOINT_BASE", base)
+        monkeypatch.setattr("zermes.tools.checkpoint_manager.CHECKPOINT_BASE", base)
 
         m = CheckpointManager(enabled=True)
         m.ensure_checkpoint(str(work_dir), "initial")
@@ -978,7 +978,7 @@ class TestStoreStatus:
 class TestClearFunctions:
     def test_clear_all_wipes_base(self, tmp_path, monkeypatch, work_dir):
         base = tmp_path / "checkpoints"
-        monkeypatch.setattr("tools.checkpoint_manager.CHECKPOINT_BASE", base)
+        monkeypatch.setattr("zermes.tools.checkpoint_manager.CHECKPOINT_BASE", base)
         m = CheckpointManager(enabled=True)
         m.ensure_checkpoint(str(work_dir), "initial")
         assert base.exists()
@@ -992,7 +992,7 @@ class TestClearFunctions:
         self, tmp_path, monkeypatch, work_dir,
     ):
         base = tmp_path / "checkpoints"
-        monkeypatch.setattr("tools.checkpoint_manager.CHECKPOINT_BASE", base)
+        monkeypatch.setattr("zermes.tools.checkpoint_manager.CHECKPOINT_BASE", base)
         m = CheckpointManager(enabled=True)
         m.ensure_checkpoint(str(work_dir), "initial")
 
@@ -1009,7 +1009,7 @@ class TestClearFunctions:
 
     def test_clear_all_on_missing_base_is_noop(self, tmp_path, monkeypatch):
         base = tmp_path / "does-not-exist"
-        monkeypatch.setattr("tools.checkpoint_manager.CHECKPOINT_BASE", base)
+        monkeypatch.setattr("zermes.tools.checkpoint_manager.CHECKPOINT_BASE", base)
         result = clear_all()
         assert result["deleted"] is False
         assert result["bytes_freed"] == 0

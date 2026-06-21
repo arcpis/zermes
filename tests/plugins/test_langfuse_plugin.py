@@ -48,7 +48,7 @@ class TestManifest:
 class TestDiscovery:
     def test_plugin_is_discovered_as_standalone_opt_in(self, tmp_path, monkeypatch):
         """Scanner should find the plugin but NOT load it by default."""
-        from hermes_cli import plugins as plugins_mod
+        from zermes.hermes_cli import plugins as plugins_mod
 
         # Isolated HERMES_HOME so we don't read the developer's config.yaml.
         home = tmp_path / ".hermes"
@@ -76,7 +76,7 @@ class TestDiscovery:
 class TestRuntimeGate:
     def _fresh_plugin(self):
         """Import the plugin module fresh (clears any cached client)."""
-        mod_name = "plugins.observability.langfuse"
+        mod_name = "zermes.plugins.observability.langfuse"
         sys.modules.pop(mod_name, None)
         return importlib.import_module(mod_name)
 
@@ -132,15 +132,15 @@ class TestRuntimeGate:
         ):
             monkeypatch.delenv(k, raising=False)
 
-        # Drop any cached import of hermes_cli.config.
-        sys.modules.pop("hermes_cli.config", None)
+        # Drop any cached import of zermes.hermes_cli.config.
+        sys.modules.pop("zermes.hermes_cli.config", None)
 
         langfuse_plugin = self._fresh_plugin()
         for _ in range(20):
             langfuse_plugin._get_langfuse()
 
-        assert "hermes_cli.config" not in sys.modules, (
-            "langfuse plugin imported hermes_cli.config — regression toward "
+        assert "zermes.hermes_cli.config" not in sys.modules, (
+            "langfuse plugin imported zermes.hermes_cli.config — regression toward "
             "the rejected per-hook load_config() design"
         )
 
@@ -158,9 +158,9 @@ class TestHooksInert:
         ):
             monkeypatch.delenv(k, raising=False)
 
-        sys.modules.pop("plugins.observability.langfuse", None)
+        sys.modules.pop("zermes.plugins.observability.langfuse", None)
         import importlib
-        mod = importlib.import_module("plugins.observability.langfuse")
+        mod = importlib.import_module("zermes.plugins.observability.langfuse")
 
         # Each hook should just return; no exceptions.
         mod.on_pre_llm_call(task_id="t", session_id="s", messages=[{"role": "user", "content": "hi"}])

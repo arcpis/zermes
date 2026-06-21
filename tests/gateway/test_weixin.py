@@ -9,12 +9,12 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
-from gateway.config import PlatformConfig
-from gateway.config import GatewayConfig, HomeChannel, Platform, _apply_env_overrides
-from gateway.platforms.base import SendResult
-from gateway.platforms import weixin
-from gateway.platforms.weixin import ContextTokenStore, WeixinAdapter
-from tools.send_message_tool import _parse_target_ref, _send_to_platform
+from zermes.gateway.config import PlatformConfig
+from zermes.gateway.config import GatewayConfig, HomeChannel, Platform, _apply_env_overrides
+from zermes.gateway.platforms.base import SendResult
+from zermes.gateway.platforms import weixin
+from zermes.gateway.platforms.weixin import ContextTokenStore, WeixinAdapter
+from zermes.tools.send_message_tool import _parse_target_ref, _send_to_platform
 
 
 def _make_adapter() -> WeixinAdapter:
@@ -249,7 +249,7 @@ class TestWeixinStatePersistence:
         def _boom(_src, _dst):
             raise OSError("disk full")
 
-        monkeypatch.setattr("utils.os.replace", _boom)
+        monkeypatch.setattr("zermes.utils.os.replace", _boom)
 
         try:
             weixin.save_weixin_account(
@@ -274,7 +274,7 @@ class TestWeixinStatePersistence:
         def _boom(_src, _dst):
             raise OSError("disk full")
 
-        monkeypatch.setattr("utils.os.replace", _boom)
+        monkeypatch.setattr("zermes.utils.os.replace", _boom)
 
         store = ContextTokenStore(str(tmp_path))
         with patch.object(weixin.logger, "warning") as warning_mock:
@@ -291,7 +291,7 @@ class TestWeixinStatePersistence:
         def _boom(_src, _dst):
             raise OSError("disk full")
 
-        monkeypatch.setattr("utils.os.replace", _boom)
+        monkeypatch.setattr("zermes.utils.os.replace", _boom)
 
         try:
             weixin._save_sync_buf(str(tmp_path), "acct", "new-sync")
@@ -312,10 +312,10 @@ class TestWeixinQrLogin:
         }
         pending = {"status": "wait"}
 
-        with patch("gateway.platforms.weixin._api_get", new_callable=AsyncMock) as api_get_mock, \
-             patch("gateway.platforms.weixin.time") as mock_time, \
-             patch("gateway.platforms.weixin.AIOHTTP_AVAILABLE", True), \
-             patch("gateway.platforms.weixin.aiohttp.ClientSession", create=True) as session_cls, \
+        with patch("zermes.gateway.platforms.weixin._api_get", new_callable=AsyncMock) as api_get_mock, \
+             patch("zermes.gateway.platforms.weixin.time") as mock_time, \
+             patch("zermes.gateway.platforms.weixin.AIOHTTP_AVAILABLE", True), \
+             patch("zermes.gateway.platforms.weixin.aiohttp.ClientSession", create=True) as session_cls, \
              patch("builtins.print"):
             api_get_mock.side_effect = [first_qr, pending]
             mock_time.monotonic.side_effect = [1000, 1000.2, 1001.1]
@@ -338,7 +338,7 @@ class TestWeixinSendMessageIntegration:
         assert _parse_target_ref("weixin", "filehelper") == ("filehelper", None, True)
         assert _parse_target_ref("weixin", "group@chatroom") == ("group@chatroom", None, True)
 
-    @patch("tools.send_message_tool._send_weixin", new_callable=AsyncMock)
+    @patch("zermes.tools.send_message_tool._send_weixin", new_callable=AsyncMock)
     def test_send_to_platform_routes_weixin_media_to_native_helper(self, send_weixin_mock):
         send_weixin_mock.return_value = {"success": True, "platform": "weixin", "chat_id": "wxid_test123"}
         config = PlatformConfig(enabled=True, token="bot-token", extra={"account_id": "bot-account"})
@@ -372,8 +372,8 @@ class TestWeixinChunkDelivery:
         adapter._token_store.get = lambda account_id, chat_id: "ctx-token"
         return adapter
 
-    @patch("gateway.platforms.weixin.asyncio.sleep", new_callable=AsyncMock)
-    @patch("gateway.platforms.weixin._send_message", new_callable=AsyncMock)
+    @patch("zermes.gateway.platforms.weixin.asyncio.sleep", new_callable=AsyncMock)
+    @patch("zermes.gateway.platforms.weixin._send_message", new_callable=AsyncMock)
     def test_send_waits_between_multiple_chunks(self, send_message_mock, sleep_mock):
         adapter = self._connected_adapter()
         adapter.MAX_MESSAGE_LENGTH = 12
@@ -385,8 +385,8 @@ class TestWeixinChunkDelivery:
         assert send_message_mock.await_count == 3
         assert sleep_mock.await_count == 2
 
-    @patch("gateway.platforms.weixin.asyncio.sleep", new_callable=AsyncMock)
-    @patch("gateway.platforms.weixin._send_message", new_callable=AsyncMock)
+    @patch("zermes.gateway.platforms.weixin.asyncio.sleep", new_callable=AsyncMock)
+    @patch("zermes.gateway.platforms.weixin._send_message", new_callable=AsyncMock)
     def test_send_retries_failed_chunk_before_continuing(self, send_message_mock, sleep_mock):
         adapter = self._connected_adapter()
         adapter.MAX_MESSAGE_LENGTH = 12
@@ -502,10 +502,10 @@ class TestWeixinOutboundMedia:
         aes_key = bytes(range(16))
         expected_aes_key = base64.b64encode(aes_key.hex().encode("ascii")).decode("ascii")
 
-        with patch("gateway.platforms.weixin._get_upload_url", new=AsyncMock(return_value={"upload_full_url": "https://upload.example.com/media"})), \
-             patch("gateway.platforms.weixin._api_post", new_callable=AsyncMock) as api_post_mock, \
-             patch("gateway.platforms.weixin.secrets.token_hex", return_value="filekey-123"), \
-             patch("gateway.platforms.weixin.secrets.token_bytes", return_value=aes_key):
+        with patch("zermes.gateway.platforms.weixin._get_upload_url", new=AsyncMock(return_value={"upload_full_url": "https://upload.example.com/media"})), \
+             patch("zermes.gateway.platforms.weixin._api_post", new_callable=AsyncMock) as api_post_mock, \
+             patch("zermes.gateway.platforms.weixin.secrets.token_hex", return_value="filekey-123"), \
+             patch("zermes.gateway.platforms.weixin.secrets.token_bytes", return_value=aes_key):
             message_id = asyncio.run(adapter._send_file("wxid_test123", str(image_path), ""))
 
         assert message_id.startswith("hermes-weixin-")
@@ -527,7 +527,7 @@ class TestWeixinRemoteMediaSafety:
     def test_download_remote_media_blocks_unsafe_urls(self):
         adapter = _make_adapter()
 
-        with patch("tools.url_safety.is_safe_url", return_value=False):
+        with patch("zermes.tools.url_safety.is_safe_url", return_value=False):
             try:
                 asyncio.run(adapter._download_remote_media("http://127.0.0.1/private.png"))
             except ValueError as exc:
@@ -583,7 +583,7 @@ class TestWeixinBlankMessagePrevention:
         )
         assert adapter._split_text("") == []
 
-    @patch("gateway.platforms.weixin._send_message", new_callable=AsyncMock)
+    @patch("zermes.gateway.platforms.weixin._send_message", new_callable=AsyncMock)
     def test_send_empty_content_does_not_call_send_message(self, send_message_mock):
         adapter = _make_adapter()
         adapter._session = object()

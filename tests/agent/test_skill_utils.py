@@ -1,6 +1,6 @@
 """Tests for agent/skill_utils.py — extract_skill_conditions metadata handling."""
 
-from agent.skill_utils import extract_skill_conditions
+from zermes.agent.skill_utils import extract_skill_conditions
 
 
 def test_metadata_as_dict_with_hermes():

@@ -3,11 +3,11 @@
 import importlib
 import unittest
 
-from tools.registry import registry
+from zermes.tools.registry import registry
 
 # Trigger tool discovery so feishu tools get registered
-importlib.import_module("tools.feishu_doc_tool")
-importlib.import_module("tools.feishu_drive_tool")
+importlib.import_module("zermes.tools.feishu_doc_tool")
+importlib.import_module("zermes.tools.feishu_drive_tool")
 
 
 class TestFeishuToolRegistration(unittest.TestCase):

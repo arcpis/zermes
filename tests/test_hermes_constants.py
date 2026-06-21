@@ -6,8 +6,8 @@ from unittest.mock import patch
 
 import pytest
 
-import hermes_constants
-from hermes_constants import (
+import zermes.hermes_constants as hermes_constants
+from zermes.hermes_constants import (
     VALID_REASONING_EFFORTS,
     get_default_hermes_root,
     is_container,

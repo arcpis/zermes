@@ -22,7 +22,7 @@ _EXPECTED_PATHS = {"google_token.json", "google_client_secret.json"}
 
 
 def _parse_frontmatter(content: str) -> dict:
-    from agent.skill_utils import parse_frontmatter
+    from zermes.agent.skill_utils import parse_frontmatter
 
     fm, _ = parse_frontmatter(content)
     return fm
@@ -49,7 +49,7 @@ class TestGoogleWorkspaceCredentialFiles:
         (hermes_home / "google_token.json").write_text("{}")
         (hermes_home / "google_client_secret.json").write_text("{}")
 
-        from tools.credential_files import (
+        from zermes.tools.credential_files import (
             clear_credential_files,
             get_credential_file_mounts,
             register_credential_files,
@@ -78,7 +78,7 @@ class TestGoogleWorkspaceCredentialFiles:
         hermes_home.mkdir()
         (hermes_home / "google_client_secret.json").write_text("{}")
 
-        from tools.credential_files import (
+        from zermes.tools.credential_files import (
             clear_credential_files,
             get_credential_file_mounts,
             register_credential_files,

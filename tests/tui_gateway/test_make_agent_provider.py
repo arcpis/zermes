@@ -29,25 +29,25 @@ def test_make_agent_passes_resolved_provider():
     }
 
     with (
-        patch("tui_gateway.server._load_cfg", return_value=fake_cfg),
-        patch("tui_gateway.server._get_db", return_value=MagicMock()),
-        patch("tui_gateway.server._load_tool_progress_mode", return_value="compact"),
-        patch("tui_gateway.server._load_reasoning_config", return_value=None),
-        patch("tui_gateway.server._load_service_tier", return_value=None),
-        patch("tui_gateway.server._load_enabled_toolsets", return_value=None),
+        patch("zermes.tui_gateway.server._load_cfg", return_value=fake_cfg),
+        patch("zermes.tui_gateway.server._get_db", return_value=MagicMock()),
+        patch("zermes.tui_gateway.server._load_tool_progress_mode", return_value="compact"),
+        patch("zermes.tui_gateway.server._load_reasoning_config", return_value=None),
+        patch("zermes.tui_gateway.server._load_service_tier", return_value=None),
+        patch("zermes.tui_gateway.server._load_enabled_toolsets", return_value=None),
         patch(
-            "hermes_cli.runtime_provider.resolve_runtime_provider",
+            "zermes.hermes_cli.runtime_provider.resolve_runtime_provider",
             return_value=fake_runtime,
         ) as mock_resolve,
-        patch("run_agent.AIAgent") as mock_agent,
+        patch("zermes.run_agent.AIAgent") as mock_agent,
     ):
 
-        from tui_gateway.server import _make_agent
+        from zermes.tui_gateway.server import _make_agent
 
         _make_agent("sid-1", "key-1")
 
         # target_model comes from _resolve_startup_runtime() which reads
-        # _load_cfg().  Due to module-level caching in tui_gateway.server,
+        # _load_cfg().  Due to module-level caching in zermes.tui_gateway.server,
         # the patched config may not take effect when the module was already
         # imported by an earlier test.  Assert the stable part of the call.
         mock_resolve.assert_called_once()
@@ -62,7 +62,7 @@ def test_make_agent_passes_resolved_provider():
 
 def test_make_agent_ignores_display_personality_without_system_prompt():
     """The TUI matches the classic CLI: personality only becomes active once
-    it has been saved to agent.system_prompt."""
+    it has been saved to zermes.agent.system_prompt."""
 
     fake_runtime = {
         "provider": "openrouter",
@@ -83,15 +83,15 @@ def test_make_agent_ignores_display_personality_without_system_prompt():
     }
 
     with (
-        patch("tui_gateway.server._load_cfg", return_value=fake_cfg),
-        patch("tui_gateway.server._get_db", return_value=MagicMock()),
+        patch("zermes.tui_gateway.server._load_cfg", return_value=fake_cfg),
+        patch("zermes.tui_gateway.server._get_db", return_value=MagicMock()),
         patch(
-            "hermes_cli.runtime_provider.resolve_runtime_provider",
+            "zermes.hermes_cli.runtime_provider.resolve_runtime_provider",
             return_value=fake_runtime,
         ),
-        patch("run_agent.AIAgent") as mock_agent,
+        patch("zermes.run_agent.AIAgent") as mock_agent,
     ):
-        from tui_gateway.server import _make_agent
+        from zermes.tui_gateway.server import _make_agent
 
         _make_agent("sid-default-personality", "key-default-personality")
 
@@ -120,15 +120,15 @@ def test_make_agent_honors_tui_launch_env_flags():
                 "HERMES_IGNORE_RULES": "1",
             },
         ),
-        patch("tui_gateway.server._load_cfg", return_value=fake_cfg),
-        patch("tui_gateway.server._get_db", return_value=MagicMock()),
+        patch("zermes.tui_gateway.server._load_cfg", return_value=fake_cfg),
+        patch("zermes.tui_gateway.server._get_db", return_value=MagicMock()),
         patch(
-            "hermes_cli.runtime_provider.resolve_runtime_provider",
+            "zermes.hermes_cli.runtime_provider.resolve_runtime_provider",
             return_value=fake_runtime,
         ),
-        patch("run_agent.AIAgent") as mock_agent,
+        patch("zermes.run_agent.AIAgent") as mock_agent,
     ):
-        from tui_gateway.server import _make_agent
+        from zermes.tui_gateway.server import _make_agent
 
         _make_agent("sid-env", "key-env")
 
@@ -143,7 +143,7 @@ def test_make_agent_honors_tui_launch_env_flags():
 def test_probe_config_health_flags_null_sections():
     """Bare YAML keys (`agent:` with no value) parse as None and silently
     drop nested settings; probe must surface them so users can fix."""
-    from tui_gateway.server import _probe_config_health
+    from zermes.tui_gateway.server import _probe_config_health
 
     assert _probe_config_health({"agent": {"x": 1}}) == ""
     assert _probe_config_health({}) == ""
@@ -154,7 +154,7 @@ def test_probe_config_health_flags_null_sections():
 
 
 def test_probe_config_health_flags_null_personalities_with_active_personality():
-    from tui_gateway.server import _probe_config_health
+    from zermes.tui_gateway.server import _probe_config_health
 
     msg = _probe_config_health(
         {
@@ -164,7 +164,7 @@ def test_probe_config_health_flags_null_personalities_with_active_personality():
         }
     )
     assert "display.personality" in msg
-    assert "agent.personalities" in msg
+    assert "zermes.agent.personalities" in msg
 
 
 def test_make_agent_tolerates_null_config_sections():
@@ -185,16 +185,16 @@ def test_make_agent_tolerates_null_config_sections():
     null_cfg = {"agent": None, "display": None, "model": {"default": "glm-5"}}
 
     with (
-        patch("tui_gateway.server._load_cfg", return_value=null_cfg),
-        patch("tui_gateway.server._get_db", return_value=MagicMock()),
+        patch("zermes.tui_gateway.server._load_cfg", return_value=null_cfg),
+        patch("zermes.tui_gateway.server._get_db", return_value=MagicMock()),
         patch(
-            "hermes_cli.runtime_provider.resolve_runtime_provider",
+            "zermes.hermes_cli.runtime_provider.resolve_runtime_provider",
             return_value=fake_runtime,
         ),
-        patch("run_agent.AIAgent") as mock_agent,
+        patch("zermes.run_agent.AIAgent") as mock_agent,
     ):
 
-        from tui_gateway.server import _make_agent
+        from zermes.tui_gateway.server import _make_agent
 
         _make_agent("sid-null", "key-null")
 
@@ -218,16 +218,16 @@ def test_make_agent_tolerates_null_personalities_with_active_personality():
     }
 
     with (
-        patch("tui_gateway.server._load_cfg", return_value=cfg),
-        patch("tui_gateway.server._get_db", return_value=MagicMock()),
-        patch("cli.load_cli_config", return_value={"agent": {"personalities": None}}),
+        patch("zermes.tui_gateway.server._load_cfg", return_value=cfg),
+        patch("zermes.tui_gateway.server._get_db", return_value=MagicMock()),
+        patch("zermes.cli.load_cli_config", return_value={"agent": {"personalities": None}}),
         patch(
-            "hermes_cli.runtime_provider.resolve_runtime_provider",
+            "zermes.hermes_cli.runtime_provider.resolve_runtime_provider",
             return_value=fake_runtime,
         ),
-        patch("run_agent.AIAgent") as mock_agent,
+        patch("zermes.run_agent.AIAgent") as mock_agent,
     ):
-        from tui_gateway.server import _make_agent
+        from zermes.tui_gateway.server import _make_agent
 
         _make_agent("sid-null-personality", "key-null-personality")
 

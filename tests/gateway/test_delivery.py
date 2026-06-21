@@ -1,8 +1,8 @@
 """Tests for the delivery routing module."""
 
-from gateway.config import Platform
-from gateway.delivery import DeliveryTarget
-from gateway.session import SessionSource
+from zermes.gateway.config import Platform
+from zermes.gateway.delivery import DeliveryTarget
+from zermes.gateway.session import SessionSource
 
 
 class TestParseTargetPlatformChat:

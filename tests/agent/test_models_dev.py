@@ -1,9 +1,9 @@
-"""Tests for agent.models_dev — models.dev registry integration."""
+"""Tests for zermes.agent.models_dev — models.dev registry integration."""
 import json
 from unittest.mock import patch, MagicMock
 
 import pytest
-from agent.models_dev import (
+from zermes.agent.models_dev import (
     PROVIDER_TO_MODELS_DEV,
     _extract_context,
     fetch_models_dev,
@@ -115,27 +115,27 @@ class TestExtractContext:
 
 
 class TestLookupModelsDevContext:
-    @patch("agent.models_dev.fetch_models_dev")
+    @patch("zermes.agent.models_dev.fetch_models_dev")
     def test_exact_match(self, mock_fetch):
         mock_fetch.return_value = SAMPLE_REGISTRY
         assert lookup_models_dev_context("anthropic", "claude-opus-4-6") == 1000000
 
-    @patch("agent.models_dev.fetch_models_dev")
+    @patch("zermes.agent.models_dev.fetch_models_dev")
     def test_case_insensitive_match(self, mock_fetch):
         mock_fetch.return_value = SAMPLE_REGISTRY
         assert lookup_models_dev_context("anthropic", "Claude-Opus-4-6") == 1000000
 
-    @patch("agent.models_dev.fetch_models_dev")
+    @patch("zermes.agent.models_dev.fetch_models_dev")
     def test_provider_not_mapped(self, mock_fetch):
         mock_fetch.return_value = SAMPLE_REGISTRY
         assert lookup_models_dev_context("nous", "some-model") is None
 
-    @patch("agent.models_dev.fetch_models_dev")
+    @patch("zermes.agent.models_dev.fetch_models_dev")
     def test_model_not_found(self, mock_fetch):
         mock_fetch.return_value = SAMPLE_REGISTRY
         assert lookup_models_dev_context("anthropic", "nonexistent-model") is None
 
-    @patch("agent.models_dev.fetch_models_dev")
+    @patch("zermes.agent.models_dev.fetch_models_dev")
     def test_provider_aware_context(self, mock_fetch):
         """Same model, different context per provider."""
         mock_fetch.return_value = SAMPLE_REGISTRY
@@ -144,21 +144,21 @@ class TestLookupModelsDevContext:
         # GitHub Copilot: only 128K for same model
         assert lookup_models_dev_context("copilot", "claude-opus-4.6") == 128000
 
-    @patch("agent.models_dev.fetch_models_dev")
+    @patch("zermes.agent.models_dev.fetch_models_dev")
     def test_zero_context_filtered(self, mock_fetch):
         mock_fetch.return_value = SAMPLE_REGISTRY
         # audio-only is not a mapped provider, but test the filtering directly
         data = SAMPLE_REGISTRY["audio-only"]["models"]["tts-model"]
         assert _extract_context(data) is None
 
-    @patch("agent.models_dev.fetch_models_dev")
+    @patch("zermes.agent.models_dev.fetch_models_dev")
     def test_empty_registry(self, mock_fetch):
         mock_fetch.return_value = {}
         assert lookup_models_dev_context("anthropic", "claude-opus-4-6") is None
 
 
 class TestFetchModelsDev:
-    @patch("agent.models_dev.requests.get")
+    @patch("zermes.agent.models_dev.requests.get")
     def test_fetch_success(self, mock_get):
         mock_resp = MagicMock()
         mock_resp.status_code = 200
@@ -167,7 +167,7 @@ class TestFetchModelsDev:
         mock_get.return_value = mock_resp
 
         # Clear caches
-        import agent.models_dev as md
+        import zermes.agent.models_dev as md
         md._models_dev_cache = {}
         md._models_dev_cache_time = 0
 
@@ -177,11 +177,11 @@ class TestFetchModelsDev:
         assert "anthropic" in result
         assert len(result) == len(SAMPLE_REGISTRY)
 
-    @patch("agent.models_dev.requests.get")
+    @patch("zermes.agent.models_dev.requests.get")
     def test_fetch_failure_returns_stale_cache(self, mock_get):
         mock_get.side_effect = Exception("network error")
 
-        import agent.models_dev as md
+        import zermes.agent.models_dev as md
         md._models_dev_cache = SAMPLE_REGISTRY
         md._models_dev_cache_time = 0  # expired
 
@@ -190,9 +190,9 @@ class TestFetchModelsDev:
 
         assert "anthropic" in result
 
-    @patch("agent.models_dev.requests.get")
+    @patch("zermes.agent.models_dev.requests.get")
     def test_in_memory_cache_used(self, mock_get):
-        import agent.models_dev as md
+        import zermes.agent.models_dev as md
         import time
         md._models_dev_cache = SAMPLE_REGISTRY
         md._models_dev_cache_time = time.time()  # fresh
@@ -251,7 +251,7 @@ class TestGetModelCapabilities:
 
     def test_vision_from_attachment_flag(self):
         """Models with attachment=True and no modalities should report supports_vision=True."""
-        with patch("agent.models_dev.fetch_models_dev", return_value=CAPS_REGISTRY):
+        with patch("zermes.agent.models_dev.fetch_models_dev", return_value=CAPS_REGISTRY):
             caps = get_model_capabilities("anthropic", "claude-sonnet-4")
         assert caps is not None
         assert caps.supports_vision is True
@@ -259,21 +259,21 @@ class TestGetModelCapabilities:
     def test_vision_from_modalities_input_image(self):
         """Models with 'image' in modalities.input but attachment=False should
         still report supports_vision=True (the core fix in this PR)."""
-        with patch("agent.models_dev.fetch_models_dev", return_value=CAPS_REGISTRY):
+        with patch("zermes.agent.models_dev.fetch_models_dev", return_value=CAPS_REGISTRY):
             caps = get_model_capabilities("google", "gemma-4-31b-it")
         assert caps is not None
         assert caps.supports_vision is True
 
     def test_text_only_modalities_override_stale_attachment_flag(self):
         """Text-only modalities must win over stale attachment=True metadata."""
-        with patch("agent.models_dev.fetch_models_dev", return_value=CAPS_REGISTRY):
+        with patch("zermes.agent.models_dev.fetch_models_dev", return_value=CAPS_REGISTRY):
             caps = get_model_capabilities("google", "text-only-with-stale-attachment")
         assert caps is not None
         assert caps.supports_vision is False
 
     def test_no_vision_without_attachment_or_modalities(self):
         """Models with neither attachment nor image modality should be non-vision."""
-        with patch("agent.models_dev.fetch_models_dev", return_value=CAPS_REGISTRY):
+        with patch("zermes.agent.models_dev.fetch_models_dev", return_value=CAPS_REGISTRY):
             caps = get_model_capabilities("google", "gemma-3-1b")
         assert caps is not None
         assert caps.supports_vision is False
@@ -289,13 +289,13 @@ class TestGetModelCapabilities:
                 },
             }},
         }
-        with patch("agent.models_dev.fetch_models_dev", return_value=registry):
+        with patch("zermes.agent.models_dev.fetch_models_dev", return_value=registry):
             caps = get_model_capabilities("gemini", "weird-model")
         assert caps is not None
         assert caps.supports_vision is False
 
     def test_model_not_found_returns_none(self):
         """Unknown model should return None."""
-        with patch("agent.models_dev.fetch_models_dev", return_value=CAPS_REGISTRY):
+        with patch("zermes.agent.models_dev.fetch_models_dev", return_value=CAPS_REGISTRY):
             caps = get_model_capabilities("anthropic", "nonexistent-model")
         assert caps is None

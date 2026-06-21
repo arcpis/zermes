@@ -4,13 +4,13 @@ providers' ``on_session_end`` hooks see the real messages instead of an
 empty list.
 
 Before the fix, ``_cleanup_agent_resources`` called
-``agent.shutdown_memory_provider()`` with no arguments, which in turn
+``zermes.agent.shutdown_memory_provider()`` with no arguments, which in turn
 invoked ``on_session_end([])`` on every memory provider. Providers with
 an empty-guard (Holographic, Hindsight, etc.) exited early and never
 persisted the session's facts, so the next gateway start-up surfaced no
 memories from the prior conversation.
 
-The fix reads ``agent._session_messages`` (set on ``AIAgent.__init__``
+The fix reads ``zermes.agent._session_messages`` (set on ``AIAgent.__init__``
 and refreshed every turn via ``_persist_session``) and forwards it to
 ``shutdown_memory_provider``. Test stubs built via ``object.__new__``
 or plain ``MagicMock()`` still exercise the legacy no-arg path, so the
@@ -28,14 +28,14 @@ import pytest
 
 @pytest.fixture(autouse=True)
 def _mock_dotenv(monkeypatch):
-    """gateway.run imports dotenv at module load; stub so tests run bare."""
+    """zermes.gateway.run imports dotenv at module load; stub so tests run bare."""
     fake = types.ModuleType("dotenv")
     fake.load_dotenv = lambda *a, **kw: None
     monkeypatch.setitem(sys.modules, "dotenv", fake)
 
 
 def _make_runner():
-    from gateway.run import GatewayRunner
+    from zermes.gateway.run import GatewayRunner
 
     runner = object.__new__(GatewayRunner)
     return runner

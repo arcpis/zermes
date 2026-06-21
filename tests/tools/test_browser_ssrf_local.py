@@ -13,7 +13,7 @@ import json
 
 import pytest
 
-from tools import browser_tool
+from zermes.tools import browser_tool
 
 
 def _make_browser_result(url="https://example.com"):
@@ -299,7 +299,7 @@ class TestPostRedirectSsrf:
     ):
         """Redirect to a cloud metadata endpoint is blocked regardless of
         routing — even the hybrid local sidecar path can't return IMDS
-        content to the agent."""
+        content to the zermes.agent."""
         imds_final = "http://169.254.169.254/latest/meta-data/"
         monkeypatch.setattr(browser_tool, "_is_local_backend", lambda: False)
         monkeypatch.setattr(browser_tool, "_allow_private_urls", lambda: False)
@@ -330,7 +330,7 @@ class TestAllowPrivateUrlsConfig:
 
     def test_browser_config_string_false_stays_disabled(self, monkeypatch):
         monkeypatch.setattr(
-            "hermes_cli.config.read_raw_config",
+            "zermes.hermes_cli.config.read_raw_config",
             lambda: {"browser": {"allow_private_urls": "false"}},
         )
 

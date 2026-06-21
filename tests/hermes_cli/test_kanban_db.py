@@ -1,4 +1,4 @@
-"""Tests for the Kanban DB layer (hermes_cli.kanban_db)."""
+"""Tests for the Kanban DB layer (zermes.hermes_cli.kanban_db)."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from hermes_cli import kanban_db as kb
+from zermes.hermes_cli import kanban_db as kb
 
 
 @pytest.fixture
@@ -170,7 +170,7 @@ def test_claim_fails_on_non_ready(kanban_home):
 
 def test_stale_claim_reclaimed(kanban_home, monkeypatch):
     import signal
-    import hermes_cli.kanban_db as _kb
+    import zermes.hermes_cli.kanban_db as _kb
 
     with kb.connect() as conn:
         t = kb.create_task(conn, title="x", assignee="a")
@@ -414,7 +414,7 @@ def test_dispatch_skips_nonspawnable_into_separate_bucket(kanban_home, monkeypat
     ``skipped_unassigned`` (which is operator-actionable) — they go in
     the dedicated ``skipped_nonspawnable`` bucket so health telemetry
     can suppress false-positive "stuck" warnings."""
-    from hermes_cli import profiles
+    from zermes.hermes_cli import profiles
     monkeypatch.setattr(profiles, "profile_exists", lambda name: False)
     with kb.connect() as conn:
         t = kb.create_task(conn, title="for-terminal", assignee="orion-cc")
@@ -428,7 +428,7 @@ def test_has_spawnable_ready_false_when_only_terminal_lanes(kanban_home, monkeyp
     """``has_spawnable_ready`` returns False when every ready task is
     assigned to a control-plane lane — used by gateway/CLI dispatchers
     to silence the stuck-warn while terminals still have queued work."""
-    from hermes_cli import profiles
+    from zermes.hermes_cli import profiles
     monkeypatch.setattr(profiles, "profile_exists", lambda name: False)
     with kb.connect() as conn:
         kb.create_task(conn, title="t1", assignee="orion-cc")
@@ -440,7 +440,7 @@ def test_has_spawnable_ready_true_when_real_profile_present(kanban_home, monkeyp
     """``has_spawnable_ready`` returns True as soon as ANY ready task
     has an assignee that maps to a real Hermes profile — preserves the
     real "stuck" signal when a daily/agent task is queued."""
-    from hermes_cli import profiles
+    from zermes.hermes_cli import profiles
     monkeypatch.setattr(
         profiles, "profile_exists", lambda name: name == "daily"
     )

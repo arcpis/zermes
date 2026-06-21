@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import pytest
 
-from agent.think_scrubber import StreamingThinkScrubber
+from zermes.agent.think_scrubber import StreamingThinkScrubber
 
 
 def _drive(scrubber: StreamingThinkScrubber, deltas: list[str]) -> str:

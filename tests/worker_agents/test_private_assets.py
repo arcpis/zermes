@@ -1,6 +1,6 @@
 import pytest
 
-from worker_agents.private_assets import (
+from zermes.worker_agents.private_assets import (
     PrivateAssetError,
     PrivateAssetSensitivity,
     PrivateAssetShareStatus,

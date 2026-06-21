@@ -4,8 +4,8 @@ import time
 import pytest
 from pathlib import Path
 
-from hermes_state import SessionDB
-from agent.insights import (
+from zermes.hermes_state import SessionDB
+from zermes.agent.insights import (
     InsightsEngine,
     _estimate_cost,
     _format_duration,

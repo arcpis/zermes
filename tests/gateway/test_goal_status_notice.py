@@ -4,11 +4,11 @@ from types import SimpleNamespace
 
 import pytest
 
-from gateway.config import Platform
-from gateway.platforms.base import MessageEvent, MessageType
-from gateway.run import GatewayRunner
-from gateway.session import SessionSource
-from hermes_cli.goals import CONTINUATION_PROMPT_TEMPLATE
+from zermes.gateway.config import Platform
+from zermes.gateway.platforms.base import MessageEvent, MessageType
+from zermes.gateway.run import GatewayRunner
+from zermes.gateway.session import SessionSource
+from zermes.hermes_cli.goals import CONTINUATION_PROMPT_TEMPLATE
 
 
 class FakeAdapter:

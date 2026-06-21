@@ -1,7 +1,7 @@
 import pytest
 
-import worker_agents
-from worker_agents.organization_evolution import (
+import zermes.worker_agents as worker_agents
+from zermes.worker_agents.organization_evolution import (
     CHILD_AGENT_LIFECYCLE_SCHEMA_VERSION,
     DepartmentChatNewTaskEntryStatus,
     DepartmentMergePreflightBlockingCode,
@@ -514,7 +514,7 @@ def test_department_merge_preflight_report_serialization_is_stable():
 
 
 def test_department_merge_planner_public_exports_cover_preflight_contract():
-    report = worker_agents.build_department_merge_preflight(
+    report = zermes.worker_agents.build_department_merge_preflight(
         _merge_plan(),
         department_lifecycle_states={
             "platform": "active",
@@ -523,9 +523,9 @@ def test_department_merge_planner_public_exports_cover_preflight_contract():
         asset_disposition_plan_refs={"platform": "merge/assets/platform.json"},
     )
 
-    loaded = worker_agents.validate_department_merge_preflight_report(
-        worker_agents.department_merge_preflight_report_to_dict(report)
+    loaded = zermes.worker_agents.validate_department_merge_preflight_report(
+        zermes.worker_agents.department_merge_preflight_report_to_dict(report)
     )
 
-    assert loaded.status is worker_agents.DepartmentMergePlanStatus.READY_FOR_APPROVAL
+    assert loaded.status is zermes.worker_agents.DepartmentMergePlanStatus.READY_FOR_APPROVAL
     assert loaded.blocking_items == ()

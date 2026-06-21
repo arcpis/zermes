@@ -1,6 +1,6 @@
 """Tests for the subagent_stop hook event.
 
-Covers wire-up from tools.delegate_tool.delegate_task:
+Covers wire-up from zermes.tools.delegate_tool.delegate_task:
   * fires once per child in both single-task and batch modes
   * runs on the parent thread (no re-entrancy for hook authors)
   * carries child_role when the agent exposes _delegate_role
@@ -15,8 +15,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from tools.delegate_tool import delegate_task
-from hermes_cli import plugins
+from zermes.tools.delegate_tool import delegate_task
+from zermes.hermes_cli import plugins
 
 
 def _make_parent(depth: int = 0, session_id: str = "parent-1"):
@@ -47,10 +47,10 @@ def _make_parent(depth: int = 0, session_id: str = "parent-1"):
 def _fresh_plugin_manager():
     """Each test gets a fresh PluginManager so hook callbacks don't
     leak between tests."""
-    original = plugins._plugin_manager
-    plugins._plugin_manager = plugins.PluginManager()
+    original = zermes.plugins._plugin_manager
+    zermes.plugins._plugin_manager = zermes.plugins.PluginManager()
     yield
-    plugins._plugin_manager = original
+    zermes.plugins._plugin_manager = original
 
 
 @pytest.fixture(autouse=True)
@@ -65,7 +65,7 @@ def _stub_child_builder(monkeypatch):
         return child
 
     monkeypatch.setattr(
-        "tools.delegate_tool._build_child_agent", _fake_build_child,
+        "zermes.tools.delegate_tool._build_child_agent", _fake_build_child,
     )
 
 
@@ -76,7 +76,7 @@ def _register_capturing_hook():
         kwargs["_thread"] = threading.current_thread()
         captured.append(kwargs)
 
-    mgr = plugins.get_plugin_manager()
+    mgr = zermes.plugins.get_plugin_manager()
     mgr._hooks.setdefault("subagent_stop", []).append(_cb)
     return captured
 
@@ -88,7 +88,7 @@ class TestSingleTask:
     def test_fires_once(self):
         captured = _register_capturing_hook()
 
-        with patch("tools.delegate_tool._run_single_child") as mock_run:
+        with patch("zermes.tools.delegate_tool._run_single_child") as mock_run:
             mock_run.return_value = {
                 "task_index": 0,
                 "status": "completed",
@@ -110,7 +110,7 @@ class TestSingleTask:
         captured = _register_capturing_hook()
         main_thread = threading.current_thread()
 
-        with patch("tools.delegate_tool._run_single_child") as mock_run:
+        with patch("zermes.tools.delegate_tool._run_single_child") as mock_run:
             mock_run.return_value = {
                 "task_index": 0, "status": "completed",
                 "summary": "x", "api_calls": 1, "duration_seconds": 0.1,
@@ -123,7 +123,7 @@ class TestSingleTask:
     def test_payload_includes_parent_session_id(self):
         captured = _register_capturing_hook()
 
-        with patch("tools.delegate_tool._run_single_child") as mock_run:
+        with patch("zermes.tools.delegate_tool._run_single_child") as mock_run:
             mock_run.return_value = {
                 "task_index": 0, "status": "completed",
                 "summary": "x", "api_calls": 1, "duration_seconds": 0.1,
@@ -144,7 +144,7 @@ class TestBatchMode:
     def test_fires_per_child(self):
         captured = _register_capturing_hook()
 
-        with patch("tools.delegate_tool._run_single_child") as mock_run:
+        with patch("zermes.tools.delegate_tool._run_single_child") as mock_run:
             mock_run.side_effect = [
                 {"task_index": 0, "status": "completed",
                  "summary": "A", "api_calls": 1, "duration_seconds": 1.0,
@@ -171,7 +171,7 @@ class TestBatchMode:
         captured = _register_capturing_hook()
         main_thread = threading.current_thread()
 
-        with patch("tools.delegate_tool._run_single_child") as mock_run:
+        with patch("zermes.tools.delegate_tool._run_single_child") as mock_run:
             mock_run.side_effect = [
                 {"task_index": 0, "status": "completed",
                  "summary": "A", "api_calls": 1, "duration_seconds": 1.0,
@@ -196,7 +196,7 @@ class TestPayloadShape:
     def test_role_absent_becomes_none(self):
         captured = _register_capturing_hook()
 
-        with patch("tools.delegate_tool._run_single_child") as mock_run:
+        with patch("zermes.tools.delegate_tool._run_single_child") as mock_run:
             mock_run.return_value = {
                 "task_index": 0, "status": "completed",
                 "summary": "x", "api_calls": 1, "duration_seconds": 0.1,
@@ -211,7 +211,7 @@ class TestPayloadShape:
         result dict is serialised to JSON."""
         _register_capturing_hook()
 
-        with patch("tools.delegate_tool._run_single_child") as mock_run:
+        with patch("zermes.tools.delegate_tool._run_single_child") as mock_run:
             mock_run.return_value = {
                 "task_index": 0, "status": "completed",
                 "summary": "x", "api_calls": 1, "duration_seconds": 0.1,

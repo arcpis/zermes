@@ -26,26 +26,26 @@ import pytest
 class TestSearXNGSearchProviderIsConfigured:
     def test_configured_when_url_set(self, monkeypatch):
         monkeypatch.setenv("SEARXNG_URL", "http://localhost:8080")
-        from tools.web_providers.searxng import SearXNGSearchProvider
+        from zermes.tools.web_providers.searxng import SearXNGSearchProvider
         assert SearXNGSearchProvider().is_configured() is True
 
     def test_not_configured_when_url_missing(self, monkeypatch):
         monkeypatch.delenv("SEARXNG_URL", raising=False)
-        from tools.web_providers.searxng import SearXNGSearchProvider
+        from zermes.tools.web_providers.searxng import SearXNGSearchProvider
         assert SearXNGSearchProvider().is_configured() is False
 
     def test_not_configured_when_url_empty_string(self, monkeypatch):
         monkeypatch.setenv("SEARXNG_URL", "   ")
-        from tools.web_providers.searxng import SearXNGSearchProvider
+        from zermes.tools.web_providers.searxng import SearXNGSearchProvider
         assert SearXNGSearchProvider().is_configured() is False
 
     def test_provider_name(self):
-        from tools.web_providers.searxng import SearXNGSearchProvider
+        from zermes.tools.web_providers.searxng import SearXNGSearchProvider
         assert SearXNGSearchProvider().provider_name() == "searxng"
 
     def test_implements_web_search_provider(self):
-        from tools.web_providers.base import WebSearchProvider
-        from tools.web_providers.searxng import SearXNGSearchProvider
+        from zermes.tools.web_providers.base import WebSearchProvider
+        from zermes.tools.web_providers.searxng import SearXNGSearchProvider
         assert issubclass(SearXNGSearchProvider, WebSearchProvider)
 
 
@@ -69,7 +69,7 @@ class TestSearXNGSearchProviderSearch:
 
     def test_happy_path_returns_normalized_results(self, monkeypatch):
         monkeypatch.setenv("SEARXNG_URL", "http://localhost:8080")
-        from tools.web_providers.searxng import SearXNGSearchProvider
+        from zermes.tools.web_providers.searxng import SearXNGSearchProvider
         mock_resp = self._make_mock_response(self._SAMPLE_RESPONSE)
 
         with patch("httpx.get", return_value=mock_resp):
@@ -86,7 +86,7 @@ class TestSearXNGSearchProviderSearch:
     def test_results_sorted_by_score_descending(self, monkeypatch):
         """Results should be sorted by score before limit is applied."""
         monkeypatch.setenv("SEARXNG_URL", "http://localhost:8080")
-        from tools.web_providers.searxng import SearXNGSearchProvider
+        from zermes.tools.web_providers.searxng import SearXNGSearchProvider
         unordered = {
             "results": [
                 {"title": "Low",  "url": "https://low.example.com",  "content": "", "score": 0.1},
@@ -106,7 +106,7 @@ class TestSearXNGSearchProviderSearch:
 
     def test_limit_is_respected(self, monkeypatch):
         monkeypatch.setenv("SEARXNG_URL", "http://localhost:8080")
-        from tools.web_providers.searxng import SearXNGSearchProvider
+        from zermes.tools.web_providers.searxng import SearXNGSearchProvider
         mock_resp = self._make_mock_response(self._SAMPLE_RESPONSE)
 
         with patch("httpx.get", return_value=mock_resp):
@@ -117,7 +117,7 @@ class TestSearXNGSearchProviderSearch:
 
     def test_position_is_one_indexed(self, monkeypatch):
         monkeypatch.setenv("SEARXNG_URL", "http://localhost:8080")
-        from tools.web_providers.searxng import SearXNGSearchProvider
+        from zermes.tools.web_providers.searxng import SearXNGSearchProvider
         mock_resp = self._make_mock_response(self._SAMPLE_RESPONSE)
 
         with patch("httpx.get", return_value=mock_resp):
@@ -128,7 +128,7 @@ class TestSearXNGSearchProviderSearch:
 
     def test_empty_results(self, monkeypatch):
         monkeypatch.setenv("SEARXNG_URL", "http://localhost:8080")
-        from tools.web_providers.searxng import SearXNGSearchProvider
+        from zermes.tools.web_providers.searxng import SearXNGSearchProvider
         mock_resp = self._make_mock_response({"results": []})
 
         with patch("httpx.get", return_value=mock_resp):
@@ -140,7 +140,7 @@ class TestSearXNGSearchProviderSearch:
     def test_missing_score_falls_back_to_zero(self, monkeypatch):
         """Results without a score field should sort to the bottom."""
         monkeypatch.setenv("SEARXNG_URL", "http://localhost:8080")
-        from tools.web_providers.searxng import SearXNGSearchProvider
+        from zermes.tools.web_providers.searxng import SearXNGSearchProvider
         data = {
             "results": [
                 {"title": "No score", "url": "https://noscore.example.com", "content": ""},
@@ -159,7 +159,7 @@ class TestSearXNGSearchProviderSearch:
     def test_http_error_returns_failure(self, monkeypatch):
         import httpx
         monkeypatch.setenv("SEARXNG_URL", "http://localhost:8080")
-        from tools.web_providers.searxng import SearXNGSearchProvider
+        from zermes.tools.web_providers.searxng import SearXNGSearchProvider
 
         mock_resp = MagicMock()
         mock_resp.status_code = 500
@@ -174,7 +174,7 @@ class TestSearXNGSearchProviderSearch:
     def test_request_error_returns_failure(self, monkeypatch):
         import httpx
         monkeypatch.setenv("SEARXNG_URL", "http://localhost:8080")
-        from tools.web_providers.searxng import SearXNGSearchProvider
+        from zermes.tools.web_providers.searxng import SearXNGSearchProvider
 
         with patch("httpx.get", side_effect=httpx.RequestError("connection refused")):
             result = SearXNGSearchProvider().search("query", limit=5)
@@ -184,7 +184,7 @@ class TestSearXNGSearchProviderSearch:
 
     def test_missing_url_returns_failure(self, monkeypatch):
         monkeypatch.delenv("SEARXNG_URL", raising=False)
-        from tools.web_providers.searxng import SearXNGSearchProvider
+        from zermes.tools.web_providers.searxng import SearXNGSearchProvider
 
         result = SearXNGSearchProvider().search("query", limit=5)
         assert result["success"] is False
@@ -193,7 +193,7 @@ class TestSearXNGSearchProviderSearch:
     def test_trailing_slash_stripped_from_url(self, monkeypatch):
         """Base URL trailing slash should not produce double-slash in endpoint."""
         monkeypatch.setenv("SEARXNG_URL", "http://localhost:8080/")
-        from tools.web_providers.searxng import SearXNGSearchProvider
+        from zermes.tools.web_providers.searxng import SearXNGSearchProvider
         mock_resp = self._make_mock_response({"results": []})
 
         calls = []
@@ -215,16 +215,16 @@ class TestSearXNGSearchProviderSearch:
 class TestIsBackendAvailable:
     def test_searxng_available_when_url_set(self, monkeypatch):
         monkeypatch.setenv("SEARXNG_URL", "http://localhost:8080")
-        from tools.web_tools import _is_backend_available
+        from zermes.tools.web_tools import _is_backend_available
         assert _is_backend_available("searxng") is True
 
     def test_searxng_unavailable_when_url_missing(self, monkeypatch):
         monkeypatch.delenv("SEARXNG_URL", raising=False)
-        from tools.web_tools import _is_backend_available
+        from zermes.tools.web_tools import _is_backend_available
         assert _is_backend_available("searxng") is False
 
     def test_unknown_backend_still_false(self):
-        from tools.web_tools import _is_backend_available
+        from zermes.tools.web_tools import _is_backend_available
         assert _is_backend_available("unknownbackend") is False
 
 
@@ -235,14 +235,14 @@ class TestIsBackendAvailable:
 
 class TestGetBackendSearXNG:
     def test_configured_searxng_returns_searxng(self, monkeypatch):
-        from tools import web_tools
+        from zermes.tools import web_tools
         monkeypatch.setattr(web_tools, "_load_web_config", lambda: {"backend": "searxng"})
         monkeypatch.setenv("SEARXNG_URL", "http://localhost:8080")
         assert web_tools._get_backend() == "searxng"
 
     def test_auto_detect_picks_searxng_when_only_url_set(self, monkeypatch):
         """When no backend is configured but SEARXNG_URL is set, auto-detect returns it."""
-        from tools import web_tools
+        from zermes.tools import web_tools
         monkeypatch.setattr(web_tools, "_load_web_config", lambda: {})
         monkeypatch.delenv("FIRECRAWL_API_KEY", raising=False)
         monkeypatch.delenv("FIRECRAWL_API_URL", raising=False)
@@ -256,7 +256,7 @@ class TestGetBackendSearXNG:
 
     def test_searxng_does_not_override_higher_priority_provider(self, monkeypatch):
         """Tavily (higher priority than searxng) should win in auto-detect."""
-        from tools import web_tools
+        from zermes.tools import web_tools
         monkeypatch.setattr(web_tools, "_load_web_config", lambda: {})
         monkeypatch.delenv("FIRECRAWL_API_KEY", raising=False)
         monkeypatch.delenv("FIRECRAWL_API_URL", raising=False)
@@ -274,13 +274,13 @@ class TestGetBackendSearXNG:
 
 class TestCheckWebApiKey:
     def test_searxng_satisfies_check_web_api_key(self, monkeypatch):
-        from tools import web_tools
+        from zermes.tools import web_tools
         monkeypatch.setattr(web_tools, "_load_web_config", lambda: {"backend": "searxng"})
         monkeypatch.setenv("SEARXNG_URL", "http://localhost:8080")
         assert web_tools.check_web_api_key() is True
 
     def test_no_credentials_fails(self, monkeypatch):
-        from tools import web_tools
+        from zermes.tools import web_tools
         monkeypatch.setattr(web_tools, "_load_web_config", lambda: {})
         monkeypatch.delenv("FIRECRAWL_API_KEY", raising=False)
         monkeypatch.delenv("FIRECRAWL_API_URL", raising=False)
@@ -303,13 +303,13 @@ class TestSearXNGOnlyExtractCrawlErrors:
 
     def test_web_crawl_searxng_returns_clear_error(self, monkeypatch):
         import asyncio
-        from tools import web_tools
+        from zermes.tools import web_tools
 
         monkeypatch.setattr(web_tools, "_load_web_config", lambda: {"backend": "searxng"})
         monkeypatch.setenv("SEARXNG_URL", "http://localhost:8080")
         monkeypatch.setattr(web_tools, "_is_tool_gateway_ready", lambda: False)
         monkeypatch.setattr(web_tools, "check_firecrawl_api_key", lambda: False)
-        monkeypatch.setattr("tools.interrupt.is_interrupted", lambda: False, raising=False)
+        monkeypatch.setattr("zermes.tools.interrupt.is_interrupted", lambda: False, raising=False)
 
         import json
         result_str = asyncio.get_event_loop().run_until_complete(
@@ -321,12 +321,12 @@ class TestSearXNGOnlyExtractCrawlErrors:
 
     def test_web_extract_searxng_returns_clear_error(self, monkeypatch):
         import asyncio
-        from tools import web_tools
+        from zermes.tools import web_tools
 
         monkeypatch.setattr(web_tools, "_load_web_config", lambda: {"backend": "searxng"})
         monkeypatch.setenv("SEARXNG_URL", "http://localhost:8080")
         monkeypatch.setattr(web_tools, "_is_tool_gateway_ready", lambda: False)
-        monkeypatch.setattr("tools.interrupt.is_interrupted", lambda: False, raising=False)
+        monkeypatch.setattr("zermes.tools.interrupt.is_interrupted", lambda: False, raising=False)
 
         import json
         result_str = asyncio.get_event_loop().run_until_complete(

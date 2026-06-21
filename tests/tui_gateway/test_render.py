@@ -1,16 +1,16 @@
-"""Tests for tui_gateway.render — rendering bridge fallback behavior."""
+"""Tests for zermes.tui_gateway.render — rendering bridge fallback behavior."""
 
 from unittest.mock import MagicMock, patch
 
-from tui_gateway.render import make_stream_renderer, render_diff, render_message
+from zermes.tui_gateway.render import make_stream_renderer, render_diff, render_message
 
 
 def _stub_rich(mock_mod):
-    return patch.dict("sys.modules", {"agent.rich_output": mock_mod})
+    return patch.dict("sys.modules", {"zermes.agent.rich_output": mock_mod})
 
 
 def _no_rich():
-    return patch.dict("sys.modules", {"agent.rich_output": None})
+    return patch.dict("sys.modules", {"zermes.agent.rich_output": None})
 
 
 # ── render_message ───────────────────────────────────────────────────

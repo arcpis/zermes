@@ -6,9 +6,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from gateway.config import GatewayConfig, Platform, PlatformConfig
-from gateway.platforms.base import BasePlatformAdapter, MessageEvent, SendResult
-from gateway.run import GatewayRunner
+from zermes.gateway.config import GatewayConfig, Platform, PlatformConfig
+from zermes.gateway.platforms.base import BasePlatformAdapter, MessageEvent, SendResult
+from zermes.gateway.run import GatewayRunner
 
 
 class StubAdapter(BasePlatformAdapter):
@@ -114,19 +114,19 @@ class TestStartupPlatformIsolation:
             coro.close()
             return MagicMock()
 
-        with patch("gateway.status.write_runtime_status"):
-            with patch("hermes_cli.plugins.discover_plugins"):
-                with patch("hermes_cli.config.load_config", return_value={}):
-                    with patch("agent.shell_hooks.register_from_config"):
+        with patch("zermes.gateway.status.write_runtime_status"):
+            with patch("zermes.hermes_cli.plugins.discover_plugins"):
+                with patch("zermes.hermes_cli.config.load_config", return_value={}):
+                    with patch("zermes.agent.shell_hooks.register_from_config"):
                         with patch(
-                            "tools.process_registry.process_registry.recover_from_checkpoint",
+                            "zermes.tools.process_registry.process_registry.recover_from_checkpoint",
                             return_value=0,
                         ):
                             with patch(
-                                "gateway.channel_directory.build_channel_directory",
+                                "zermes.gateway.channel_directory.build_channel_directory",
                                 new=AsyncMock(return_value={"platforms": {}}),
                             ):
-                                with patch("gateway.run.asyncio.create_task", side_effect=fake_create_task):
+                                with patch("zermes.gateway.run.asyncio.create_task", side_effect=fake_create_task):
                                     assert await runner.start() is True
 
         assert Platform.TELEGRAM in runner._failed_platforms
@@ -195,7 +195,7 @@ class TestPlatformReconnectWatcher:
         real_sleep = asyncio.sleep
 
         with patch.object(runner, "_create_adapter", return_value=succeed_adapter):
-            with patch("gateway.run.build_channel_directory", create=True):
+            with patch("zermes.gateway.run.build_channel_directory", create=True):
                 # Run one iteration of the watcher then stop
                 async def run_one_iteration():
                     runner._running = True

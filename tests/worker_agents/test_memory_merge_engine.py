@@ -1,7 +1,7 @@
 import pytest
 
-from worker_agents.department_memory import DepartmentMemorySensitivity
-from worker_agents.organization_memory_merge import (
+from zermes.worker_agents.department_memory import DepartmentMemorySensitivity
+from zermes.worker_agents.organization_memory_merge import (
     MemoryMergeCandidate,
     MemoryMergeCandidateSourceKind,
     MemoryMergeClassification,

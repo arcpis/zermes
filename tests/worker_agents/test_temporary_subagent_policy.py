@@ -1,6 +1,6 @@
 import pytest
 
-from worker_agents.profile import (
+from zermes.worker_agents.profile import (
     WorkerAgentProfile,
     WorkerBudgetPolicy,
     WorkerDelegationPolicy,
@@ -9,13 +9,13 @@ from worker_agents.profile import (
     WorkerToolPolicy,
     WorkerWorkspacePolicy,
 )
-from worker_agents.runtime_contract import RuntimeType
-from worker_agents.temporary_subagent_policy import (
+from zermes.worker_agents.runtime_contract import RuntimeType
+from zermes.worker_agents.temporary_subagent_policy import (
     TemporarySubagentPolicyError,
     evaluate_temporary_subagent_policy,
     temporary_subagent_policy_decision_to_dict,
 )
-from worker_agents.temporary_subagents import (
+from zermes.worker_agents.temporary_subagents import (
     TemporarySubagentProfileOverlay,
     TemporarySubagentRequest,
     TemporarySubagentResultReturnPolicy,

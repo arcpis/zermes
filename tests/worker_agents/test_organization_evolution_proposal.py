@@ -1,6 +1,6 @@
 import pytest
 
-from worker_agents.organization_evolution import (
+from zermes.worker_agents.organization_evolution import (
     EVOLUTION_PROPOSAL_SCHEMA_VERSION,
     EvolutionApprovalLevel,
     EvolutionInitiatorKind,
@@ -20,7 +20,7 @@ from worker_agents.organization_evolution import (
     resolve_approval_requirement,
     validate_evolution_proposal,
 )
-from worker_agents.storage.organization_evolution_store import (
+from zermes.worker_agents.storage.organization_evolution_store import (
     EvolutionProposalStatusChange,
     EvolutionProposalStore,
     StoredEvolutionProposal,

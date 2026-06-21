@@ -9,7 +9,7 @@ model and the tui keeps trying openrouter".
 
 from unittest.mock import MagicMock, patch
 
-from run_agent import AIAgent
+from zermes.run_agent import AIAgent
 
 
 def _make_agent(chain):
@@ -39,10 +39,10 @@ def _make_agent(chain):
 
 def _switch_to_anthropic(agent):
     with (
-        patch("agent.anthropic_adapter.build_anthropic_client", return_value=MagicMock()),
-        patch("agent.anthropic_adapter.resolve_anthropic_token", return_value="sk-ant-xyz"),
-        patch("agent.anthropic_adapter._is_oauth_token", return_value=False),
-        patch("hermes_cli.timeouts.get_provider_request_timeout", return_value=None),
+        patch("zermes.agent.anthropic_adapter.build_anthropic_client", return_value=MagicMock()),
+        patch("zermes.agent.anthropic_adapter.resolve_anthropic_token", return_value="sk-ant-xyz"),
+        patch("zermes.agent.anthropic_adapter._is_oauth_token", return_value=False),
+        patch("zermes.hermes_cli.timeouts.get_provider_request_timeout", return_value=None),
     ):
         agent.switch_model(
             new_model="claude-sonnet-4-5",
@@ -93,7 +93,7 @@ def test_switch_within_same_provider_preserves_chain():
     chain = [{"provider": "openrouter", "model": "x-ai/grok-4"}]
     agent = _make_agent(chain)
 
-    with patch("hermes_cli.timeouts.get_provider_request_timeout", return_value=None):
+    with patch("zermes.hermes_cli.timeouts.get_provider_request_timeout", return_value=None):
         agent.switch_model(
             new_model="openai/gpt-5",
             new_provider="openrouter",

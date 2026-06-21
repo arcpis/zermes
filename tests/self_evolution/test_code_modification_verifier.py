@@ -1,9 +1,9 @@
 import subprocess
 
-from code_modification.approval import build_approval_plan, write_approval_documents
-from code_modification.executor import CodeTaskExecutionError, commit_task_step, start_approved_task
-from code_modification.git_workflow import current_branch
-from code_modification.verifier import (
+from zermes.code_modification.approval import build_approval_plan, write_approval_documents
+from zermes.code_modification.executor import CodeTaskExecutionError, commit_task_step, start_approved_task
+from zermes.code_modification.git_workflow import current_branch
+from zermes.code_modification.verifier import (
     CodeTaskVerificationError,
     VerificationCommand,
     VerificationState,

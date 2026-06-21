@@ -27,7 +27,7 @@ import pytest
 def test_no_agent_cron_job_does_not_initialize_mcp():
     """Cron jobs with no_agent=True are script-only — no AIAgent, no MCP
     tools needed. We must NOT pay the MCP init cost for those."""
-    from cron import scheduler
+    from zermes.cron import scheduler
 
     job = {
         "id": "noagent-job",
@@ -44,8 +44,8 @@ def test_no_agent_cron_job_does_not_initialize_mcp():
 
     # _run_job_script returns (ok, output); make it fail cleanly so we
     # don't need a real script file.
-    with patch("tools.mcp_tool.discover_mcp_tools", side_effect=fake_discover), \
-         patch("cron.scheduler._run_job_script", return_value=(False, "no such file")):
+    with patch("zermes.tools.mcp_tool.discover_mcp_tools", side_effect=fake_discover), \
+         patch("zermes.cron.scheduler._run_job_script", return_value=(False, "no such file")):
         scheduler.run_job(job)
 
     assert not discover_called, (

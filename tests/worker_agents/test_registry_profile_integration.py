@@ -2,16 +2,16 @@ import json
 
 import pytest
 
-from worker_agents.profile import (
+from zermes.worker_agents.profile import (
     WORKER_PROFILE_FILE_NAME,
     WorkerAgentProfile,
     WorkerProfileError,
     WorkerRuntimeSettings,
     dump_worker_profile_json,
 )
-from worker_agents.registry import WorkerLifecycleStatus, WorkerRegistryError
-from worker_agents.registry_service import WorkerRegistryService
-from worker_agents.storage import WorkerAgentProfileStore
+from zermes.worker_agents.registry import WorkerLifecycleStatus, WorkerRegistryError
+from zermes.worker_agents.registry_service import WorkerRegistryService
+from zermes.worker_agents.storage import WorkerAgentProfileStore
 
 
 def _service(tmp_path):

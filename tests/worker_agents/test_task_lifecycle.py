@@ -1,6 +1,6 @@
 import pytest
 
-from worker_agents.task_state import (
+from zermes.worker_agents.task_state import (
     WorkerTaskError,
     WorkerTaskState,
     WorkerTaskStatus,

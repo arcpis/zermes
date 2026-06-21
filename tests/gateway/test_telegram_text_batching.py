@@ -10,13 +10,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from gateway.config import Platform, PlatformConfig
-from gateway.platforms.base import MessageEvent, MessageType, SessionSource
+from zermes.gateway.config import Platform, PlatformConfig
+from zermes.gateway.platforms.base import MessageEvent, MessageType, SessionSource
 
 
 def _make_adapter():
     """Create a minimal TelegramAdapter for testing text batching."""
-    from gateway.platforms.telegram import TelegramAdapter
+    from zermes.gateway.platforms.telegram import TelegramAdapter
 
     config = PlatformConfig(enabled=True, token="test-token")
     adapter = object.__new__(TelegramAdapter)

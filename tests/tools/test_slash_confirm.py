@@ -9,7 +9,7 @@ import time
 
 import pytest
 
-from tools import slash_confirm
+from zermes.tools import slash_confirm
 
 
 @pytest.fixture(autouse=True)

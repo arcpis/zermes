@@ -1,6 +1,6 @@
 import pytest
 
-from worker_agents.department_chats import (
+from zermes.worker_agents.department_chats import (
     DepartmentChatBinding,
     DepartmentChatBindingService,
     DepartmentChatBindingState,
@@ -14,13 +14,13 @@ from worker_agents.department_chats import (
     plan_single_worker_department_chat,
     required_department_chat_participants,
 )
-from worker_agents.message_router import (
+from zermes.worker_agents.message_router import (
     ChatParticipantKind,
     ChatParticipantRef,
     ChatThreadType,
     WorkerChatThread,
 )
-from worker_agents.organization import (
+from zermes.worker_agents.organization import (
     OrgChatPolicy,
     OrgLeaderKind,
     OrgLeaderRef,
@@ -28,7 +28,7 @@ from worker_agents.organization import (
     OrgNode,
     OrgNodeType,
 )
-from worker_agents.registry import WorkerLifecycleStatus
+from zermes.worker_agents.registry import WorkerLifecycleStatus
 
 
 def _node(member_worker_ids=("engineering_lead", "backend")):

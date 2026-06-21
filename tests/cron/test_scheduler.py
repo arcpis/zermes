@@ -7,9 +7,9 @@ from unittest.mock import AsyncMock, patch, MagicMock
 
 import pytest
 
-from cron.scheduler import _resolve_origin, _resolve_delivery_target, _deliver_result, _send_media_via_adapter, run_job, SILENT_MARKER, _build_job_prompt
-from tools.env_passthrough import clear_env_passthrough
-from tools.credential_files import clear_credential_files
+from zermes.cron.scheduler import _resolve_origin, _resolve_delivery_target, _deliver_result, _send_media_via_adapter, run_job, SILENT_MARKER, _build_job_prompt
+from zermes.tools.env_passthrough import clear_env_passthrough
+from zermes.tools.credential_files import clear_credential_files
 
 
 class TestResolveOrigin:
@@ -168,7 +168,7 @@ class TestResolveDeliveryTarget:
             "deliver": "telegram:-1003724596514:17",
         }
         with patch(
-            "gateway.channel_directory.resolve_channel_name",
+            "zermes.gateway.channel_directory.resolve_channel_name",
             return_value="-1003724596514",
         ):
             result = _resolve_delivery_target(job)
@@ -193,7 +193,7 @@ class TestResolveDeliveryTarget:
         """deliver: 'whatsapp:Alice (dm)' resolves to the real JID."""
         job = {"deliver": "whatsapp:Alice (dm)"}
         with patch(
-            "gateway.channel_directory.resolve_channel_name",
+            "zermes.gateway.channel_directory.resolve_channel_name",
             return_value="12345678901234@lid",
         ) as resolve_mock:
             result = _resolve_delivery_target(job)
@@ -208,7 +208,7 @@ class TestResolveDeliveryTarget:
         """deliver: 'telegram:My Group' resolves without display suffix."""
         job = {"deliver": "telegram:My Group"}
         with patch(
-            "gateway.channel_directory.resolve_channel_name",
+            "zermes.gateway.channel_directory.resolve_channel_name",
             return_value="-1009999",
         ):
             result = _resolve_delivery_target(job)
@@ -222,7 +222,7 @@ class TestResolveDeliveryTarget:
         """Resolved Telegram topic labels should split chat_id and thread_id."""
         job = {"deliver": "telegram:Coaching Chat / topic 17585 (group)"}
         with patch(
-            "gateway.channel_directory.resolve_channel_name",
+            "zermes.gateway.channel_directory.resolve_channel_name",
             return_value="-1009999:17585",
         ):
             result = _resolve_delivery_target(job)
@@ -236,7 +236,7 @@ class TestResolveDeliveryTarget:
         """deliver: 'whatsapp:12345@lid' passes through when directory has no match."""
         job = {"deliver": "whatsapp:12345@lid"}
         with patch(
-            "gateway.channel_directory.resolve_channel_name",
+            "zermes.gateway.channel_directory.resolve_channel_name",
             return_value=None,
         ):
             result = _resolve_delivery_target(job)
@@ -334,7 +334,7 @@ class TestResolveDeliveryTarget:
 
     def test_list_form_multiple_platforms_normalized(self, monkeypatch):
         """deliver=['telegram', 'discord'] resolves to multiple targets."""
-        from cron.scheduler import _resolve_delivery_targets
+        from zermes.cron.scheduler import _resolve_delivery_targets
 
         monkeypatch.setenv("TELEGRAM_HOME_CHANNEL", "-111")
         monkeypatch.setenv("DISCORD_HOME_CHANNEL", "-222")
@@ -346,7 +346,7 @@ class TestResolveDeliveryTarget:
 
     def test_empty_list_form_deliver_resolves_to_local(self):
         """deliver=[] is treated as local (no delivery)."""
-        from cron.scheduler import _resolve_delivery_targets
+        from zermes.cron.scheduler import _resolve_delivery_targets
 
         assert _resolve_delivery_targets({"deliver": []}) == []
 
@@ -356,7 +356,7 @@ class TestRoutingIntents:
 
     def test_all_expands_to_every_connected_home_channel(self, monkeypatch):
         """deliver='all' fans out to every platform with a configured home channel."""
-        from cron.scheduler import _resolve_delivery_targets
+        from zermes.cron.scheduler import _resolve_delivery_targets
 
         monkeypatch.setenv("TELEGRAM_HOME_CHANNEL", "-111")
         monkeypatch.setenv("DISCORD_HOME_CHANNEL", "-222")
@@ -376,7 +376,7 @@ class TestRoutingIntents:
 
     def test_all_combines_with_explicit_target_and_dedups(self, monkeypatch):
         """'telegram:-999,all' yields every home channel + the explicit target without dupes."""
-        from cron.scheduler import _resolve_delivery_targets
+        from zermes.cron.scheduler import _resolve_delivery_targets
 
         monkeypatch.setenv("TELEGRAM_HOME_CHANNEL", "-111")
         monkeypatch.setenv("DISCORD_HOME_CHANNEL", "-222")
@@ -395,7 +395,7 @@ class TestRoutingIntents:
 
     def test_all_with_no_connected_channels_returns_empty(self, monkeypatch):
         """deliver='all' with nothing connected returns [] — delivery is recorded as failed upstream."""
-        from cron.scheduler import _resolve_delivery_targets
+        from zermes.cron.scheduler import _resolve_delivery_targets
 
         for var in ("TELEGRAM_HOME_CHANNEL", "DISCORD_HOME_CHANNEL", "SLACK_HOME_CHANNEL",
                     "SIGNAL_HOME_CHANNEL", "MATRIX_HOME_ROOM", "MATTERMOST_HOME_CHANNEL",
@@ -408,7 +408,7 @@ class TestRoutingIntents:
 
     def test_origin_comma_all_preserves_origin_first(self, monkeypatch):
         """'origin,all' delivers to the origin platform plus every other home channel."""
-        from cron.scheduler import _resolve_delivery_targets
+        from zermes.cron.scheduler import _resolve_delivery_targets
 
         monkeypatch.setenv("TELEGRAM_HOME_CHANNEL", "-111")
         monkeypatch.setenv("DISCORD_HOME_CHANNEL", "-222")
@@ -429,7 +429,7 @@ class TestRoutingIntents:
 
     def test_all_token_case_insensitive(self, monkeypatch):
         """'ALL' / 'All' / 'all' are all recognized."""
-        from cron.scheduler import _resolve_delivery_targets
+        from zermes.cron.scheduler import _resolve_delivery_targets
 
         monkeypatch.setenv("TELEGRAM_HOME_CHANNEL", "-111")
         monkeypatch.setenv("DISCORD_HOME_CHANNEL", "-222")
@@ -445,15 +445,15 @@ class TestDeliverResultWrapping:
 
     def test_delivery_wraps_content_with_header_and_footer(self):
         """Delivered content should include task name header and agent-invisible note."""
-        from gateway.config import Platform
+        from zermes.gateway.config import Platform
 
         pconfig = MagicMock()
         pconfig.enabled = True
         mock_cfg = MagicMock()
         mock_cfg.platforms = {Platform.TELEGRAM: pconfig}
 
-        with patch("gateway.config.load_gateway_config", return_value=mock_cfg), \
-             patch("tools.send_message_tool._send_to_platform", new=AsyncMock(return_value={"success": True})) as send_mock:
+        with patch("zermes.gateway.config.load_gateway_config", return_value=mock_cfg),\
+             patch("zermes.tools.send_message_tool._send_to_platform", new=AsyncMock(return_value={"success": True})) as send_mock:
             job = {
                 "id": "test-job",
                 "name": "daily-report",
@@ -472,15 +472,15 @@ class TestDeliverResultWrapping:
 
     def test_delivery_uses_job_id_when_no_name(self):
         """When a job has no name, the wrapper should fall back to job id."""
-        from gateway.config import Platform
+        from zermes.gateway.config import Platform
 
         pconfig = MagicMock()
         pconfig.enabled = True
         mock_cfg = MagicMock()
         mock_cfg.platforms = {Platform.TELEGRAM: pconfig}
 
-        with patch("gateway.config.load_gateway_config", return_value=mock_cfg), \
-             patch("tools.send_message_tool._send_to_platform", new=AsyncMock(return_value={"success": True})) as send_mock:
+        with patch("zermes.gateway.config.load_gateway_config", return_value=mock_cfg),\
+             patch("zermes.tools.send_message_tool._send_to_platform", new=AsyncMock(return_value={"success": True})) as send_mock:
             job = {
                 "id": "abc-123",
                 "deliver": "origin",
@@ -492,17 +492,17 @@ class TestDeliverResultWrapping:
         assert "Cronjob Response: abc-123" in sent_content
 
     def test_delivery_skips_wrapping_when_config_disabled(self):
-        """When cron.wrap_response is false, deliver raw content without header/footer."""
-        from gateway.config import Platform
+        """When zermes.cron.wrap_response is false, deliver raw content without header/footer."""
+        from zermes.gateway.config import Platform
 
         pconfig = MagicMock()
         pconfig.enabled = True
         mock_cfg = MagicMock()
         mock_cfg.platforms = {Platform.TELEGRAM: pconfig}
 
-        with patch("gateway.config.load_gateway_config", return_value=mock_cfg), \
-             patch("tools.send_message_tool._send_to_platform", new=AsyncMock(return_value={"success": True})) as send_mock, \
-             patch("cron.scheduler.load_config", return_value={"cron": {"wrap_response": False}}):
+        with patch("zermes.gateway.config.load_gateway_config", return_value=mock_cfg),\
+             patch("zermes.tools.send_message_tool._send_to_platform", new=AsyncMock(return_value={"success": True})) as send_mock,\
+             patch("zermes.cron.scheduler.load_config", return_value={"cron": {"wrap_response": False}}):
             job = {
                 "id": "test-job",
                 "name": "daily-report",
@@ -519,16 +519,16 @@ class TestDeliverResultWrapping:
 
     def test_delivery_extracts_media_tags_before_send(self):
         """Cron delivery should pass MEDIA attachments separately to the send helper."""
-        from gateway.config import Platform
+        from zermes.gateway.config import Platform
 
         pconfig = MagicMock()
         pconfig.enabled = True
         mock_cfg = MagicMock()
         mock_cfg.platforms = {Platform.TELEGRAM: pconfig}
 
-        with patch("gateway.config.load_gateway_config", return_value=mock_cfg), \
-             patch("tools.send_message_tool._send_to_platform", new=AsyncMock(return_value={"success": True})) as send_mock, \
-             patch("cron.scheduler.load_config", return_value={"cron": {"wrap_response": False}}):
+        with patch("zermes.gateway.config.load_gateway_config", return_value=mock_cfg),\
+             patch("zermes.tools.send_message_tool._send_to_platform", new=AsyncMock(return_value={"success": True})) as send_mock,\
+             patch("zermes.cron.scheduler.load_config", return_value={"cron": {"wrap_response": False}}):
             job = {
                 "id": "voice-job",
                 "deliver": "origin",
@@ -548,7 +548,7 @@ class TestDeliverResultWrapping:
         """When a live adapter is available, MEDIA files should be sent as native
         platform attachments (e.g., Discord voice, Telegram audio) rather than
         as literal 'MEDIA:/path' text."""
-        from gateway.config import Platform
+        from zermes.gateway.config import Platform
         from concurrent.futures import Future
 
         adapter = AsyncMock()
@@ -576,8 +576,8 @@ class TestDeliverResultWrapping:
             "origin": {"platform": "discord", "chat_id": "9876"},
         }
 
-        with patch("gateway.config.load_gateway_config", return_value=mock_cfg), \
-             patch("cron.scheduler.load_config", return_value={"cron": {"wrap_response": False}}), \
+        with patch("zermes.gateway.config.load_gateway_config", return_value=mock_cfg),\
+             patch("zermes.cron.scheduler.load_config", return_value={"cron": {"wrap_response": False}}),\
              patch("asyncio.run_coroutine_threadsafe", side_effect=fake_run_coro):
             _deliver_result(
                 job,
@@ -599,7 +599,7 @@ class TestDeliverResultWrapping:
 
     def test_live_adapter_routes_image_to_send_image_file(self):
         """Image MEDIA files should be routed to send_image_file, not send_voice."""
-        from gateway.config import Platform
+        from zermes.gateway.config import Platform
         from concurrent.futures import Future
 
         adapter = AsyncMock()
@@ -626,8 +626,8 @@ class TestDeliverResultWrapping:
             "origin": {"platform": "discord", "chat_id": "1234"},
         }
 
-        with patch("gateway.config.load_gateway_config", return_value=mock_cfg), \
-             patch("cron.scheduler.load_config", return_value={"cron": {"wrap_response": False}}), \
+        with patch("zermes.gateway.config.load_gateway_config", return_value=mock_cfg),\
+             patch("zermes.cron.scheduler.load_config", return_value={"cron": {"wrap_response": False}}),\
              patch("asyncio.run_coroutine_threadsafe", side_effect=fake_run_coro):
             _deliver_result(
                 job,
@@ -642,7 +642,7 @@ class TestDeliverResultWrapping:
 
     def test_live_adapter_media_only_no_text(self):
         """When content is ONLY a MEDIA tag with no text, media should still be sent."""
-        from gateway.config import Platform
+        from zermes.gateway.config import Platform
         from concurrent.futures import Future
 
         adapter = AsyncMock()
@@ -668,8 +668,8 @@ class TestDeliverResultWrapping:
             "origin": {"platform": "telegram", "chat_id": "999"},
         }
 
-        with patch("gateway.config.load_gateway_config", return_value=mock_cfg), \
-             patch("cron.scheduler.load_config", return_value={"cron": {"wrap_response": False}}), \
+        with patch("zermes.gateway.config.load_gateway_config", return_value=mock_cfg),\
+             patch("zermes.cron.scheduler.load_config", return_value={"cron": {"wrap_response": False}}),\
              patch("asyncio.run_coroutine_threadsafe", side_effect=fake_run_coro):
             _deliver_result(
                 job,
@@ -686,7 +686,7 @@ class TestDeliverResultWrapping:
     def test_live_adapter_sends_cleaned_text_not_raw(self):
         """The live adapter path must send cleaned text (MEDIA tags stripped),
         not the raw delivery_content with embedded MEDIA: tags."""
-        from gateway.config import Platform
+        from zermes.gateway.config import Platform
         from concurrent.futures import Future
 
         adapter = AsyncMock()
@@ -712,8 +712,8 @@ class TestDeliverResultWrapping:
             "origin": {"platform": "telegram", "chat_id": "555"},
         }
 
-        with patch("gateway.config.load_gateway_config", return_value=mock_cfg), \
-             patch("cron.scheduler.load_config", return_value={"cron": {"wrap_response": False}}), \
+        with patch("zermes.gateway.config.load_gateway_config", return_value=mock_cfg),\
+             patch("zermes.cron.scheduler.load_config", return_value={"cron": {"wrap_response": False}}),\
              patch("asyncio.run_coroutine_threadsafe", side_effect=fake_run_coro):
             _deliver_result(
                 job,
@@ -728,16 +728,16 @@ class TestDeliverResultWrapping:
 
     def test_no_mirror_to_session_call(self):
         """Cron deliveries should NOT mirror into the gateway session."""
-        from gateway.config import Platform
+        from zermes.gateway.config import Platform
 
         pconfig = MagicMock()
         pconfig.enabled = True
         mock_cfg = MagicMock()
         mock_cfg.platforms = {Platform.TELEGRAM: pconfig}
 
-        with patch("gateway.config.load_gateway_config", return_value=mock_cfg), \
-             patch("tools.send_message_tool._send_to_platform", new=AsyncMock(return_value={"success": True})), \
-             patch("gateway.mirror.mirror_to_session") as mirror_mock:
+        with patch("zermes.gateway.config.load_gateway_config", return_value=mock_cfg),\
+             patch("zermes.tools.send_message_tool._send_to_platform", new=AsyncMock(return_value={"success": True})),\
+             patch("zermes.gateway.mirror.mirror_to_session") as mirror_mock:
             job = {
                 "id": "test-job",
                 "deliver": "origin",
@@ -749,7 +749,7 @@ class TestDeliverResultWrapping:
 
     def test_origin_delivery_preserves_thread_id(self):
         """Origin delivery should forward thread_id to the send helper."""
-        from gateway.config import Platform
+        from zermes.gateway.config import Platform
 
         pconfig = MagicMock()
         pconfig.enabled = True
@@ -767,8 +767,8 @@ class TestDeliverResultWrapping:
             },
         }
 
-        with patch("gateway.config.load_gateway_config", return_value=mock_cfg), \
-             patch("tools.send_message_tool._send_to_platform", new=AsyncMock(return_value={"success": True})) as send_mock:
+        with patch("zermes.gateway.config.load_gateway_config", return_value=mock_cfg),\
+             patch("zermes.tools.send_message_tool._send_to_platform", new=AsyncMock(return_value={"success": True})) as send_mock:
             _deliver_result(job, "hello")
 
         send_mock.assert_called_once()
@@ -779,14 +779,14 @@ class TestDeliverResultErrorReturns:
     """Verify _deliver_result returns error strings on failure, None on success."""
 
     def test_returns_error_when_platform_disabled(self):
-        from gateway.config import Platform
+        from zermes.gateway.config import Platform
 
         pconfig = MagicMock()
         pconfig.enabled = False
         mock_cfg = MagicMock()
         mock_cfg.platforms = {Platform.TELEGRAM: pconfig}
 
-        with patch("gateway.config.load_gateway_config", return_value=mock_cfg):
+        with patch("zermes.gateway.config.load_gateway_config", return_value=mock_cfg):
             job = {
                 "id": "disabled",
                 "deliver": "origin",
@@ -814,20 +814,20 @@ class TestRunJobSessionPersistence:
         }
         fake_db = MagicMock()
 
-        with patch("cron.scheduler._hermes_home", tmp_path), \
-             patch("cron.scheduler._resolve_origin", return_value=None), \
-             patch("dotenv.load_dotenv"), \
-             patch("hermes_state.SessionDB", return_value=fake_db), \
+        with patch("zermes.cron.scheduler._hermes_home", tmp_path),\
+             patch("zermes.cron.scheduler._resolve_origin", return_value=None),\
+             patch("dotenv.load_dotenv"),\
+             patch("zermes.hermes_state.SessionDB", return_value=fake_db),\
              patch(
-                 "hermes_cli.runtime_provider.resolve_runtime_provider",
+                 "zermes.hermes_cli.runtime_provider.resolve_runtime_provider",
                  return_value={
                      "api_key": "test-key",
                      "base_url": "https://example.invalid/v1",
                      "provider": "openrouter",
                      "api_mode": "chat_completions",
                  },
-             ), \
-             patch("run_agent.AIAgent") as mock_agent_cls:
+             ),\
+             patch("zermes.run_agent.AIAgent") as mock_agent_cls:
             mock_agent = MagicMock()
             mock_agent.run_conversation.return_value = {"final_response": "ok"}
             mock_agent_cls.return_value = mock_agent
@@ -861,20 +861,20 @@ class TestRunJobSessionPersistence:
         }
         fake_db = MagicMock()
 
-        with patch("cron.scheduler._hermes_home", tmp_path), \
-             patch("cron.scheduler._resolve_origin", return_value=None), \
-             patch("dotenv.load_dotenv"), \
-             patch("hermes_state.SessionDB", return_value=fake_db), \
+        with patch("zermes.cron.scheduler._hermes_home", tmp_path),\
+             patch("zermes.cron.scheduler._resolve_origin", return_value=None),\
+             patch("dotenv.load_dotenv"),\
+             patch("zermes.hermes_state.SessionDB", return_value=fake_db),\
              patch(
-                 "hermes_cli.runtime_provider.resolve_runtime_provider",
+                 "zermes.hermes_cli.runtime_provider.resolve_runtime_provider",
                  return_value={
                      "api_key": "***",
                      "base_url": "https://example.invalid/v1",
                      "provider": "openrouter",
                      "api_mode": "chat_completions",
                  },
-             ), \
-             patch("run_agent.AIAgent") as mock_agent_cls:
+             ),\
+             patch("zermes.run_agent.AIAgent") as mock_agent_cls:
             mock_agent = MagicMock()
             mock_agent.run_conversation.side_effect = RuntimeError("boom")
             mock_agent_cls.return_value = mock_agent
@@ -898,21 +898,21 @@ class TestRunJobSessionPersistence:
         }
         fake_db = MagicMock()
 
-        with patch("cron.scheduler._hermes_home", tmp_path), \
-             patch("cron.scheduler._resolve_origin", return_value=None), \
-             patch("dotenv.load_dotenv"), \
-             patch("hermes_state.SessionDB", return_value=fake_db), \
+        with patch("zermes.cron.scheduler._hermes_home", tmp_path),\
+             patch("zermes.cron.scheduler._resolve_origin", return_value=None),\
+             patch("dotenv.load_dotenv"),\
+             patch("zermes.hermes_state.SessionDB", return_value=fake_db),\
              patch(
-                 "hermes_cli.runtime_provider.resolve_runtime_provider",
+                 "zermes.hermes_cli.runtime_provider.resolve_runtime_provider",
                  return_value={
                      "api_key": "***",
                      "base_url": "https://example.invalid/v1",
                      "provider": "openrouter",
                      "api_mode": "chat_completions",
                  },
-             ), \
-             patch("run_agent.AIAgent") as mock_agent_cls, \
-             patch("agent.auxiliary_client.cleanup_stale_async_clients") as cleanup_mock:
+             ),\
+             patch("zermes.run_agent.AIAgent") as mock_agent_cls,\
+             patch("zermes.agent.auxiliary_client.cleanup_stale_async_clients") as cleanup_mock:
             mock_agent = MagicMock()
             mock_agent.run_conversation.return_value = {"final_response": "ok"}
             mock_agent_cls.return_value = mock_agent
@@ -926,12 +926,12 @@ class TestRunJobSessionPersistence:
         """Common patches for run_job tests."""
         fake_db = MagicMock()
         return fake_db, [
-            patch("cron.scheduler._hermes_home", tmp_path),
-            patch("cron.scheduler._resolve_origin", return_value=None),
+            patch("zermes.cron.scheduler._hermes_home", tmp_path),
+            patch("zermes.cron.scheduler._resolve_origin", return_value=None),
             patch("dotenv.load_dotenv"),
-            patch("hermes_state.SessionDB", return_value=fake_db),
+            patch("zermes.hermes_state.SessionDB", return_value=fake_db),
             patch(
-                "hermes_cli.runtime_provider.resolve_runtime_provider",
+                "zermes.hermes_cli.runtime_provider.resolve_runtime_provider",
                 return_value={
                     "api_key": "test-key",
                     "base_url": "https://example.invalid/v1",
@@ -949,8 +949,8 @@ class TestRunJobSessionPersistence:
             "enabled_toolsets": ["web", "terminal", "file"],
         }
         fake_db, patches = self._make_run_job_patches(tmp_path)
-        with patches[0], patches[1], patches[2], patches[3], patches[4], \
-             patch("run_agent.AIAgent") as mock_agent_cls:
+        with patches[0], patches[1], patches[2], patches[3], patches[4],\
+             patch("zermes.run_agent.AIAgent") as mock_agent_cls:
             mock_agent = MagicMock()
             mock_agent.run_conversation.return_value = {"final_response": "ok"}
             mock_agent_cls.return_value = mock_agent
@@ -974,8 +974,8 @@ class TestRunJobSessionPersistence:
             "prompt": "hello",
         }
         fake_db, patches = self._make_run_job_patches(tmp_path)
-        with patches[0], patches[1], patches[2], patches[3], patches[4], \
-             patch("run_agent.AIAgent") as mock_agent_cls:
+        with patches[0], patches[1], patches[2], patches[3], patches[4],\
+             patch("zermes.run_agent.AIAgent") as mock_agent_cls:
             mock_agent = MagicMock()
             mock_agent.run_conversation.return_value = {"final_response": "ok"}
             mock_agent_cls.return_value = mock_agent
@@ -1002,10 +1002,10 @@ class TestRunJobSessionPersistence:
         fake_db, patches = self._make_run_job_patches(tmp_path)
         # Even if the user has ``hermes tools`` configured to enable web+file
         # for cron, the per-job override wins.
-        with patches[0], patches[1], patches[2], patches[3], patches[4], \
-             patch("run_agent.AIAgent") as mock_agent_cls, \
+        with patches[0], patches[1], patches[2], patches[3], patches[4],\
+             patch("zermes.run_agent.AIAgent") as mock_agent_cls,\
              patch(
-                 "hermes_cli.tools_config._get_platform_tools",
+                 "zermes.hermes_cli.tools_config._get_platform_tools",
                  return_value={"web", "file"},
              ):
             mock_agent = MagicMock()
@@ -1029,20 +1029,20 @@ class TestRunJobSessionPersistence:
         }
         fake_db = MagicMock()
 
-        with patch("cron.scheduler._hermes_home", tmp_path), \
-             patch("cron.scheduler._resolve_origin", return_value=None), \
-             patch("dotenv.load_dotenv"), \
-             patch("hermes_state.SessionDB", return_value=fake_db), \
+        with patch("zermes.cron.scheduler._hermes_home", tmp_path),\
+             patch("zermes.cron.scheduler._resolve_origin", return_value=None),\
+             patch("dotenv.load_dotenv"),\
+             patch("zermes.hermes_state.SessionDB", return_value=fake_db),\
              patch(
-                 "hermes_cli.runtime_provider.resolve_runtime_provider",
+                 "zermes.hermes_cli.runtime_provider.resolve_runtime_provider",
                  return_value={
                      "api_key": "***",
                      "base_url": "https://example.invalid/v1",
                      "provider": "openrouter",
                      "api_mode": "chat_completions",
                  },
-             ), \
-             patch("run_agent.AIAgent") as mock_agent_cls:
+             ),\
+             patch("zermes.run_agent.AIAgent") as mock_agent_cls:
             mock_agent = MagicMock()
             # Agent did work via tools but returned no text
             mock_agent.run_conversation.return_value = {"final_response": ""}
@@ -1105,20 +1105,20 @@ class TestRunJobSessionPersistence:
         }
         fake_db = MagicMock()
 
-        with patch("cron.scheduler._hermes_home", tmp_path), \
-             patch("cron.scheduler._resolve_origin", return_value=None), \
-             patch("dotenv.load_dotenv"), \
-             patch("hermes_state.SessionDB", return_value=fake_db), \
+        with patch("zermes.cron.scheduler._hermes_home", tmp_path),\
+             patch("zermes.cron.scheduler._resolve_origin", return_value=None),\
+             patch("dotenv.load_dotenv"),\
+             patch("zermes.hermes_state.SessionDB", return_value=fake_db),\
              patch(
-                 "hermes_cli.runtime_provider.resolve_runtime_provider",
+                 "zermes.hermes_cli.runtime_provider.resolve_runtime_provider",
                  return_value={
                      "api_key": "***",
                      "base_url": "https://example.invalid/v1",
                      "provider": "openrouter",
                      "api_mode": "chat_completions",
                  },
-             ), \
-             patch("run_agent.AIAgent") as mock_agent_cls:
+             ),\
+             patch("zermes.run_agent.AIAgent") as mock_agent_cls:
             mock_agent = MagicMock()
             mock_agent.run_conversation.return_value = agent_result
             mock_agent_cls.return_value = mock_agent
@@ -1144,20 +1144,20 @@ class TestRunJobSessionPersistence:
         }
         fake_db = MagicMock()
 
-        with patch("cron.scheduler._hermes_home", tmp_path), \
-             patch("cron.scheduler._resolve_origin", return_value=None), \
-             patch("dotenv.load_dotenv"), \
-             patch("hermes_state.SessionDB", return_value=fake_db), \
+        with patch("zermes.cron.scheduler._hermes_home", tmp_path),\
+             patch("zermes.cron.scheduler._resolve_origin", return_value=None),\
+             patch("dotenv.load_dotenv"),\
+             patch("zermes.hermes_state.SessionDB", return_value=fake_db),\
              patch(
-                 "hermes_cli.runtime_provider.resolve_runtime_provider",
+                 "zermes.hermes_cli.runtime_provider.resolve_runtime_provider",
                  return_value={
                      "api_key": "***",
                      "base_url": "https://example.invalid/v1",
                      "provider": "openrouter",
                      "api_mode": "chat_completions",
                  },
-             ), \
-             patch("run_agent.AIAgent") as mock_agent_cls:
+             ),\
+             patch("zermes.run_agent.AIAgent") as mock_agent_cls:
             mock_agent = MagicMock()
             mock_agent.run_conversation.return_value = {
                 "final_response": "all good",
@@ -1176,8 +1176,8 @@ class TestRunJobSessionPersistence:
         tick() should mark the job as error so last_status != 'ok'.
         (issue #8585)
         """
-        from cron.scheduler import tick
-        from cron.jobs import load_jobs, save_jobs
+        from zermes.cron.scheduler import tick
+        from zermes.cron.jobs import load_jobs, save_jobs
 
         job = {
             "id": "empty-job",
@@ -1192,13 +1192,13 @@ class TestRunJobSessionPersistence:
 
         fake_db = MagicMock()
 
-        with patch("cron.scheduler._hermes_home", tmp_path), \
-             patch("cron.scheduler.get_due_jobs", return_value=[job]), \
-             patch("cron.scheduler.advance_next_run"), \
-             patch("cron.scheduler.mark_job_run") as mock_mark, \
-             patch("cron.scheduler.save_job_output", return_value="/tmp/out.md"), \
-             patch("cron.scheduler._resolve_origin", return_value=None), \
-             patch("cron.scheduler.run_job", return_value=(True, "output", "", None)):
+        with patch("zermes.cron.scheduler._hermes_home", tmp_path),\
+             patch("zermes.cron.scheduler.get_due_jobs", return_value=[job]),\
+             patch("zermes.cron.scheduler.advance_next_run"),\
+             patch("zermes.cron.scheduler.mark_job_run") as mock_mark,\
+             patch("zermes.cron.scheduler.save_job_output", return_value="/tmp/out.md"),\
+             patch("zermes.cron.scheduler._resolve_origin", return_value=None),\
+             patch("zermes.cron.scheduler.run_job", return_value=(True, "output", "", None)):
             tick(verbose=False)
 
         # Should be called with success=False because final_response is empty
@@ -1229,24 +1229,24 @@ class TestRunJobSessionPersistence:
                 pass
 
             def run_conversation(self, *args, **kwargs):
-                from gateway.session_context import get_session_env
+                from zermes.gateway.session_context import get_session_env
                 seen["platform"] = get_session_env("HERMES_CRON_AUTO_DELIVER_PLATFORM") or None
                 seen["chat_id"] = get_session_env("HERMES_CRON_AUTO_DELIVER_CHAT_ID") or None
                 seen["thread_id"] = get_session_env("HERMES_CRON_AUTO_DELIVER_THREAD_ID") or None
                 return {"final_response": "ok"}
 
-        with patch("cron.scheduler._hermes_home", tmp_path), \
-             patch("hermes_state.SessionDB", return_value=fake_db), \
+        with patch("zermes.cron.scheduler._hermes_home", tmp_path),\
+             patch("zermes.hermes_state.SessionDB", return_value=fake_db),\
              patch(
-                 "hermes_cli.runtime_provider.resolve_runtime_provider",
+                 "zermes.hermes_cli.runtime_provider.resolve_runtime_provider",
                  return_value={
                      "api_key": "***",
                      "base_url": "https://example.invalid/v1",
                      "provider": "openrouter",
                      "api_mode": "chat_completions",
                  },
-             ), \
-             patch("run_agent.AIAgent", FakeAgent):
+             ),\
+             patch("zermes.run_agent.AIAgent", FakeAgent):
             success, output, final_response, error = run_job(job)
 
         assert success is True
@@ -1290,7 +1290,7 @@ class TestRunJobSessionPersistence:
                 pass
 
             def run_conversation(self, *args, **kwargs):
-                from gateway.session_context import get_session_env
+                from zermes.gateway.session_context import get_session_env
 
                 seen.append(
                     {
@@ -1301,18 +1301,18 @@ class TestRunJobSessionPersistence:
                 )
                 return {"final_response": "ok"}
 
-        with patch("cron.scheduler._hermes_home", tmp_path), \
-             patch("hermes_state.SessionDB", return_value=fake_db), \
+        with patch("zermes.cron.scheduler._hermes_home", tmp_path),\
+             patch("zermes.hermes_state.SessionDB", return_value=fake_db),\
              patch(
-                 "hermes_cli.runtime_provider.resolve_runtime_provider",
+                 "zermes.hermes_cli.runtime_provider.resolve_runtime_provider",
                  return_value={
                      "api_key": "***",
                      "base_url": "https://example.invalid/v1",
                      "provider": "openrouter",
                      "api_mode": "chat_completions",
                  },
-             ), \
-             patch("run_agent.AIAgent", FakeAgent):
+             ),\
+             patch("zermes.run_agent.AIAgent", FakeAgent):
             for job in jobs:
                 success, output, final_response, error = run_job(job)
                 assert success is True
@@ -1352,18 +1352,18 @@ class TestRunJobConfigLogging:
             "prompt": "hello",
         }
 
-        with patch("cron.scheduler._hermes_home", tmp_path), \
-             patch("cron.scheduler._resolve_origin", return_value=None), \
-             patch("dotenv.load_dotenv"), \
-             patch("run_agent.AIAgent") as mock_agent_cls:
+        with patch("zermes.cron.scheduler._hermes_home", tmp_path),\
+             patch("zermes.cron.scheduler._resolve_origin", return_value=None),\
+             patch("dotenv.load_dotenv"),\
+             patch("zermes.run_agent.AIAgent") as mock_agent_cls:
             mock_agent = MagicMock()
             mock_agent.run_conversation.return_value = {"final_response": "ok"}
             mock_agent_cls.return_value = mock_agent
 
-            with caplog.at_level(logging.WARNING, logger="cron.scheduler"):
+            with caplog.at_level(logging.WARNING, logger="zermes.cron.scheduler"):
                 run_job(job)
 
-        assert any("failed to load config.yaml" in r.message for r in caplog.records), \
+        assert any("failed to load config.yaml" in r.message for r in caplog.records),\
             f"Expected 'failed to load config.yaml' warning in logs, got: {[r.message for r in caplog.records]}"
 
     def test_bad_prefill_messages_is_logged(self, caplog, tmp_path):
@@ -1381,18 +1381,18 @@ class TestRunJobConfigLogging:
             "prompt": "hello",
         }
 
-        with patch("cron.scheduler._hermes_home", tmp_path), \
-             patch("cron.scheduler._resolve_origin", return_value=None), \
-             patch("dotenv.load_dotenv"), \
-             patch("run_agent.AIAgent") as mock_agent_cls:
+        with patch("zermes.cron.scheduler._hermes_home", tmp_path),\
+             patch("zermes.cron.scheduler._resolve_origin", return_value=None),\
+             patch("dotenv.load_dotenv"),\
+             patch("zermes.run_agent.AIAgent") as mock_agent_cls:
             mock_agent = MagicMock()
             mock_agent.run_conversation.return_value = {"final_response": "ok"}
             mock_agent_cls.return_value = mock_agent
 
-            with caplog.at_level(logging.WARNING, logger="cron.scheduler"):
+            with caplog.at_level(logging.WARNING, logger="zermes.cron.scheduler"):
                 run_job(job)
 
-        assert any("failed to parse prefill messages" in r.message for r in caplog.records), \
+        assert any("failed to parse prefill messages" in r.message for r in caplog.records),\
             f"Expected 'failed to parse prefill messages' warning in logs, got: {[r.message for r in caplog.records]}"
 
 
@@ -1414,13 +1414,13 @@ class TestRunJobConfigEnvVarExpansion:
         job = {"id": "env-job", "name": "env test", "prompt": "hi"}
         fake_db = MagicMock()
 
-        with patch("cron.scheduler._hermes_home", tmp_path), \
-             patch("cron.scheduler._resolve_origin", return_value=None), \
-             patch("dotenv.load_dotenv"), \
-             patch("hermes_state.SessionDB", return_value=fake_db), \
-             patch("hermes_cli.runtime_provider.resolve_runtime_provider",
-                   return_value=self._RUNTIME), \
-             patch("run_agent.AIAgent") as mock_agent_cls:
+        with patch("zermes.cron.scheduler._hermes_home", tmp_path),\
+             patch("zermes.cron.scheduler._resolve_origin", return_value=None),\
+             patch("dotenv.load_dotenv"),\
+             patch("zermes.hermes_state.SessionDB", return_value=fake_db),\
+             patch("zermes.hermes_cli.runtime_provider.resolve_runtime_provider",
+                   return_value=self._RUNTIME),\
+             patch("zermes.run_agent.AIAgent") as mock_agent_cls:
             mock_agent = MagicMock()
             mock_agent.run_conversation.return_value = {"final_response": "ok"}
             mock_agent_cls.return_value = mock_agent
@@ -1446,13 +1446,13 @@ class TestRunJobConfigEnvVarExpansion:
         job = {"id": "fb-job", "name": "fallback test", "prompt": "hi"}
         fake_db = MagicMock()
 
-        with patch("cron.scheduler._hermes_home", tmp_path), \
-             patch("cron.scheduler._resolve_origin", return_value=None), \
-             patch("dotenv.load_dotenv"), \
-             patch("hermes_state.SessionDB", return_value=fake_db), \
-             patch("hermes_cli.runtime_provider.resolve_runtime_provider",
-                   return_value=self._RUNTIME), \
-             patch("run_agent.AIAgent") as mock_agent_cls:
+        with patch("zermes.cron.scheduler._hermes_home", tmp_path),\
+             patch("zermes.cron.scheduler._resolve_origin", return_value=None),\
+             patch("dotenv.load_dotenv"),\
+             patch("zermes.hermes_state.SessionDB", return_value=fake_db),\
+             patch("zermes.hermes_cli.runtime_provider.resolve_runtime_provider",
+                   return_value=self._RUNTIME),\
+             patch("zermes.run_agent.AIAgent") as mock_agent_cls:
             mock_agent = MagicMock()
             mock_agent.run_conversation.return_value = {"final_response": "ok"}
             mock_agent_cls.return_value = mock_agent
@@ -1475,13 +1475,13 @@ class TestRunJobConfigEnvVarExpansion:
         job = {"id": "unset-job", "name": "unset var test", "prompt": "hi"}
         fake_db = MagicMock()
 
-        with patch("cron.scheduler._hermes_home", tmp_path), \
-             patch("cron.scheduler._resolve_origin", return_value=None), \
-             patch("dotenv.load_dotenv"), \
-             patch("hermes_state.SessionDB", return_value=fake_db), \
-             patch("hermes_cli.runtime_provider.resolve_runtime_provider",
-                   return_value=self._RUNTIME), \
-             patch("run_agent.AIAgent") as mock_agent_cls:
+        with patch("zermes.cron.scheduler._hermes_home", tmp_path),\
+             patch("zermes.cron.scheduler._resolve_origin", return_value=None),\
+             patch("dotenv.load_dotenv"),\
+             patch("zermes.hermes_state.SessionDB", return_value=fake_db),\
+             patch("zermes.hermes_cli.runtime_provider.resolve_runtime_provider",
+                   return_value=self._RUNTIME),\
+             patch("zermes.run_agent.AIAgent") as mock_agent_cls:
             mock_agent = MagicMock()
             mock_agent.run_conversation.return_value = {"final_response": "ok"}
             mock_agent_cls.return_value = mock_agent
@@ -1506,32 +1506,32 @@ class TestRunJobSkillBacked:
 
         def _skill_view(name):
             assert name == "notion"
-            from tools.env_passthrough import register_env_passthrough
+            from zermes.tools.env_passthrough import register_env_passthrough
 
             register_env_passthrough(["NOTION_API_KEY"])
             return json.dumps({"success": True, "content": "# notion\nUse Notion."})
 
         def _run_conversation(prompt):
-            from tools.env_passthrough import get_all_passthrough
+            from zermes.tools.env_passthrough import get_all_passthrough
 
             assert "NOTION_API_KEY" in get_all_passthrough()
             return {"final_response": "ok"}
 
-        with patch("cron.scheduler._hermes_home", tmp_path), \
-             patch("cron.scheduler._resolve_origin", return_value=None), \
-             patch("dotenv.load_dotenv"), \
-             patch("hermes_state.SessionDB", return_value=fake_db), \
+        with patch("zermes.cron.scheduler._hermes_home", tmp_path),\
+             patch("zermes.cron.scheduler._resolve_origin", return_value=None),\
+             patch("dotenv.load_dotenv"),\
+             patch("zermes.hermes_state.SessionDB", return_value=fake_db),\
              patch(
-                 "hermes_cli.runtime_provider.resolve_runtime_provider",
+                 "zermes.hermes_cli.runtime_provider.resolve_runtime_provider",
                  return_value={
                      "api_key": "***",
                      "base_url": "https://example.invalid/v1",
                      "provider": "openrouter",
                      "api_mode": "chat_completions",
                  },
-             ), \
-             patch("tools.skills_tool.skill_view", side_effect=_skill_view), \
-             patch("run_agent.AIAgent") as mock_agent_cls:
+             ),\
+             patch("zermes.tools.skills_tool.skill_view", side_effect=_skill_view),\
+             patch("zermes.run_agent.AIAgent") as mock_agent_cls:
             mock_agent = MagicMock()
             mock_agent.run_conversation.side_effect = _run_conversation
             mock_agent_cls.return_value = mock_agent
@@ -1563,35 +1563,35 @@ class TestRunJobSkillBacked:
 
         def _skill_view(name):
             assert name == "google-workspace"
-            from tools.credential_files import register_credential_file
+            from zermes.tools.credential_files import register_credential_file
 
             register_credential_file("credentials/google_token.json")
             return json.dumps({"success": True, "content": "# google-workspace\nUse Google."})
 
         def _run_conversation(prompt):
-            from tools.credential_files import _get_registered
+            from zermes.tools.credential_files import _get_registered
 
             registered = _get_registered()
             assert registered, "credential files must be visible in worker thread"
             assert any("google_token.json" in v for v in registered.values())
             return {"final_response": "ok"}
 
-        with patch("cron.scheduler._hermes_home", tmp_path), \
-             patch("cron.scheduler._resolve_origin", return_value=None), \
-             patch("tools.credential_files._resolve_hermes_home", return_value=tmp_path), \
-             patch("dotenv.load_dotenv"), \
-             patch("hermes_state.SessionDB", return_value=fake_db), \
+        with patch("zermes.cron.scheduler._hermes_home", tmp_path),\
+             patch("zermes.cron.scheduler._resolve_origin", return_value=None),\
+             patch("zermes.tools.credential_files._resolve_hermes_home", return_value=tmp_path),\
+             patch("dotenv.load_dotenv"),\
+             patch("zermes.hermes_state.SessionDB", return_value=fake_db),\
              patch(
-                 "hermes_cli.runtime_provider.resolve_runtime_provider",
+                 "zermes.hermes_cli.runtime_provider.resolve_runtime_provider",
                  return_value={
                      "api_key": "***",
                      "base_url": "https://example.invalid/v1",
                      "provider": "openrouter",
                      "api_mode": "chat_completions",
                  },
-             ), \
-             patch("tools.skills_tool.skill_view", side_effect=_skill_view), \
-             patch("run_agent.AIAgent") as mock_agent_cls:
+             ),\
+             patch("zermes.tools.skills_tool.skill_view", side_effect=_skill_view),\
+             patch("zermes.run_agent.AIAgent") as mock_agent_cls:
             mock_agent = MagicMock()
             mock_agent.run_conversation.side_effect = _run_conversation
             mock_agent_cls.return_value = mock_agent
@@ -1615,21 +1615,21 @@ class TestRunJobSkillBacked:
 
         fake_db = MagicMock()
 
-        with patch("cron.scheduler._hermes_home", tmp_path), \
-             patch("cron.scheduler._resolve_origin", return_value=None), \
-             patch("dotenv.load_dotenv"), \
-             patch("hermes_state.SessionDB", return_value=fake_db), \
+        with patch("zermes.cron.scheduler._hermes_home", tmp_path),\
+             patch("zermes.cron.scheduler._resolve_origin", return_value=None),\
+             patch("dotenv.load_dotenv"),\
+             patch("zermes.hermes_state.SessionDB", return_value=fake_db),\
              patch(
-                 "hermes_cli.runtime_provider.resolve_runtime_provider",
+                 "zermes.hermes_cli.runtime_provider.resolve_runtime_provider",
                  return_value={
                      "api_key": "***",
                      "base_url": "https://example.invalid/v1",
                      "provider": "openrouter",
                      "api_mode": "chat_completions",
                  },
-             ), \
-             patch("tools.skills_tool.skill_view", return_value=json.dumps({"success": True, "content": "# Blogwatcher\nFollow this skill."})), \
-             patch("run_agent.AIAgent") as mock_agent_cls:
+             ),\
+             patch("zermes.tools.skills_tool.skill_view", return_value=json.dumps({"success": True, "content": "# Blogwatcher\nFollow this skill."})),\
+             patch("zermes.run_agent.AIAgent") as mock_agent_cls:
             mock_agent = MagicMock()
             mock_agent.run_conversation.return_value = {"final_response": "ok"}
             mock_agent_cls.return_value = mock_agent
@@ -1661,21 +1661,21 @@ class TestRunJobSkillBacked:
         def _skill_view(name):
             return json.dumps({"success": True, "content": f"# {name}\nInstructions for {name}."})
 
-        with patch("cron.scheduler._hermes_home", tmp_path), \
-             patch("cron.scheduler._resolve_origin", return_value=None), \
-             patch("dotenv.load_dotenv"), \
-             patch("hermes_state.SessionDB", return_value=fake_db), \
+        with patch("zermes.cron.scheduler._hermes_home", tmp_path),\
+             patch("zermes.cron.scheduler._resolve_origin", return_value=None),\
+             patch("dotenv.load_dotenv"),\
+             patch("zermes.hermes_state.SessionDB", return_value=fake_db),\
              patch(
-                 "hermes_cli.runtime_provider.resolve_runtime_provider",
+                 "zermes.hermes_cli.runtime_provider.resolve_runtime_provider",
                  return_value={
                      "api_key": "***",
                      "base_url": "https://example.invalid/v1",
                      "provider": "openrouter",
                      "api_mode": "chat_completions",
                  },
-             ), \
-             patch("tools.skills_tool.skill_view", side_effect=_skill_view) as skill_view_mock, \
-             patch("run_agent.AIAgent") as mock_agent_cls:
+             ),\
+             patch("zermes.tools.skills_tool.skill_view", side_effect=_skill_view) as skill_view_mock,\
+             patch("zermes.run_agent.AIAgent") as mock_agent_cls:
             mock_agent = MagicMock()
             mock_agent.run_conversation.return_value = {"final_response": "ok"}
             mock_agent_cls.return_value = mock_agent
@@ -1707,68 +1707,68 @@ class TestSilentDelivery:
         }
 
     def test_silent_response_suppresses_delivery(self, caplog):
-        with patch("cron.scheduler.get_due_jobs", return_value=[self._make_job()]), \
-             patch("cron.scheduler.run_job", return_value=(True, "# output", "[SILENT]", None)), \
-             patch("cron.scheduler.save_job_output", return_value="/tmp/out.md"), \
-             patch("cron.scheduler._deliver_result") as deliver_mock, \
-             patch("cron.scheduler.mark_job_run"):
-            from cron.scheduler import tick
-            with caplog.at_level(logging.INFO, logger="cron.scheduler"):
+        with patch("zermes.cron.scheduler.get_due_jobs", return_value=[self._make_job()]),\
+             patch("zermes.cron.scheduler.run_job", return_value=(True, "# output", "[SILENT]", None)),\
+             patch("zermes.cron.scheduler.save_job_output", return_value="/tmp/out.md"),\
+             patch("zermes.cron.scheduler._deliver_result") as deliver_mock,\
+             patch("zermes.cron.scheduler.mark_job_run"):
+            from zermes.cron.scheduler import tick
+            with caplog.at_level(logging.INFO, logger="zermes.cron.scheduler"):
                 tick(verbose=False)
         deliver_mock.assert_not_called()
         assert any(SILENT_MARKER in r.message for r in caplog.records)
 
     def test_silent_with_note_suppresses_delivery(self):
-        with patch("cron.scheduler.get_due_jobs", return_value=[self._make_job()]), \
-             patch("cron.scheduler.run_job", return_value=(True, "# output", "[SILENT] No changes detected", None)), \
-             patch("cron.scheduler.save_job_output", return_value="/tmp/out.md"), \
-             patch("cron.scheduler._deliver_result") as deliver_mock, \
-             patch("cron.scheduler.mark_job_run"):
-            from cron.scheduler import tick
+        with patch("zermes.cron.scheduler.get_due_jobs", return_value=[self._make_job()]),\
+             patch("zermes.cron.scheduler.run_job", return_value=(True, "# output", "[SILENT] No changes detected", None)),\
+             patch("zermes.cron.scheduler.save_job_output", return_value="/tmp/out.md"),\
+             patch("zermes.cron.scheduler._deliver_result") as deliver_mock,\
+             patch("zermes.cron.scheduler.mark_job_run"):
+            from zermes.cron.scheduler import tick
             tick(verbose=False)
         deliver_mock.assert_not_called()
 
     def test_silent_trailing_suppresses_delivery(self):
         """Agent appended [SILENT] after explanation text — must still suppress."""
         response = "2 deals filtered out (like<10, reply<15).\n\n[SILENT]"
-        with patch("cron.scheduler.get_due_jobs", return_value=[self._make_job()]), \
-             patch("cron.scheduler.run_job", return_value=(True, "# output", response, None)), \
-             patch("cron.scheduler.save_job_output", return_value="/tmp/out.md"), \
-             patch("cron.scheduler._deliver_result") as deliver_mock, \
-             patch("cron.scheduler.mark_job_run"):
-            from cron.scheduler import tick
+        with patch("zermes.cron.scheduler.get_due_jobs", return_value=[self._make_job()]),\
+             patch("zermes.cron.scheduler.run_job", return_value=(True, "# output", response, None)),\
+             patch("zermes.cron.scheduler.save_job_output", return_value="/tmp/out.md"),\
+             patch("zermes.cron.scheduler._deliver_result") as deliver_mock,\
+             patch("zermes.cron.scheduler.mark_job_run"):
+            from zermes.cron.scheduler import tick
             tick(verbose=False)
         deliver_mock.assert_not_called()
 
     def test_silent_is_case_insensitive(self):
-        with patch("cron.scheduler.get_due_jobs", return_value=[self._make_job()]), \
-             patch("cron.scheduler.run_job", return_value=(True, "# output", "[silent] nothing new", None)), \
-             patch("cron.scheduler.save_job_output", return_value="/tmp/out.md"), \
-             patch("cron.scheduler._deliver_result") as deliver_mock, \
-             patch("cron.scheduler.mark_job_run"):
-            from cron.scheduler import tick
+        with patch("zermes.cron.scheduler.get_due_jobs", return_value=[self._make_job()]),\
+             patch("zermes.cron.scheduler.run_job", return_value=(True, "# output", "[silent] nothing new", None)),\
+             patch("zermes.cron.scheduler.save_job_output", return_value="/tmp/out.md"),\
+             patch("zermes.cron.scheduler._deliver_result") as deliver_mock,\
+             patch("zermes.cron.scheduler.mark_job_run"):
+            from zermes.cron.scheduler import tick
             tick(verbose=False)
         deliver_mock.assert_not_called()
 
     def test_failed_job_always_delivers(self):
         """Failed jobs deliver regardless of [SILENT] in output."""
-        with patch("cron.scheduler.get_due_jobs", return_value=[self._make_job()]), \
-             patch("cron.scheduler.run_job", return_value=(False, "# output", "", "some error")), \
-             patch("cron.scheduler.save_job_output", return_value="/tmp/out.md"), \
-             patch("cron.scheduler._deliver_result") as deliver_mock, \
-             patch("cron.scheduler.mark_job_run"):
-            from cron.scheduler import tick
+        with patch("zermes.cron.scheduler.get_due_jobs", return_value=[self._make_job()]),\
+             patch("zermes.cron.scheduler.run_job", return_value=(False, "# output", "", "some error")),\
+             patch("zermes.cron.scheduler.save_job_output", return_value="/tmp/out.md"),\
+             patch("zermes.cron.scheduler._deliver_result") as deliver_mock,\
+             patch("zermes.cron.scheduler.mark_job_run"):
+            from zermes.cron.scheduler import tick
             tick(verbose=False)
         deliver_mock.assert_called_once()
 
     def test_output_saved_even_when_delivery_suppressed(self):
-        with patch("cron.scheduler.get_due_jobs", return_value=[self._make_job()]), \
-             patch("cron.scheduler.run_job", return_value=(True, "# full output", "[SILENT]", None)), \
-             patch("cron.scheduler.save_job_output") as save_mock, \
-             patch("cron.scheduler._deliver_result") as deliver_mock, \
-             patch("cron.scheduler.mark_job_run"):
+        with patch("zermes.cron.scheduler.get_due_jobs", return_value=[self._make_job()]),\
+             patch("zermes.cron.scheduler.run_job", return_value=(True, "# full output", "[SILENT]", None)),\
+             patch("zermes.cron.scheduler.save_job_output") as save_mock,\
+             patch("zermes.cron.scheduler._deliver_result") as deliver_mock,\
+             patch("zermes.cron.scheduler.mark_job_run"):
             save_mock.return_value = "/tmp/out.md"
-            from cron.scheduler import tick
+            from zermes.cron.scheduler import tick
             tick(verbose=False)
         save_mock.assert_called_once_with("monitor-job", "# full output")
         deliver_mock.assert_not_called()
@@ -1808,59 +1808,59 @@ class TestParseWakeGate:
     """Unit tests for _parse_wake_gate — pure function, no side effects."""
 
     def test_empty_output_wakes(self):
-        from cron.scheduler import _parse_wake_gate
+        from zermes.cron.scheduler import _parse_wake_gate
         assert _parse_wake_gate("") is True
         assert _parse_wake_gate(None) is True
 
     def test_whitespace_only_wakes(self):
-        from cron.scheduler import _parse_wake_gate
+        from zermes.cron.scheduler import _parse_wake_gate
         assert _parse_wake_gate("   \n\n  \t\n") is True
 
     def test_non_json_last_line_wakes(self):
-        from cron.scheduler import _parse_wake_gate
+        from zermes.cron.scheduler import _parse_wake_gate
         assert _parse_wake_gate("hello world") is True
         assert _parse_wake_gate("line 1\nline 2\nplain text") is True
 
     def test_json_non_dict_wakes(self):
         """Bare arrays, numbers, strings must not be interpreted as a gate."""
-        from cron.scheduler import _parse_wake_gate
+        from zermes.cron.scheduler import _parse_wake_gate
         assert _parse_wake_gate("[1, 2, 3]") is True
         assert _parse_wake_gate("42") is True
         assert _parse_wake_gate('"wakeAgent"') is True
 
     def test_wake_gate_false_skips(self):
-        from cron.scheduler import _parse_wake_gate
+        from zermes.cron.scheduler import _parse_wake_gate
         assert _parse_wake_gate('{"wakeAgent": false}') is False
 
     def test_wake_gate_true_wakes(self):
-        from cron.scheduler import _parse_wake_gate
+        from zermes.cron.scheduler import _parse_wake_gate
         assert _parse_wake_gate('{"wakeAgent": true}') is True
 
     def test_wake_gate_missing_wakes(self):
         """A JSON dict without a wakeAgent key defaults to waking."""
-        from cron.scheduler import _parse_wake_gate
+        from zermes.cron.scheduler import _parse_wake_gate
         assert _parse_wake_gate('{"data": {"foo": "bar"}}') is True
 
     def test_non_boolean_false_still_wakes(self):
         """Only strict ``False`` skips — truthy/falsy shortcuts are too risky."""
-        from cron.scheduler import _parse_wake_gate
+        from zermes.cron.scheduler import _parse_wake_gate
         assert _parse_wake_gate('{"wakeAgent": 0}') is True
         assert _parse_wake_gate('{"wakeAgent": null}') is True
         assert _parse_wake_gate('{"wakeAgent": ""}') is True
 
     def test_only_last_non_empty_line_parsed(self):
-        from cron.scheduler import _parse_wake_gate
+        from zermes.cron.scheduler import _parse_wake_gate
         multi = 'some log output\nmore output\n{"wakeAgent": false}'
         assert _parse_wake_gate(multi) is False
 
     def test_trailing_blank_lines_ignored(self):
-        from cron.scheduler import _parse_wake_gate
+        from zermes.cron.scheduler import _parse_wake_gate
         multi = '{"wakeAgent": false}\n\n\n'
         assert _parse_wake_gate(multi) is False
 
     def test_non_last_json_line_does_not_gate(self):
         """A JSON gate on an earlier line with plain text after it does NOT trigger."""
-        from cron.scheduler import _parse_wake_gate
+        from zermes.cron.scheduler import _parse_wake_gate
         multi = '{"wakeAgent": false}\nactually this is the real output'
         assert _parse_wake_gate(multi) is True
 
@@ -1887,7 +1887,7 @@ class TestRunJobWakeGate:
             "requested_provider": None,
         }
         with patch(
-            "hermes_cli.runtime_provider.resolve_runtime_provider",
+            "zermes.hermes_cli.runtime_provider.resolve_runtime_provider",
             return_value=fake_runtime,
         ):
             yield
@@ -1906,12 +1906,12 @@ class TestRunJobWakeGate:
         """When _run_job_script output ends with {wakeAgent: false}, the agent
         is not invoked and run_job returns the SILENT marker so delivery is
         suppressed."""
-        from cron.scheduler import SILENT_MARKER
-        import cron.scheduler as scheduler
+        from zermes.cron.scheduler import SILENT_MARKER
+        import zermes.cron.scheduler as scheduler
 
         with patch.object(scheduler, "_run_job_script",
-                          return_value=(True, '{"wakeAgent": false}')), \
-             patch("run_agent.AIAgent") as agent_cls:
+                          return_value=(True, '{"wakeAgent": false}')),\
+             patch("zermes.run_agent.AIAgent") as agent_cls:
             success, doc, final, err = scheduler.run_job(self._make_job())
 
         assert success is True
@@ -1923,7 +1923,7 @@ class TestRunJobWakeGate:
     def test_wake_true_runs_agent_with_injected_output(self):
         """When the script returns {wakeAgent: true, data: ...}, the agent is
         invoked and the data line still shows up in the prompt."""
-        import cron.scheduler as scheduler
+        import zermes.cron.scheduler as scheduler
 
         script_output = '{"wakeAgent": true, "data": {"new": 3}}'
         agent = MagicMock()
@@ -1931,8 +1931,8 @@ class TestRunJobWakeGate:
             "final_response": "ok", "messages": []
         })
         with patch.object(scheduler, "_run_job_script",
-                          return_value=(True, script_output)), \
-             patch("run_agent.AIAgent", return_value=agent) as agent_cls:
+                          return_value=(True, script_output)),\
+             patch("zermes.run_agent.AIAgent", return_value=agent) as agent_cls:
             success, doc, final, err = scheduler.run_job(self._make_job())
 
         agent_cls.assert_called_once()
@@ -1948,7 +1948,7 @@ class TestRunJobWakeGate:
         """Wake-true path must not re-run the script inside _build_job_prompt
         (script would execute twice otherwise, wasting work and risking
         double-side-effects)."""
-        import cron.scheduler as scheduler
+        import zermes.cron.scheduler as scheduler
 
         call_count = 0
         def _script_stub(path):
@@ -1960,8 +1960,8 @@ class TestRunJobWakeGate:
         agent.run_conversation = MagicMock(return_value={
             "final_response": "ok", "messages": []
         })
-        with patch.object(scheduler, "_run_job_script", side_effect=_script_stub), \
-             patch("run_agent.AIAgent", return_value=agent):
+        with patch.object(scheduler, "_run_job_script", side_effect=_script_stub),\
+             patch("zermes.run_agent.AIAgent", return_value=agent):
             scheduler.run_job(self._make_job())
 
         assert call_count == 1, f"script ran {call_count}x, expected exactly 1"
@@ -1969,7 +1969,7 @@ class TestRunJobWakeGate:
     def test_script_failure_does_not_trigger_gate(self):
         """If _run_job_script returns success=False, the gate is NOT evaluated
         and the agent still runs (the failure is reported as context)."""
-        import cron.scheduler as scheduler
+        import zermes.cron.scheduler as scheduler
 
         # Malicious or broken script whose stderr happens to contain the
         # gate JSON — we must NOT honor it because ran_ok is False.
@@ -1978,15 +1978,15 @@ class TestRunJobWakeGate:
             "final_response": "ok", "messages": []
         })
         with patch.object(scheduler, "_run_job_script",
-                          return_value=(False, '{"wakeAgent": false}')), \
-             patch("run_agent.AIAgent", return_value=agent) as agent_cls:
+                          return_value=(False, '{"wakeAgent": false}')),\
+             patch("zermes.run_agent.AIAgent", return_value=agent) as agent_cls:
             success, doc, final, err = scheduler.run_job(self._make_job())
 
         agent_cls.assert_called_once()  # Agent DID wake despite the gate-like text
 
     def test_no_script_path_runs_agent_normally(self):
         """Regression: jobs without a script still work."""
-        import cron.scheduler as scheduler
+        import zermes.cron.scheduler as scheduler
 
         agent = MagicMock()
         agent.run_conversation = MagicMock(return_value={
@@ -1994,8 +1994,8 @@ class TestRunJobWakeGate:
         })
         job = self._make_job(script=None)
         job.pop("script", None)
-        with patch.object(scheduler, "_run_job_script") as script_fn, \
-             patch("run_agent.AIAgent", return_value=agent) as agent_cls:
+        with patch.object(scheduler, "_run_job_script") as script_fn,\
+             patch("zermes.run_agent.AIAgent", return_value=agent) as agent_cls:
             scheduler.run_job(job)
 
         script_fn.assert_not_called()
@@ -2010,22 +2010,22 @@ class TestBuildJobPromptMissingSkill:
 
     def test_missing_skill_does_not_raise(self):
         """Job should run even when a referenced skill is not installed."""
-        with patch("tools.skills_tool.skill_view", side_effect=self._missing_skill_view):
+        with patch("zermes.tools.skills_tool.skill_view", side_effect=self._missing_skill_view):
             result = _build_job_prompt({"skills": ["ghost-skill"], "prompt": "do something"})
         # prompt is preserved even though skill was skipped
         assert "do something" in result
 
     def test_missing_skill_injects_user_notice_into_prompt(self):
         """A system notice about the missing skill is injected into the prompt."""
-        with patch("tools.skills_tool.skill_view", side_effect=self._missing_skill_view):
+        with patch("zermes.tools.skills_tool.skill_view", side_effect=self._missing_skill_view):
             result = _build_job_prompt({"skills": ["ghost-skill"], "prompt": "do something"})
         assert "ghost-skill" in result
         assert "not found" in result.lower() or "skipped" in result.lower()
 
     def test_missing_skill_logs_warning(self, caplog):
         """A warning is logged when a skill cannot be found."""
-        with caplog.at_level(logging.WARNING, logger="cron.scheduler"):
-            with patch("tools.skills_tool.skill_view", side_effect=self._missing_skill_view):
+        with caplog.at_level(logging.WARNING, logger="zermes.cron.scheduler"):
+            with patch("zermes.tools.skills_tool.skill_view", side_effect=self._missing_skill_view):
                 _build_job_prompt({"name": "My Job", "skills": ["ghost-skill"], "prompt": "do something"})
         assert any("ghost-skill" in record.message for record in caplog.records)
 
@@ -2037,7 +2037,7 @@ class TestBuildJobPromptMissingSkill:
                 return json.dumps({"success": True, "content": "Real skill content."})
             return json.dumps({"success": False, "error": f"Skill '{name}' not found."})
 
-        with patch("tools.skills_tool.skill_view", side_effect=_mixed_skill_view):
+        with patch("zermes.tools.skills_tool.skill_view", side_effect=_mixed_skill_view):
             result = _build_job_prompt({"skills": ["ghost-skill", "real-skill"], "prompt": "go"})
         assert "Real skill content." in result
         assert "go" in result
@@ -2052,8 +2052,8 @@ class TestBuildJobPromptBumpUse:
         def _skill_view(name: str) -> str:
             return json.dumps({"success": True, "content": f"Content for {name}."})
 
-        with patch("tools.skills_tool.skill_view", side_effect=_skill_view), \
-             patch("tools.skill_usage.bump_use") as mock_bump:
+        with patch("zermes.tools.skills_tool.skill_view", side_effect=_skill_view),\
+             patch("zermes.tools.skill_usage.bump_use") as mock_bump:
             _build_job_prompt({"skills": ["alpha", "beta"], "prompt": "go"})
 
         assert mock_bump.call_count == 2
@@ -2067,8 +2067,8 @@ class TestBuildJobPromptBumpUse:
         def _missing_view(name: str) -> str:
             return json.dumps({"success": False, "error": "not found"})
 
-        with patch("tools.skills_tool.skill_view", side_effect=_missing_view), \
-             patch("tools.skill_usage.bump_use") as mock_bump:
+        with patch("zermes.tools.skills_tool.skill_view", side_effect=_missing_view),\
+             patch("zermes.tools.skill_usage.bump_use") as mock_bump:
             _build_job_prompt({"skills": ["ghost"], "prompt": "go"})
 
         assert mock_bump.call_count == 0
@@ -2079,9 +2079,9 @@ class TestBuildJobPromptBumpUse:
         def _skill_view(name: str) -> str:
             return json.dumps({"success": True, "content": "Works."})
 
-        with patch("tools.skills_tool.skill_view", side_effect=_skill_view), \
-             patch("tools.skill_usage.bump_use", side_effect=RuntimeError("boom")), \
-             caplog.at_level(logging.DEBUG, logger="cron.scheduler"):
+        with patch("zermes.tools.skills_tool.skill_view", side_effect=_skill_view),\
+             patch("zermes.tools.skill_usage.bump_use", side_effect=RuntimeError("boom")),\
+             caplog.at_level(logging.DEBUG, logger="zermes.cron.scheduler"):
             result = _build_job_prompt({"skills": ["good-skill"], "prompt": "go"})
 
         # Prompt should still contain the skill content and original instruction
@@ -2145,7 +2145,7 @@ class TestParallelTick:
         lock_dir = tmp_path / "cron"
         lock_dir.mkdir()
         lock_file = lock_dir / ".tick.lock"
-        with patch("cron.scheduler._get_lock_paths", return_value=(lock_dir, lock_file)):
+        with patch("zermes.cron.scheduler._get_lock_paths", return_value=(lock_dir, lock_file)):
             yield
 
     def test_parallel_jobs_run_concurrently(self):
@@ -2168,13 +2168,13 @@ class TestParallelTick:
             {"id": "job-b", "name": "b", "deliver": "local"},
         ]
 
-        with patch("cron.scheduler.get_due_jobs", return_value=jobs), \
-             patch("cron.scheduler.advance_next_run"), \
-             patch("cron.scheduler.run_job", side_effect=mock_run_job), \
-             patch("cron.scheduler.save_job_output", return_value="/tmp/out.md"), \
-             patch("cron.scheduler._deliver_result", return_value=None), \
-             patch("cron.scheduler.mark_job_run"):
-            from cron.scheduler import tick
+        with patch("zermes.cron.scheduler.get_due_jobs", return_value=jobs),\
+             patch("zermes.cron.scheduler.advance_next_run"),\
+             patch("zermes.cron.scheduler.run_job", side_effect=mock_run_job),\
+             patch("zermes.cron.scheduler.save_job_output", return_value="/tmp/out.md"),\
+             patch("zermes.cron.scheduler._deliver_result", return_value=None),\
+             patch("zermes.cron.scheduler.mark_job_run"):
+            from zermes.cron.scheduler import tick
             result = tick(verbose=False)
 
         assert result == 2
@@ -2187,13 +2187,13 @@ class TestParallelTick:
 
     def test_parallel_jobs_isolated_contextvars(self):
         """Each job's ContextVars must be isolated — no cross-contamination."""
-        from gateway.session_context import get_session_env
+        from zermes.gateway.session_context import get_session_env
         seen = {}
 
         def mock_run_job(job):
             origin = job.get("origin", {})
             # run_job sets ContextVars — verify each job sees its own
-            from gateway.session_context import set_session_vars, clear_session_vars
+            from zermes.gateway.session_context import set_session_vars, clear_session_vars
             tokens = set_session_vars(
                 platform=origin.get("platform", ""),
                 chat_id=str(origin.get("chat_id", "")),
@@ -2213,13 +2213,13 @@ class TestParallelTick:
              "origin": {"platform": "discord", "chat_id": "222"}},
         ]
 
-        with patch("cron.scheduler.get_due_jobs", return_value=jobs), \
-             patch("cron.scheduler.advance_next_run"), \
-             patch("cron.scheduler.run_job", side_effect=mock_run_job), \
-             patch("cron.scheduler.save_job_output", return_value="/tmp/out.md"), \
-             patch("cron.scheduler._deliver_result", return_value=None), \
-             patch("cron.scheduler.mark_job_run"):
-            from cron.scheduler import tick
+        with patch("zermes.cron.scheduler.get_due_jobs", return_value=jobs),\
+             patch("zermes.cron.scheduler.advance_next_run"),\
+             patch("zermes.cron.scheduler.run_job", side_effect=mock_run_job),\
+             patch("zermes.cron.scheduler.save_job_output", return_value="/tmp/out.md"),\
+             patch("zermes.cron.scheduler._deliver_result", return_value=None),\
+             patch("zermes.cron.scheduler.mark_job_run"):
+            from zermes.cron.scheduler import tick
             tick(verbose=False)
 
         assert seen["tg-job"] == {"platform": "telegram", "chat_id": "111"}
@@ -2242,13 +2242,13 @@ class TestParallelTick:
             {"id": "s2", "name": "s2", "deliver": "local"},
         ]
 
-        with patch("cron.scheduler.get_due_jobs", return_value=jobs), \
-             patch("cron.scheduler.advance_next_run"), \
-             patch("cron.scheduler.run_job", side_effect=mock_run_job), \
-             patch("cron.scheduler.save_job_output", return_value="/tmp/out.md"), \
-             patch("cron.scheduler._deliver_result", return_value=None), \
-             patch("cron.scheduler.mark_job_run"):
-            from cron.scheduler import tick
+        with patch("zermes.cron.scheduler.get_due_jobs", return_value=jobs),\
+             patch("zermes.cron.scheduler.advance_next_run"),\
+             patch("zermes.cron.scheduler.run_job", side_effect=mock_run_job),\
+             patch("zermes.cron.scheduler.save_job_output", return_value="/tmp/out.md"),\
+             patch("zermes.cron.scheduler._deliver_result", return_value=None),\
+             patch("zermes.cron.scheduler.mark_job_run"):
+            from zermes.cron.scheduler import tick
             result = tick(verbose=False)
 
         assert result == 2
@@ -2268,7 +2268,7 @@ class TestDeliverResultTimeoutCancelsFuture:
         """End-to-end: live adapter hangs past the 60s budget, _deliver_result
         patches the timeout down to a fast value, confirms future.cancel() fires,
         and verifies the standalone fallback path still delivers."""
-        from gateway.config import Platform
+        from zermes.gateway.config import Platform
         from concurrent.futures import Future
 
         # Live adapter whose send() coroutine never resolves within the budget
@@ -2309,10 +2309,10 @@ class TestDeliverResultTimeoutCancelsFuture:
 
         standalone_send = AsyncMock(return_value={"success": True})
 
-        with patch("gateway.config.load_gateway_config", return_value=mock_cfg), \
-             patch("cron.scheduler.load_config", return_value={"cron": {"wrap_response": False}}), \
-             patch("asyncio.run_coroutine_threadsafe", side_effect=fake_run_coro), \
-             patch("tools.send_message_tool._send_to_platform", new=standalone_send):
+        with patch("zermes.gateway.config.load_gateway_config", return_value=mock_cfg),\
+             patch("zermes.cron.scheduler.load_config", return_value={"cron": {"wrap_response": False}}),\
+             patch("asyncio.run_coroutine_threadsafe", side_effect=fake_run_coro),\
+             patch("zermes.tools.send_message_tool._send_to_platform", new=standalone_send):
             result = _deliver_result(
                 job,
                 "Hello world",

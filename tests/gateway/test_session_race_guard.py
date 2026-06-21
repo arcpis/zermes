@@ -5,7 +5,7 @@ The sentinel-based guard ensures that when _handle_message passes the
 setup path (vision enrichment, STT, hooks, session hygiene), a second
 message for the same session is correctly recognized as "already running"
 and routed through the interrupt/queue path instead of spawning a
-duplicate agent.
+duplicate zermes.agent.
 """
 
 import asyncio
@@ -13,10 +13,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from gateway.config import GatewayConfig, Platform, PlatformConfig
-from gateway.platforms.base import MessageEvent, MessageType, merge_pending_message_event
-from gateway.run import GatewayRunner, _AGENT_PENDING_SENTINEL
-from gateway.session import SessionSource, build_session_key
+from zermes.gateway.config import GatewayConfig, Platform, PlatformConfig
+from zermes.gateway.platforms.base import MessageEvent, MessageType, merge_pending_message_event
+from zermes.gateway.run import GatewayRunner, _AGENT_PENDING_SENTINEL
+from zermes.gateway.session import SessionSource, build_session_key
 
 
 class _FakeAdapter:
@@ -155,7 +155,7 @@ async def test_sentinel_cleaned_up_on_exception():
 async def test_second_message_during_sentinel_queued_not_duplicate():
     """While the sentinel is set (agent setup in progress), a second
     message for the same session must hit the 'already running' branch
-    and be queued — not start a second agent."""
+    and be queued — not start a second zermes.agent."""
     runner = _make_runner()
     event1 = _make_event(text="first message")
     event2 = _make_event(text="second message")
@@ -500,8 +500,8 @@ async def test_shutdown_skips_sentinel():
     runner._exit_reason = None
     runner._shutdown_all_gateway_honcho = lambda: None
 
-    with patch("gateway.status.remove_pid_file"), \
-         patch("gateway.status.write_runtime_status"):
+    with patch("zermes.gateway.status.remove_pid_file"), \
+         patch("zermes.gateway.status.write_runtime_status"):
         await runner.stop()
 
     # Real agent should have been interrupted

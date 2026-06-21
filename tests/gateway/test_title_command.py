@@ -10,9 +10,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from gateway.config import GatewayConfig, Platform, PlatformConfig
-from gateway.platforms.base import MessageEvent
-from gateway.session import SessionSource
+from zermes.gateway.config import GatewayConfig, Platform, PlatformConfig
+from zermes.gateway.platforms.base import MessageEvent
+from zermes.gateway.session import SessionSource
 
 
 def _make_event(text="/title", platform=Platform.TELEGRAM,
@@ -29,7 +29,7 @@ def _make_event(text="/title", platform=Platform.TELEGRAM,
 
 def _make_runner(session_db=None):
     """Create a bare GatewayRunner with a mock session_store and optional session_db."""
-    from gateway.run import GatewayRunner
+    from zermes.gateway.run import GatewayRunner
     runner = object.__new__(GatewayRunner)
     runner.adapters = {}
     runner._voice_mode = {}
@@ -57,7 +57,7 @@ class TestHandleTitleCommand:
     @pytest.mark.asyncio
     async def test_set_title(self, tmp_path):
         """Setting a title returns confirmation."""
-        from hermes_state import SessionDB
+        from zermes.hermes_state import SessionDB
         db = SessionDB(db_path=tmp_path / "state.db")
         db.create_session("test_session_123", "telegram")
 
@@ -74,7 +74,7 @@ class TestHandleTitleCommand:
     @pytest.mark.asyncio
     async def test_show_title_when_set(self, tmp_path):
         """Showing title when one is set returns the title."""
-        from hermes_state import SessionDB
+        from zermes.hermes_state import SessionDB
         db = SessionDB(db_path=tmp_path / "state.db")
         db.create_session("test_session_123", "telegram")
         db.set_session_title("test_session_123", "Existing Title")
@@ -89,7 +89,7 @@ class TestHandleTitleCommand:
     @pytest.mark.asyncio
     async def test_show_title_when_not_set(self, tmp_path):
         """Showing title when none is set returns usage hint."""
-        from hermes_state import SessionDB
+        from zermes.hermes_state import SessionDB
         db = SessionDB(db_path=tmp_path / "state.db")
         db.create_session("test_session_123", "telegram")
 
@@ -103,7 +103,7 @@ class TestHandleTitleCommand:
     @pytest.mark.asyncio
     async def test_title_conflict(self, tmp_path):
         """Setting a title already used by another session returns error."""
-        from hermes_state import SessionDB
+        from zermes.hermes_state import SessionDB
         db = SessionDB(db_path=tmp_path / "state.db")
         db.create_session("other_session", "telegram")
         db.set_session_title("other_session", "Taken Title")
@@ -127,7 +127,7 @@ class TestHandleTitleCommand:
     @pytest.mark.asyncio
     async def test_title_too_long(self, tmp_path):
         """Setting a title that exceeds max length returns error."""
-        from hermes_state import SessionDB
+        from zermes.hermes_state import SessionDB
         db = SessionDB(db_path=tmp_path / "state.db")
         db.create_session("test_session_123", "telegram")
 
@@ -142,7 +142,7 @@ class TestHandleTitleCommand:
     @pytest.mark.asyncio
     async def test_title_control_chars_sanitized(self, tmp_path):
         """Control characters are stripped and sanitized title is stored."""
-        from hermes_state import SessionDB
+        from zermes.hermes_state import SessionDB
         db = SessionDB(db_path=tmp_path / "state.db")
         db.create_session("test_session_123", "telegram")
 
@@ -156,7 +156,7 @@ class TestHandleTitleCommand:
     @pytest.mark.asyncio
     async def test_title_only_control_chars(self, tmp_path):
         """Title with only control chars returns empty error."""
-        from hermes_state import SessionDB
+        from zermes.hermes_state import SessionDB
         db = SessionDB(db_path=tmp_path / "state.db")
         db.create_session("test_session_123", "telegram")
 
@@ -169,7 +169,7 @@ class TestHandleTitleCommand:
     @pytest.mark.asyncio
     async def test_works_across_platforms(self, tmp_path):
         """The /title command works for Discord, Slack, and WhatsApp too."""
-        from hermes_state import SessionDB
+        from zermes.hermes_state import SessionDB
         for platform in [Platform.DISCORD, Platform.TELEGRAM]:
             db = SessionDB(db_path=tmp_path / f"state_{platform.value}.db")
             db.create_session("test_session_123", platform.value)
@@ -196,14 +196,14 @@ class TestTitleInHelp:
         runner = _make_runner()
         event = _make_event(text="/help")
         # Need hooks for help command
-        from gateway.hooks import HookRegistry
+        from zermes.gateway.hooks import HookRegistry
         runner.hooks = HookRegistry()
         result = await runner._handle_help_command(event)
         assert "/title" in result
 
     def test_title_is_known_command(self):
         """The /title command is in the _known_commands set."""
-        from gateway.run import GatewayRunner
+        from zermes.gateway.run import GatewayRunner
         import inspect
         source = inspect.getsource(GatewayRunner._handle_message)
         assert '"title"' in source
@@ -222,8 +222,8 @@ class TestResetCommandWithTitle:
         """Sending /new <title> resets session and sets the title."""
         from datetime import datetime
 
-        from gateway.run import GatewayRunner
-        from gateway.session import SessionEntry, SessionSource, build_session_key
+        from zermes.gateway.run import GatewayRunner
+        from zermes.gateway.session import SessionEntry, SessionSource, build_session_key
 
         runner = object.__new__(GatewayRunner)
         runner.config = GatewayConfig(
@@ -282,8 +282,8 @@ class TestResetCommandWithTitle:
         """/new <title> with an already-in-use title returns a warning in the reply."""
         from datetime import datetime
 
-        from gateway.run import GatewayRunner
-        from gateway.session import SessionEntry, SessionSource, build_session_key
+        from zermes.gateway.run import GatewayRunner
+        from zermes.gateway.session import SessionEntry, SessionSource, build_session_key
 
         runner = object.__new__(GatewayRunner)
         runner.config = GatewayConfig(
@@ -351,7 +351,7 @@ class TestNewInHelp:
 
     def test_new_command_in_help_output(self):
         """The gateway help output includes /new with the [name] hint."""
-        from hermes_cli.commands import gateway_help_lines
+        from zermes.hermes_cli.commands import gateway_help_lines
         lines = gateway_help_lines()
         new_line = next((line for line in lines if line.startswith("`/new ")), None)
         assert new_line is not None

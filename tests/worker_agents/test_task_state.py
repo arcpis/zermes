@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from worker_agents.task_state import (
+from zermes.worker_agents.task_state import (
     WORKER_TASK_SCHEMA_VERSION,
     WorkerTaskError,
     WorkerTaskState,

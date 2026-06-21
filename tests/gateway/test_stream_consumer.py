@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from gateway.stream_consumer import GatewayStreamConsumer, StreamConsumerConfig
+from zermes.gateway.stream_consumer import GatewayStreamConsumer, StreamConsumerConfig
 
 
 # ── _clean_for_display unit tests ────────────────────────────────────────
@@ -148,14 +148,14 @@ class TestEditMessageFinalizeSignature:
     @pytest.mark.parametrize(
         "module_path,class_name",
         [
-            ("gateway.platforms.telegram", "TelegramAdapter"),
-            ("gateway.platforms.discord", "DiscordAdapter"),
-            ("gateway.platforms.slack", "SlackAdapter"),
-            ("gateway.platforms.matrix", "MatrixAdapter"),
-            ("gateway.platforms.mattermost", "MattermostAdapter"),
-            ("gateway.platforms.feishu", "FeishuAdapter"),
-            ("gateway.platforms.whatsapp", "WhatsAppAdapter"),
-            ("gateway.platforms.dingtalk", "DingTalkAdapter"),
+            ("zermes.gateway.platforms.telegram", "TelegramAdapter"),
+            ("zermes.gateway.platforms.discord", "DiscordAdapter"),
+            ("zermes.gateway.platforms.slack", "SlackAdapter"),
+            ("zermes.gateway.platforms.matrix", "MatrixAdapter"),
+            ("zermes.gateway.platforms.mattermost", "MattermostAdapter"),
+            ("zermes.gateway.platforms.feishu", "FeishuAdapter"),
+            ("zermes.gateway.platforms.whatsapp", "WhatsAppAdapter"),
+            ("zermes.gateway.platforms.dingtalk", "DingTalkAdapter"),
         ],
     )
     def test_edit_message_accepts_finalize(self, module_path, class_name):

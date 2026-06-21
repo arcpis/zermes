@@ -1,13 +1,13 @@
-from worker_agents.department_context_builder import (
+from zermes.worker_agents.department_context_builder import (
     DepartmentContextBuildInput,
     DepartmentContextInjectionLimits,
     build_department_context_bundle,
 )
-from worker_agents.department_context_bundle import (
+from zermes.worker_agents.department_context_bundle import (
     DepartmentToolPolicyContextSnapshot,
     department_context_bundle_to_dict,
 )
-from worker_agents.department_context_selection import (
+from zermes.worker_agents.department_context_selection import (
     DepartmentContextCandidate,
     DepartmentContextSelectionInput,
     select_department_context_assets,

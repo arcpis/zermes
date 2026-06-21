@@ -24,8 +24,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from plugins.memory.honcho.client import HonchoClientConfig
-from plugins.memory.honcho.session import HonchoSessionManager
+from zermes.plugins.memory.honcho.client import HonchoClientConfig
+from zermes.plugins.memory.honcho.session import HonchoSessionManager
 
 
 # ---------------------------------------------------------------------------

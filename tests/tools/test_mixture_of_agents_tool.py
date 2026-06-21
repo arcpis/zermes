@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-moa = importlib.import_module("tools.mixture_of_agents_tool")
+moa = importlib.import_module("zermes.tools.mixture_of_agents_tool")
 
 
 def test_moa_defaults_are_well_formed():

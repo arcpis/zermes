@@ -36,7 +36,7 @@ def _isolate_home(tmp_path, monkeypatch):
 # ---------------------------------------------------------------------------
 
 def test_is_safe_meet_url_accepts_standard_meet_codes():
-    from plugins.google_meet.meet_bot import _is_safe_meet_url
+    from zermes.plugins.google_meet.meet_bot import _is_safe_meet_url
 
     assert _is_safe_meet_url("https://meet.google.com/abc-defg-hij")
     assert _is_safe_meet_url("https://meet.google.com/abc-defg-hij?pli=1")
@@ -45,7 +45,7 @@ def test_is_safe_meet_url_accepts_standard_meet_codes():
 
 
 def test_is_safe_meet_url_rejects_non_meet_urls():
-    from plugins.google_meet.meet_bot import _is_safe_meet_url
+    from zermes.plugins.google_meet.meet_bot import _is_safe_meet_url
 
     # wrong host
     assert not _is_safe_meet_url("https://evil.example.com/abc-defg-hij")
@@ -63,7 +63,7 @@ def test_is_safe_meet_url_rejects_non_meet_urls():
 
 
 def test_meeting_id_extraction():
-    from plugins.google_meet.meet_bot import _meeting_id_from_url
+    from zermes.plugins.google_meet.meet_bot import _meeting_id_from_url
 
     assert _meeting_id_from_url("https://meet.google.com/abc-defg-hij") == "abc-defg-hij"
     assert _meeting_id_from_url("https://meet.google.com/abc-defg-hij?pli=1") == "abc-defg-hij"
@@ -77,7 +77,7 @@ def test_meeting_id_extraction():
 # ---------------------------------------------------------------------------
 
 def test_bot_state_dedupes_captions_and_flushes_status(tmp_path):
-    from plugins.google_meet.meet_bot import _BotState
+    from zermes.plugins.google_meet.meet_bot import _BotState
 
     out = tmp_path / "session"
     state = _BotState(out_dir=out, meeting_id="abc-defg-hij",
@@ -100,7 +100,7 @@ def test_bot_state_dedupes_captions_and_flushes_status(tmp_path):
 
 
 def test_bot_state_ignores_blank_text(tmp_path):
-    from plugins.google_meet.meet_bot import _BotState
+    from zermes.plugins.google_meet.meet_bot import _BotState
 
     state = _BotState(out_dir=tmp_path / "s", meeting_id="x-y-z",
                       url="https://meet.google.com/x-y-z")
@@ -115,7 +115,7 @@ def test_bot_state_ignores_blank_text(tmp_path):
 
 
 def test_parse_duration():
-    from plugins.google_meet.meet_bot import _parse_duration
+    from zermes.plugins.google_meet.meet_bot import _parse_duration
 
     assert _parse_duration("30m") == 30 * 60
     assert _parse_duration("2h") == 2 * 3600
@@ -130,7 +130,7 @@ def test_parse_duration():
 # ---------------------------------------------------------------------------
 
 def test_start_refuses_unsafe_url():
-    from plugins.google_meet import process_manager as pm
+    from zermes.plugins.google_meet import process_manager as pm
 
     res = pm.start("https://evil.example.com/abc-defg-hij")
     assert res["ok"] is False
@@ -138,7 +138,7 @@ def test_start_refuses_unsafe_url():
 
 
 def test_status_reports_no_active_meeting():
-    from plugins.google_meet import process_manager as pm
+    from zermes.plugins.google_meet import process_manager as pm
 
     assert pm.status() == {"ok": False, "reason": "no active meeting"}
     assert pm.transcript() == {"ok": False, "reason": "no active meeting"}
@@ -147,7 +147,7 @@ def test_status_reports_no_active_meeting():
 
 def test_start_spawns_subprocess_and_writes_active_pointer(tmp_path):
     """Verify start() wires env vars correctly and records the pid."""
-    from plugins.google_meet import process_manager as pm
+    from zermes.plugins.google_meet import process_manager as pm
 
     class _FakeProc:
         def __init__(self, pid):
@@ -176,8 +176,8 @@ def test_start_spawns_subprocess_and_writes_active_pointer(tmp_path):
     assert captured_env["HERMES_MEET_URL"] == "https://meet.google.com/abc-defg-hij"
     assert captured_env["HERMES_MEET_GUEST_NAME"] == "Test Bot"
     assert captured_env["HERMES_MEET_DURATION"] == "15m"
-    # python -m plugins.google_meet.meet_bot
-    assert any("plugins.google_meet.meet_bot" in a for a in captured_argv)
+    # python -m zermes.plugins.google_meet.meet_bot
+    assert any("zermes.plugins.google_meet.meet_bot" in a for a in captured_argv)
 
     # .active.json points at the bot
     active = pm._read_active()
@@ -187,7 +187,7 @@ def test_start_spawns_subprocess_and_writes_active_pointer(tmp_path):
 
 
 def test_transcript_reads_last_n_lines(tmp_path):
-    from plugins.google_meet import process_manager as pm
+    from zermes.plugins.google_meet import process_manager as pm
 
     meeting_dir = Path(os.environ["HERMES_HOME"]) / "workspace" / "meetings" / "abc-defg-hij"
     meeting_dir.mkdir(parents=True)
@@ -211,7 +211,7 @@ def test_transcript_reads_last_n_lines(tmp_path):
 
 
 def test_stop_signals_process_and_clears_pointer(tmp_path):
-    from plugins.google_meet import process_manager as pm
+    from zermes.plugins.google_meet import process_manager as pm
 
     pm._write_active({
         "pid": 11111, "meeting_id": "x-y-z",
@@ -247,7 +247,7 @@ def test_stop_signals_process_and_clears_pointer(tmp_path):
 # ---------------------------------------------------------------------------
 
 def test_meet_join_handler_missing_url_returns_error():
-    from plugins.google_meet.tools import handle_meet_join
+    from zermes.plugins.google_meet.tools import handle_meet_join
 
     out = json.loads(handle_meet_join({}))
     assert out["success"] is False
@@ -255,25 +255,25 @@ def test_meet_join_handler_missing_url_returns_error():
 
 
 def test_meet_join_handler_respects_safety_gate():
-    from plugins.google_meet.tools import handle_meet_join
+    from zermes.plugins.google_meet.tools import handle_meet_join
 
-    with patch("plugins.google_meet.tools.check_meet_requirements", return_value=True):
+    with patch("zermes.plugins.google_meet.tools.check_meet_requirements", return_value=True):
         out = json.loads(handle_meet_join({"url": "https://evil.example.com/foo"}))
     assert out["success"] is False
     assert "refusing" in out["error"]
 
 
 def test_meet_join_handler_returns_error_when_playwright_missing():
-    from plugins.google_meet.tools import handle_meet_join
+    from zermes.plugins.google_meet.tools import handle_meet_join
 
-    with patch("plugins.google_meet.tools.check_meet_requirements", return_value=False):
+    with patch("zermes.plugins.google_meet.tools.check_meet_requirements", return_value=False):
         out = json.loads(handle_meet_join({"url": "https://meet.google.com/abc-defg-hij"}))
     assert out["success"] is False
     assert "prerequisites missing" in out["error"]
 
 
 def test_meet_say_requires_text():
-    from plugins.google_meet.tools import handle_meet_say
+    from zermes.plugins.google_meet.tools import handle_meet_say
 
     out = json.loads(handle_meet_say({}))
     assert out["success"] is False
@@ -281,7 +281,7 @@ def test_meet_say_requires_text():
 
 
 def test_meet_say_no_active_meeting():
-    from plugins.google_meet.tools import handle_meet_say
+    from zermes.plugins.google_meet.tools import handle_meet_say
 
     out = json.loads(handle_meet_say({"text": "hello everyone"}))
     assert out["success"] is False
@@ -290,14 +290,14 @@ def test_meet_say_no_active_meeting():
 
 
 def test_meet_status_and_transcript_no_active():
-    from plugins.google_meet.tools import handle_meet_status, handle_meet_transcript
+    from zermes.plugins.google_meet.tools import handle_meet_status, handle_meet_transcript
 
     assert json.loads(handle_meet_status({}))["success"] is False
     assert json.loads(handle_meet_transcript({}))["success"] is False
 
 
 def test_meet_leave_no_active():
-    from plugins.google_meet.tools import handle_meet_leave
+    from zermes.plugins.google_meet.tools import handle_meet_leave
 
     out = json.loads(handle_meet_leave({}))
     assert out["success"] is False
@@ -308,16 +308,16 @@ def test_meet_leave_no_active():
 # ---------------------------------------------------------------------------
 
 def test_on_session_end_noop_when_nothing_active():
-    from plugins.google_meet import _on_session_end
+    from zermes.plugins.google_meet import _on_session_end
     # Should not raise and should not call stop().
-    with patch("plugins.google_meet.pm.stop") as stop_mock:
+    with patch("zermes.plugins.google_meet.pm.stop") as stop_mock:
         _on_session_end()
     stop_mock.assert_not_called()
 
 
 def test_on_session_end_stops_live_bot():
-    from plugins.google_meet import _on_session_end
-    from plugins.google_meet import pm
+    from zermes.plugins.google_meet import _on_session_end
+    from zermes.plugins.google_meet import pm
 
     with patch.object(pm, "status", return_value={"ok": True, "alive": True}), \
          patch.object(pm, "stop") as stop_mock:
@@ -330,7 +330,7 @@ def test_on_session_end_stops_live_bot():
 # ---------------------------------------------------------------------------
 
 def test_register_refuses_on_windows():
-    import plugins.google_meet as plugin
+    import zermes.plugins.google_meet as plugin
 
     calls = {"tools": [], "cli": [], "hooks": []}
 
@@ -346,7 +346,7 @@ def test_register_refuses_on_windows():
 
 
 def test_register_wires_tools_cli_and_hook_on_linux():
-    import plugins.google_meet as plugin
+    import zermes.plugins.google_meet as plugin
 
     calls = {"tools": [], "cli": [], "hooks": []}
 
@@ -370,20 +370,20 @@ def test_register_wires_tools_cli_and_hook_on_linux():
 # ---------------------------------------------------------------------------
 
 def test_enqueue_say_requires_text():
-    from plugins.google_meet import process_manager as pm
+    from zermes.plugins.google_meet import process_manager as pm
     assert pm.enqueue_say("")["ok"] is False
     assert pm.enqueue_say("   ")["ok"] is False
 
 
 def test_enqueue_say_no_active_meeting():
-    from plugins.google_meet import process_manager as pm
+    from zermes.plugins.google_meet import process_manager as pm
     res = pm.enqueue_say("hi team")
     assert res["ok"] is False
     assert "no active meeting" in res["reason"]
 
 
 def test_enqueue_say_rejects_transcribe_mode(tmp_path):
-    from plugins.google_meet import process_manager as pm
+    from zermes.plugins.google_meet import process_manager as pm
 
     out_dir = Path(os.environ["HERMES_HOME"]) / "workspace" / "meetings" / "abc-defg-hij"
     out_dir.mkdir(parents=True)
@@ -398,7 +398,7 @@ def test_enqueue_say_rejects_transcribe_mode(tmp_path):
 
 
 def test_enqueue_say_writes_jsonl_in_realtime_mode():
-    from plugins.google_meet import process_manager as pm
+    from zermes.plugins.google_meet import process_manager as pm
 
     out_dir = Path(os.environ["HERMES_HOME"]) / "workspace" / "meetings" / "abc-defg-hij"
     out_dir.mkdir(parents=True)
@@ -419,7 +419,7 @@ def test_enqueue_say_writes_jsonl_in_realtime_mode():
 
 
 def test_start_passes_mode_into_active_record():
-    from plugins.google_meet import process_manager as pm
+    from zermes.plugins.google_meet import process_manager as pm
 
     class _FakeProc:
         def __init__(self, pid): self.pid = pid
@@ -436,7 +436,7 @@ def test_start_passes_mode_into_active_record():
 
 
 def test_start_realtime_env_vars_threaded_through():
-    from plugins.google_meet import process_manager as pm
+    from zermes.plugins.google_meet import process_manager as pm
 
     class _FakeProc:
         def __init__(self, pid): self.pid = pid
@@ -464,10 +464,10 @@ def test_start_realtime_env_vars_threaded_through():
 
 
 def test_meet_join_accepts_realtime_mode():
-    from plugins.google_meet.tools import handle_meet_join
+    from zermes.plugins.google_meet.tools import handle_meet_join
 
-    with patch("plugins.google_meet.tools.check_meet_requirements", return_value=True), \
-         patch("plugins.google_meet.tools.pm.start", return_value={"ok": True, "meeting_id": "x-y-z"}) as start_mock:
+    with patch("zermes.plugins.google_meet.tools.check_meet_requirements", return_value=True), \
+         patch("zermes.plugins.google_meet.tools.pm.start", return_value={"ok": True, "meeting_id": "x-y-z"}) as start_mock:
         out = json.loads(handle_meet_join({
             "url": "https://meet.google.com/abc-defg-hij",
             "mode": "realtime",
@@ -477,7 +477,7 @@ def test_meet_join_accepts_realtime_mode():
 
 
 def test_meet_join_rejects_bad_mode():
-    from plugins.google_meet.tools import handle_meet_join
+    from zermes.plugins.google_meet.tools import handle_meet_join
 
     out = json.loads(handle_meet_join({
         "url": "https://meet.google.com/abc-defg-hij",
@@ -492,7 +492,7 @@ def test_meet_join_rejects_bad_mode():
 # ---------------------------------------------------------------------------
 
 def test_meet_join_unknown_node_returns_clear_error():
-    from plugins.google_meet.tools import handle_meet_join
+    from zermes.plugins.google_meet.tools import handle_meet_join
 
     out = json.loads(handle_meet_join({
         "url": "https://meet.google.com/abc-defg-hij",
@@ -503,13 +503,13 @@ def test_meet_join_unknown_node_returns_clear_error():
 
 
 def test_meet_join_routes_to_registered_node():
-    from plugins.google_meet.tools import handle_meet_join
-    from plugins.google_meet.node.registry import NodeRegistry
+    from zermes.plugins.google_meet.tools import handle_meet_join
+    from zermes.plugins.google_meet.node.registry import NodeRegistry
 
     reg = NodeRegistry()
     reg.add("my-mac", "ws://1.2.3.4:18789", "tok")
 
-    with patch("plugins.google_meet.node.client.NodeClient.start_bot",
+    with patch("zermes.plugins.google_meet.node.client.NodeClient.start_bot",
                return_value={"ok": True, "meeting_id": "a-b-c"}) as call_mock:
         out = json.loads(handle_meet_join({
             "url": "https://meet.google.com/abc-defg-hij",
@@ -522,13 +522,13 @@ def test_meet_join_routes_to_registered_node():
 
 
 def test_meet_say_routes_to_node():
-    from plugins.google_meet.tools import handle_meet_say
-    from plugins.google_meet.node.registry import NodeRegistry
+    from zermes.plugins.google_meet.tools import handle_meet_say
+    from zermes.plugins.google_meet.node.registry import NodeRegistry
 
     reg = NodeRegistry()
     reg.add("my-mac", "ws://1.2.3.4:18789", "tok")
 
-    with patch("plugins.google_meet.node.client.NodeClient.say",
+    with patch("zermes.plugins.google_meet.node.client.NodeClient.say",
                return_value={"ok": True, "enqueued_id": "abc"}) as call_mock:
         out = json.loads(handle_meet_say({"text": "hello", "node": "my-mac"}))
     assert out["success"] is True
@@ -537,13 +537,13 @@ def test_meet_say_routes_to_node():
 
 
 def test_meet_join_auto_node_selects_sole_registered():
-    from plugins.google_meet.tools import handle_meet_join
-    from plugins.google_meet.node.registry import NodeRegistry
+    from zermes.plugins.google_meet.tools import handle_meet_join
+    from zermes.plugins.google_meet.node.registry import NodeRegistry
 
     reg = NodeRegistry()
     reg.add("only-one", "ws://1.2.3.4:18789", "tok")
 
-    with patch("plugins.google_meet.node.client.NodeClient.start_bot",
+    with patch("zermes.plugins.google_meet.node.client.NodeClient.start_bot",
                return_value={"ok": True}) as call_mock:
         out = json.loads(handle_meet_join({
             "url": "https://meet.google.com/abc-defg-hij",
@@ -555,8 +555,8 @@ def test_meet_join_auto_node_selects_sole_registered():
 
 
 def test_meet_join_auto_node_ambiguous_returns_error():
-    from plugins.google_meet.tools import handle_meet_join
-    from plugins.google_meet.node.registry import NodeRegistry
+    from zermes.plugins.google_meet.tools import handle_meet_join
+    from zermes.plugins.google_meet.node.registry import NodeRegistry
 
     reg = NodeRegistry()
     reg.add("a", "ws://1.2.3.4:18789", "tok")
@@ -573,7 +573,7 @@ def test_meet_join_auto_node_ambiguous_returns_error():
 def test_cli_register_includes_node_subcommand():
     """`hermes meet` argparse tree includes the node subtree."""
     import argparse
-    from plugins.google_meet.cli import register_cli
+    from zermes.plugins.google_meet.cli import register_cli
 
     parser = argparse.ArgumentParser(prog="hermes meet")
     register_cli(parser)
@@ -586,7 +586,7 @@ def test_cli_register_includes_node_subcommand():
 
 def test_cli_join_accepts_mode_and_node_flags():
     import argparse
-    from plugins.google_meet.cli import register_cli
+    from zermes.plugins.google_meet.cli import register_cli
 
     parser = argparse.ArgumentParser(prog="hermes meet")
     register_cli(parser)
@@ -601,7 +601,7 @@ def test_cli_join_accepts_mode_and_node_flags():
 
 def test_cli_say_subcommand_exists():
     import argparse
-    from plugins.google_meet.cli import register_cli
+    from zermes.plugins.google_meet.cli import register_cli
 
     parser = argparse.ArgumentParser(prog="hermes meet")
     register_cli(parser)
@@ -616,7 +616,7 @@ def test_cli_say_subcommand_exists():
 # ---------------------------------------------------------------------------
 
 def test_bot_state_exposes_v2_telemetry_fields(tmp_path):
-    from plugins.google_meet.meet_bot import _BotState
+    from zermes.plugins.google_meet.meet_bot import _BotState
 
     state = _BotState(out_dir=tmp_path / "s", meeting_id="x-y-z",
                       url="https://meet.google.com/x-y-z")
@@ -647,7 +647,7 @@ def test_bot_state_exposes_v2_telemetry_fields(tmp_path):
 # ---------------------------------------------------------------------------
 
 def test_looks_like_human_speaker():
-    from plugins.google_meet.meet_bot import _looks_like_human_speaker
+    from zermes.plugins.google_meet.meet_bot import _looks_like_human_speaker
 
     # Blank, "unknown", "you", and the bot's own name → not human (no barge-in)
     for s in ("", "   ", "Unknown", "unknown", "You", "you", "Hermes Agent", "hermes agent"):
@@ -658,7 +658,7 @@ def test_looks_like_human_speaker():
 
 
 def test_detect_admission_returns_false_on_error():
-    from plugins.google_meet.meet_bot import _detect_admission
+    from zermes.plugins.google_meet.meet_bot import _detect_admission
 
     class _FakePage:
         def evaluate(self, _js): raise RuntimeError("boom")
@@ -667,7 +667,7 @@ def test_detect_admission_returns_false_on_error():
 
 
 def test_detect_admission_true_when_probe_returns_true():
-    from plugins.google_meet.meet_bot import _detect_admission
+    from zermes.plugins.google_meet.meet_bot import _detect_admission
 
     class _FakePage:
         def evaluate(self, _js): return True
@@ -676,7 +676,7 @@ def test_detect_admission_true_when_probe_returns_true():
 
 
 def test_detect_denied_returns_false_on_error():
-    from plugins.google_meet.meet_bot import _detect_denied
+    from zermes.plugins.google_meet.meet_bot import _detect_denied
 
     class _FakePage:
         def evaluate(self, _js): raise RuntimeError("boom")
@@ -689,7 +689,7 @@ def test_detect_denied_returns_false_on_error():
 # ---------------------------------------------------------------------------
 
 def test_realtime_session_cancel_response_when_disconnected():
-    from plugins.google_meet.realtime.openai_client import RealtimeSession
+    from zermes.plugins.google_meet.realtime.openai_client import RealtimeSession
 
     sess = RealtimeSession(api_key="sk-test", audio_sink_path=None)
     # No _ws yet — cancel should no-op and return False.
@@ -697,7 +697,7 @@ def test_realtime_session_cancel_response_when_disconnected():
 
 
 def test_realtime_session_cancel_response_sends_cancel_frame():
-    from plugins.google_meet.realtime.openai_client import RealtimeSession
+    from zermes.plugins.google_meet.realtime.openai_client import RealtimeSession
 
     sess = RealtimeSession(api_key="sk-test", audio_sink_path=None)
     sent = []
@@ -714,7 +714,7 @@ def test_realtime_session_cancel_response_sends_cancel_frame():
 
 
 def test_realtime_session_counters_initialized():
-    from plugins.google_meet.realtime.openai_client import RealtimeSession
+    from zermes.plugins.google_meet.realtime.openai_client import RealtimeSession
 
     sess = RealtimeSession(api_key="sk-test", audio_sink_path=None)
     assert sess.audio_bytes_out == 0
@@ -727,7 +727,7 @@ def test_realtime_session_counters_initialized():
 
 def test_cli_install_subcommand_is_registered():
     import argparse
-    from plugins.google_meet.cli import register_cli
+    from zermes.plugins.google_meet.cli import register_cli
 
     parser = argparse.ArgumentParser(prog="hermes meet")
     register_cli(parser)
@@ -740,7 +740,7 @@ def test_cli_install_subcommand_is_registered():
 
 def test_cli_install_flags_parse():
     import argparse
-    from plugins.google_meet.cli import register_cli
+    from zermes.plugins.google_meet.cli import register_cli
 
     parser = argparse.ArgumentParser(prog="hermes meet")
     register_cli(parser)
@@ -751,9 +751,9 @@ def test_cli_install_flags_parse():
 
 
 def test_cmd_install_refuses_windows(capsys):
-    from plugins.google_meet.cli import _cmd_install
+    from zermes.plugins.google_meet.cli import _cmd_install
 
-    with patch("plugins.google_meet.cli.platform" if False else "platform.system",
+    with patch("zermes.plugins.google_meet.cli.platform" if False else "platform.system",
                return_value="Windows"):
         rc = _cmd_install(realtime=False, assume_yes=True)
     assert rc == 1
@@ -763,7 +763,7 @@ def test_cmd_install_refuses_windows(capsys):
 
 def test_cmd_install_runs_pip_and_playwright(capsys):
     """End-to-end wiring: pip + playwright install invoked, returncodes handled."""
-    from plugins.google_meet.cli import _cmd_install
+    from zermes.plugins.google_meet.cli import _cmd_install
     import subprocess as _sp
 
     calls = []
@@ -792,7 +792,7 @@ def test_cmd_install_runs_pip_and_playwright(capsys):
 
 def test_cmd_install_realtime_skips_when_deps_present(capsys):
     """When paplay + pactl are already on PATH, no sudo call happens."""
-    from plugins.google_meet.cli import _cmd_install
+    from zermes.plugins.google_meet.cli import _cmd_install
 
     calls = []
     class _FakeRes:

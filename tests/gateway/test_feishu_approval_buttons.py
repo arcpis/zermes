@@ -37,9 +37,9 @@ def _ensure_feishu_mocks():
 
 _ensure_feishu_mocks()
 
-from gateway.config import PlatformConfig
-import gateway.platforms.feishu as feishu_module
-from gateway.platforms.feishu import FeishuAdapter
+from zermes.gateway.config import PlatformConfig
+import zermes.gateway.platforms.feishu as feishu_module
+from zermes.gateway.platforms.feishu import FeishuAdapter
 
 
 # ---------------------------------------------------------------------------
@@ -224,7 +224,7 @@ class TestResolveApproval:
             "chat_id": "oc_12345",
         }
 
-        with patch("tools.approval.resolve_gateway_approval", return_value=1) as mock_resolve:
+        with patch("zermes.tools.approval.resolve_gateway_approval", return_value=1) as mock_resolve:
             await adapter._resolve_approval(1, "once", "Norbert")
 
         mock_resolve.assert_called_once_with("agent:main:feishu:group:oc_12345", "once")
@@ -239,7 +239,7 @@ class TestResolveApproval:
             "chat_id": "oc_12345",
         }
 
-        with patch("tools.approval.resolve_gateway_approval", return_value=1) as mock_resolve:
+        with patch("zermes.tools.approval.resolve_gateway_approval", return_value=1) as mock_resolve:
             await adapter._resolve_approval(2, "deny", "Alice")
 
         mock_resolve.assert_called_once_with("some-session", "deny")
@@ -253,7 +253,7 @@ class TestResolveApproval:
             "chat_id": "oc_99",
         }
 
-        with patch("tools.approval.resolve_gateway_approval", return_value=1) as mock_resolve:
+        with patch("zermes.tools.approval.resolve_gateway_approval", return_value=1) as mock_resolve:
             await adapter._resolve_approval(3, "session", "Bob")
 
         mock_resolve.assert_called_once_with("sess-3", "session")
@@ -267,7 +267,7 @@ class TestResolveApproval:
             "chat_id": "oc_55",
         }
 
-        with patch("tools.approval.resolve_gateway_approval", return_value=1) as mock_resolve:
+        with patch("zermes.tools.approval.resolve_gateway_approval", return_value=1) as mock_resolve:
             await adapter._resolve_approval(4, "always", "Carol")
 
         mock_resolve.assert_called_once_with("sess-4", "always")
@@ -276,7 +276,7 @@ class TestResolveApproval:
     async def test_already_resolved_drops_silently(self):
         adapter = _make_adapter()
 
-        with patch("tools.approval.resolve_gateway_approval") as mock_resolve:
+        with patch("zermes.tools.approval.resolve_gateway_approval") as mock_resolve:
             await adapter._resolve_approval(99, "once", "Nobody")
 
         mock_resolve.assert_not_called()

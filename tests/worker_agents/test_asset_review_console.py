@@ -1,4 +1,4 @@
-from worker_agents.management import (
+from zermes.worker_agents.management import (
     asset_adoption_history_item_to_dict,
     asset_review_item_to_dict,
     build_asset_adoption_history_item,

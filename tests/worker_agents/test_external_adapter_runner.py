@@ -1,4 +1,4 @@
-from worker_agents.external_adapter_runner import (
+from zermes.worker_agents.external_adapter_runner import (
     ExternalAdapterBackendState,
     ExternalAdapterRunRequest,
     ExternalAdapterRunner,
@@ -6,11 +6,11 @@ from worker_agents.external_adapter_runner import (
     build_external_adapter_input_bundle,
     external_adapter_invocation_to_dict,
 )
-from worker_agents.external_adapters import (
+from zermes.worker_agents.external_adapters import (
     ExternalAdapterRegistry,
     build_fake_external_adapter_definition,
 )
-from worker_agents.runtime_contract import (
+from zermes.worker_agents.runtime_contract import (
     RuntimeErrorCode,
     RuntimeExecutionBudget,
     RuntimeRequest,
@@ -18,7 +18,7 @@ from worker_agents.runtime_contract import (
     RuntimeState,
     RuntimeType,
 )
-from worker_agents.storage import WorkerAgentRuntimeDataStore
+from zermes.worker_agents.storage import WorkerAgentRuntimeDataStore
 
 
 def _request(**context_overrides):

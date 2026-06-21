@@ -18,8 +18,8 @@ import pytest
 from aiohttp import web
 from aiohttp.test_utils import TestClient, TestServer
 
-from gateway.config import PlatformConfig
-from gateway.platforms.api_server import (
+from zermes.gateway.config import PlatformConfig
+from zermes.gateway.platforms.api_server import (
     APIServerAdapter,
     cors_middleware,
     security_headers_middleware,
@@ -442,7 +442,7 @@ class TestStopRun:
 
     @pytest.mark.asyncio
     async def test_stop_interrupt_exception_does_not_crash(self, adapter):
-        """If agent.interrupt() raises, stop should still succeed."""
+        """If zermes.agent.interrupt() raises, stop should still succeed."""
         app = _create_runs_app(adapter)
         async with TestClient(TestServer(app)) as cli:
             with patch.object(adapter, "_create_agent") as mock_create:

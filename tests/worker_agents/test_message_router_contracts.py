@@ -1,6 +1,6 @@
 import pytest
 
-from worker_agents.message_router import (
+from zermes.worker_agents.message_router import (
     MESSAGE_ROUTER_SCHEMA_VERSION,
     ChatMessageType,
     ChatParticipantKind,

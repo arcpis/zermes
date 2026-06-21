@@ -1,6 +1,6 @@
 """Tests for Anthropic error handling in the agent retry loop.
 
-Covers all error paths in run_agent.py's run_conversation() for api_mode=anthropic_messages:
+Covers all error paths in zermes.run_agent.py's run_conversation() for api_mode=anthropic_messages:
 - 429 rate limit → retried with backoff
 - 529 overloaded → retried with backoff
 - 400 bad request → non-retryable, immediate fail
@@ -21,10 +21,10 @@ sys.modules.setdefault("fire", types.SimpleNamespace(Fire=lambda *a, **k: None))
 sys.modules.setdefault("firecrawl", types.SimpleNamespace(Firecrawl=object))
 sys.modules.setdefault("fal_client", types.SimpleNamespace())
 
-import gateway.run as gateway_run
-import run_agent
-from gateway.config import Platform
-from gateway.session import SessionSource
+import zermes.gateway.run as gateway_run
+import zermes.run_agent as run_agent
+from zermes.gateway.config import Platform
+from zermes.gateway.session import SessionSource
 
 
 # ---------------------------------------------------------------------------
@@ -162,7 +162,7 @@ def _make_agent_cls(error_cls, recover_after=None):
     If recover_after is set, the agent succeeds after that many failures.
     """
 
-    class _Agent(run_agent.AIAgent):
+    class _Agent(zermes.run_agent.AIAgent):
         def __init__(self, *args, **kwargs):
             kwargs.setdefault("skip_context_files", True)
             kwargs.setdefault("skip_memory", True)
@@ -195,7 +195,7 @@ def _run_with_agent(monkeypatch, agent_cls):
     """Run _run_agent through the gateway with the given agent class."""
     _patch_agent_bootstrap(monkeypatch)
     monkeypatch.setattr(
-        "agent.anthropic_adapter.build_anthropic_client", _fake_build_anthropic_client
+        "zermes.agent.anthropic_adapter.build_anthropic_client", _fake_build_anthropic_client
     )
     monkeypatch.setattr(run_agent, "AIAgent", agent_cls)
     monkeypatch.setattr(
@@ -295,13 +295,13 @@ def test_401_credential_refresh_recovers(monkeypatch):
     """401 should trigger credential refresh and retry once."""
     _patch_agent_bootstrap(monkeypatch)
     monkeypatch.setattr(
-        "agent.anthropic_adapter.build_anthropic_client", _fake_build_anthropic_client
+        "zermes.agent.anthropic_adapter.build_anthropic_client", _fake_build_anthropic_client
     )
     monkeypatch.setenv("HERMES_TOOL_PROGRESS", "false")
 
     refresh_count = {"n": 0}
 
-    class _Auth401ThenSuccessAgent(run_agent.AIAgent):
+    class _Auth401ThenSuccessAgent(zermes.run_agent.AIAgent):
         def __init__(self, *args, **kwargs):
             kwargs.setdefault("skip_context_files", True)
             kwargs.setdefault("skip_memory", True)
@@ -379,11 +379,11 @@ def test_401_refresh_fails_is_non_retryable(monkeypatch):
     """401 with failed credential refresh should be treated as non-retryable."""
     _patch_agent_bootstrap(monkeypatch)
     monkeypatch.setattr(
-        "agent.anthropic_adapter.build_anthropic_client", _fake_build_anthropic_client
+        "zermes.agent.anthropic_adapter.build_anthropic_client", _fake_build_anthropic_client
     )
     monkeypatch.setenv("HERMES_TOOL_PROGRESS", "false")
 
-    class _Auth401AlwaysFailAgent(run_agent.AIAgent):
+    class _Auth401AlwaysFailAgent(zermes.run_agent.AIAgent):
         def __init__(self, *args, **kwargs):
             kwargs.setdefault("skip_context_files", True)
             kwargs.setdefault("skip_memory", True)
@@ -454,11 +454,11 @@ def test_prompt_too_long_triggers_compression(monkeypatch):
     """Anthropic 'prompt is too long' error should trigger context compression, not immediate fail."""
     _patch_agent_bootstrap(monkeypatch)
     monkeypatch.setattr(
-        "agent.anthropic_adapter.build_anthropic_client", _fake_build_anthropic_client
+        "zermes.agent.anthropic_adapter.build_anthropic_client", _fake_build_anthropic_client
     )
     monkeypatch.setenv("HERMES_TOOL_PROGRESS", "false")
 
-    class _PromptTooLongThenSuccessAgent(run_agent.AIAgent):
+    class _PromptTooLongThenSuccessAgent(zermes.run_agent.AIAgent):
         compress_called = 0
 
         def __init__(self, *args, **kwargs):

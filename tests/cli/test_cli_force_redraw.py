@@ -13,8 +13,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-import cli as cli_mod
-from cli import HermesCLI
+import zermes.cli as cli_mod
+from zermes.cli import HermesCLI
 
 
 @pytest.fixture

@@ -6,7 +6,7 @@ that can't encode non-ASCII characters in API request payloads.
 
 import pytest
 
-from run_agent import (
+from zermes.run_agent import (
     _strip_non_ascii,
     _sanitize_messages_non_ascii,
     _sanitize_structure_non_ascii,
@@ -244,7 +244,7 @@ class TestApiKeyClientSync:
     def test_client_api_key_updated_on_sanitize(self):
         """Simulate the recovery path and verify client.api_key is synced."""
         from unittest.mock import MagicMock
-        from run_agent import AIAgent
+        from zermes.run_agent import AIAgent
 
         agent = AIAgent.__new__(AIAgent)
         bad_key = "sk-proj-abc\u028bdef"  # ʋ lookalike at position 11
@@ -257,7 +257,7 @@ class TestApiKeyClientSync:
         mock_client.api_key = bad_key
         agent.client = mock_client
 
-        # --- replicate the recovery logic from run_agent.py ---
+        # --- replicate the recovery logic from zermes.run_agent.py ---
         _raw_key = agent.api_key
         _clean_key = _strip_non_ascii(_raw_key)
         assert _clean_key != _raw_key, "test precondition: key should have non-ASCII"
@@ -278,7 +278,7 @@ class TestApiKeyClientSync:
 
     def test_client_none_does_not_crash(self):
         """Recovery should not crash when client is None (pre-init)."""
-        from run_agent import AIAgent
+        from zermes.run_agent import AIAgent
 
         agent = AIAgent.__new__(AIAgent)
         bad_key = "sk-proj-\u028b"

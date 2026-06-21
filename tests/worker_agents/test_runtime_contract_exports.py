@@ -1,4 +1,4 @@
-from worker_agents import (
+from zermes.worker_agents import (
     InternalWorkerRuntimeContextRequest,
     InternalWorkerRuntimeRunner,
     finalize_internal_runtime_result,

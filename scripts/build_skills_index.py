@@ -13,7 +13,7 @@ Usage:
     # CI (set GITHUB_TOKEN as secret)
     GITHUB_TOKEN=ghp_... python scripts/build_skills_index.py
 
-Output: website/static/api/skills-index.json
+Output: apps/website/static/api/skills-index.json
 """
 
 import json
@@ -31,7 +31,7 @@ sys.path.insert(0, REPO_ROOT)
 # Ensure HERMES_HOME is set (needed by tools/skills_hub.py imports)
 os.environ.setdefault("HERMES_HOME", os.path.join(os.path.expanduser("~"), ".hermes"))
 
-from tools.skills_hub import (
+from zermes.tools.skills_hub import (
     GitHubAuth,
     GitHubSource,
     SkillsShSource,
@@ -44,7 +44,7 @@ from tools.skills_hub import (
 )
 import httpx
 
-OUTPUT_PATH = os.path.join(REPO_ROOT, "website", "static", "api", "skills-index.json")
+OUTPUT_PATH = os.path.join(REPO_ROOT, "apps", "website", "static", "api", "skills-index.json")
 INDEX_VERSION = 1
 
 

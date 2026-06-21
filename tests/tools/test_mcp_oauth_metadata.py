@@ -3,7 +3,7 @@
 Covers:
 - :class:`HermesTokenStorage` ``.meta.json`` roundtrip (save / load / remove)
 - The production manager provider
-  (:class:`tools.mcp_oauth_manager.HermesMCPOAuthProvider`) restoring metadata
+  (:class:`zermes.tools.mcp_oauth_manager.HermesMCPOAuthProvider`) restoring metadata
   on cold-load init and persisting metadata at the end of ``async_auth_flow``.
 
 Context
@@ -26,8 +26,8 @@ import pytest
 
 from mcp.shared.auth import OAuthMetadata
 
-from tools.mcp_oauth import HermesTokenStorage
-from tools.mcp_oauth_manager import _HERMES_PROVIDER_CLS
+from zermes.tools.mcp_oauth import HermesTokenStorage
+from zermes.tools.mcp_oauth_manager import _HERMES_PROVIDER_CLS
 
 
 def _make_metadata(token_endpoint: str = "https://auth.example.com/oauth/token") -> OAuthMetadata:
@@ -200,7 +200,7 @@ class TestManagerOAuthProviderMetadata:
             _HERMES_PROVIDER_CLS.__bases__[0],
             "async_auth_flow",
             new=fake_parent_flow,
-        ), patch("tools.mcp_oauth_manager.get_manager", return_value=manager):
+        ), patch("zermes.tools.mcp_oauth_manager.get_manager", return_value=manager):
             async def drive():
                 gen = provider.async_auth_flow(MagicMock())
                 async for _ in gen:

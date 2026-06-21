@@ -1,6 +1,6 @@
 import pytest
 
-from worker_agents.registry import (
+from zermes.worker_agents.registry import (
     WorkerLifecycleStatus,
     WorkerRegistryError,
     WorkerRegistryRecord,

@@ -33,15 +33,15 @@ def test_launcher_scripts_route_through_stable_active_pointer(tmp_path):
     assert (Path(plan.bin_dir) / "zermes") in launchers
     assert (Path(plan.bin_dir) / "zermes-gateway") in launchers
     assert (Path(plan.bin_dir) / "zermes.bat") in launchers
-    assert (Path(plan.bin_dir) / "zermes-gateway.bat") in launchers
+    assert (Path(plan.bin_dir) / "zermes-zermes.gateway.bat") in launchers
 
     zermes_text = (Path(plan.bin_dir) / "zermes").read_text(encoding="utf-8")
     gateway_text = (Path(plan.bin_dir) / "zermes-gateway").read_text(encoding="utf-8")
     assert "ZERMES_INSTALL_PREFIX" in zermes_text
     assert "zermes_launcher.py\" cli" in zermes_text
     assert "zermes_launcher.py\" gateway" in gateway_text
-    assert "-m hermes_cli.main" not in zermes_text
-    assert "-m hermes_cli.main" not in gateway_text
+    assert "-m zermes.hermes_cli.main" not in zermes_text
+    assert "-m zermes.hermes_cli.main" not in gateway_text
 
 
 def test_launcher_script_texts_cover_cli_and_gateway_modes(tmp_path):
@@ -135,7 +135,7 @@ def test_stable_launcher_execs_active_release(monkeypatch, tmp_path):
         assert exc.code == 0
 
     assert captured["path"] == str(python.resolve())
-    assert captured["command"] == [str(python.resolve()), "-m", "hermes_cli.main", "gateway", "--help"]
+    assert captured["command"] == [str(python.resolve()), "-m", "zermes.hermes_cli.main", "gateway", "--help"]
     assert captured["cwd"] == str(source.resolve())
     assert captured["env"]["ZERMES_ACTIVE_RELEASE"] == "release-abc1234"
     assert captured["env"]["HERMES_HOME"] == str(tmp_path / "data")
@@ -210,7 +210,7 @@ def test_stable_launcher_execs_restart_intent(monkeypatch, tmp_path):
     assert captured["command"] == [
         str(python.resolve()),
         "-m",
-        "hermes_cli.main",
+        "zermes.hermes_cli.main",
         "chat",
         "--resume",
         "session-1",

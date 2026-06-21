@@ -31,10 +31,11 @@ from unittest.mock import patch
 
 import pytest
 
-# Ensure project root is importable
+# Ensure the src-layout package is importable without relying on an editable install.
 PROJECT_ROOT = Path(__file__).parent.parent
-if str(PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(PROJECT_ROOT))
+SRC_ROOT = PROJECT_ROOT / "src"
+if str(SRC_ROOT) not in sys.path:
+    sys.path.insert(0, str(SRC_ROOT))
 
 
 # ── Credential env-var filter ──────────────────────────────────────────────
@@ -283,6 +284,11 @@ def _hermetic_environment(tmp_path, monkeypatch):
     monkeypatch.setenv("LANG", "C.UTF-8")
     monkeypatch.setenv("LC_ALL", "C.UTF-8")
     monkeypatch.setenv("PYTHONHASHSEED", "0")
+    existing_pythonpath = os.environ.get("PYTHONPATH")
+    pythonpath_parts = [str(SRC_ROOT)]
+    if existing_pythonpath:
+        pythonpath_parts.append(existing_pythonpath)
+    monkeypatch.setenv("PYTHONPATH", os.pathsep.join(pythonpath_parts))
 
     # 4b. Disable AWS IMDS lookups. Without this, any test that ends up
     #     calling has_aws_credentials() / resolve_aws_auth_env_var()
@@ -297,7 +303,7 @@ def _hermetic_environment(tmp_path, monkeypatch):
     #    ~/.hermes/plugins/ (which, per step 3, is now empty — but the
     #    singleton might still be cached from a previous test).
     try:
-        import hermes_cli.plugins as _plugins_mod
+        import zermes.hermes_cli.plugins as _plugins_mod
         monkeypatch.setattr(_plugins_mod, "_plugin_manager", None)
     except Exception:
         pass
@@ -328,7 +334,7 @@ def _isolate_hermes_home(_hermetic_environment):
 #
 # The skill `test-suite-cascade-diagnosis` documents the concrete patterns
 # this closes; the running example was `test_command_guards` failing 12/15
-# CI runs because ``tools.approval._session_approved`` carried approvals
+# CI runs because ``zermes.tools.approval._session_approved`` carried approvals
 # from one test's session into another's.
 
 @pytest.fixture(autouse=True)
@@ -347,9 +353,9 @@ def _reset_module_state():
         _logger.setLevel(logging.NOTSET)
         _logger.propagate = True
 
-    # --- tools.approval — the single biggest source of cross-test pollution ---
+    # --- zermes.tools.approval — the single biggest source of cross-test pollution ---
     try:
-        from tools import approval as _approval_mod
+        from zermes.tools import approval as _approval_mod
         _approval_mod._session_approved.clear()
         _approval_mod._session_yolo.clear()
         _approval_mod._permanent_approved.clear()
@@ -363,19 +369,19 @@ def _reset_module_state():
     except Exception:
         pass
 
-    # --- tools.interrupt — per-thread interrupt flag set ---
+    # --- zermes.tools.interrupt — per-thread interrupt flag set ---
     try:
-        from tools import interrupt as _interrupt_mod
+        from zermes.tools import interrupt as _interrupt_mod
         with _interrupt_mod._lock:
             _interrupt_mod._interrupted_threads.clear()
     except Exception:
         pass
 
-    # --- gateway.session_context — 9 ContextVars that represent
+    # --- zermes.gateway.session_context — 9 ContextVars that represent
     #     the active gateway session. If set in one test and not reset,
     #     the next test's get_session_env() reads stale values.
     try:
-        from gateway import session_context as _sc_mod
+        from zermes.gateway import session_context as _sc_mod
         for _cv in (
             _sc_mod._SESSION_PLATFORM,
             _sc_mod._SESSION_CHAT_ID,
@@ -392,21 +398,21 @@ def _reset_module_state():
     except Exception:
         pass
 
-    # --- tools.env_passthrough — ContextVar<set[str]> with no default ---
+    # --- zermes.tools.env_passthrough — ContextVar<set[str]> with no default ---
     # LookupError is normal if the test never set it. Setting it to an
     # empty set unconditionally normalizes the starting state.
     try:
-        from tools import env_passthrough as _envp_mod
+        from zermes.tools import env_passthrough as _envp_mod
         _envp_mod._allowed_env_vars_var.set(set())
     except Exception:
         pass
 
-    # --- tools.terminal_tool — active environment/cwd cache ---
+    # --- zermes.tools.terminal_tool — active environment/cwd cache ---
     # File tools prefer a live terminal cwd when one is cached for the task.
     # Clear terminal environments between tests so a prior terminal call can't
     # override TERMINAL_CWD in path-resolution tests.
     try:
-        from tools import terminal_tool as _term_mod
+        from zermes.tools import terminal_tool as _term_mod
         _envs_to_cleanup = []
         with _term_mod._env_lock:
             _envs_to_cleanup = list(_term_mod._active_environments.values())
@@ -421,19 +427,19 @@ def _reset_module_state():
     except Exception:
         pass
 
-    # --- tools.credential_files — ContextVar<dict> ---
+    # --- zermes.tools.credential_files — ContextVar<dict> ---
     try:
-        from tools import credential_files as _credf_mod
+        from zermes.tools import credential_files as _credf_mod
         _credf_mod._registered_files_var.set({})
     except Exception:
         pass
 
-    # --- tools.file_tools — per-task read history + file-ops cache ---
+    # --- zermes.tools.file_tools — per-task read history + file-ops cache ---
     # _read_tracker accumulates per-task_id read history for loop detection,
     # capped by _READ_HISTORY_CAP. If entries from a prior test persist, the
     # cap is hit faster than expected and capacity-related tests flake.
     try:
-        from tools import file_tools as _ft_mod
+        from zermes.tools import file_tools as _ft_mod
         with _ft_mod._read_tracker_lock:
             _ft_mod._read_tracker.clear()
         with _ft_mod._file_ops_lock:
@@ -546,7 +552,7 @@ def _reset_tool_registry_caches():
 
     The production registry caches ``check_fn()`` results for 30 s
     (see tools/registry.py) and :func:`get_tool_definitions` memoizes
-    its result (see model_tools.py). Both are keyed on state that tests
+    its result (see zermes.model_tools.py). Both are keyed on state that tests
     routinely mutate (env vars, registry._generation, config.yaml mtime)
     — but a stale result from test A can still be served to test B
     because 30 s covers the entire suite, and xdist worker reuse means
@@ -554,12 +560,12 @@ def _reset_tool_registry_caches():
     test keeps hermetic behavior.
     """
     try:
-        from tools.registry import invalidate_check_fn_cache
+        from zermes.tools.registry import invalidate_check_fn_cache
         invalidate_check_fn_cache()
     except ImportError:
         pass
     try:
-        from model_tools import _clear_tool_defs_cache
+        from zermes.model_tools import _clear_tool_defs_cache
         _clear_tool_defs_cache()
     except ImportError:
         pass

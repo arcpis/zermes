@@ -538,7 +538,7 @@ def test_posix_launcher_uses_release_python_and_hermes_home(tmp_path):
     assert text.startswith("#!/usr/bin/env sh\n")
     assert f'export ZERMES_INSTALL_PREFIX="{plan.prefix}"' in text
     assert f'"{plan.prefix}/launcher/zermes_launcher.py" cli "$@"' in text
-    assert "-m hermes_cli.main" not in text
+    assert "-m zermes.hermes_cli.main" not in text
 
 
 def test_windows_launcher_uses_release_python_and_hermes_home(tmp_path):
@@ -549,7 +549,7 @@ def test_windows_launcher_uses_release_python_and_hermes_home(tmp_path):
     assert text.startswith("@echo off\r\n")
     assert f"set ZERMES_INSTALL_PREFIX={plan.prefix}\r\n" in text
     assert "zermes_launcher.py\" cli %*\r\n" in text
-    assert "-m hermes_cli.main" not in text
+    assert "-m zermes.hermes_cli.main" not in text
 
 
 def test_create_launcher_scripts_writes_posix_and_windows_launchers(tmp_path):
@@ -563,7 +563,7 @@ def test_create_launcher_scripts_writes_posix_and_windows_launchers(tmp_path):
         Path(plan.bin_dir) / "zermes",
         Path(plan.bin_dir) / "zermes-gateway",
         Path(plan.bin_dir) / "zermes.bat",
-        Path(plan.bin_dir) / "zermes-gateway.bat",
+        Path(plan.bin_dir) / "zermes-zermes.gateway.bat",
     )
     assert (Path(plan.bin_dir) / "zermes").read_text(encoding="utf-8") == (
         install_zermes.posix_launcher_text(plan)
@@ -593,7 +593,7 @@ def test_create_launcher_scripts_dry_run_does_not_write(tmp_path):
         Path(plan.bin_dir) / "zermes",
         Path(plan.bin_dir) / "zermes-gateway",
         Path(plan.bin_dir) / "zermes.bat",
-        Path(plan.bin_dir) / "zermes-gateway.bat",
+        Path(plan.bin_dir) / "zermes-zermes.gateway.bat",
     )
     assert not Path(plan.bin_dir).exists()
 
@@ -1017,7 +1017,7 @@ def test_verification_commands_use_release_python_and_existing_cli(tmp_path):
     assert install_zermes.verification_commands(plan) == (
         [plan.python_path, "-c", "import sys; print(sys.version)"],
         [plan.python_path, "-m", "pip", "--version"],
-        [plan.python_path, "-m", "hermes_cli.main", "--help"],
+        [plan.python_path, "-m", "zermes.hermes_cli.main", "--help"],
     )
 
 

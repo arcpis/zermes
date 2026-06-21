@@ -1,4 +1,4 @@
-"""Tests for plugins.google_meet.audio_bridge (v2).
+"""Tests for zermes.plugins.google_meet.audio_bridge (v2).
 
 Covers the platform gating and pactl / system_profiler plumbing
 without actually invoking those tools on the host.
@@ -35,7 +35,7 @@ def _linux_pactl_result(stdout: str) -> MagicMock:
 
 
 def test_setup_linux_loads_null_sink_and_virtual_source():
-    from plugins.google_meet.audio_bridge import AudioBridge
+    from zermes.plugins.google_meet.audio_bridge import AudioBridge
 
     calls: list[list[str]] = []
 
@@ -49,9 +49,9 @@ def test_setup_linux_loads_null_sink_and_virtual_source():
             return _linux_pactl_result("43\n")
         raise AssertionError(f"unexpected pactl invocation: {argv}")
 
-    with patch("plugins.google_meet.audio_bridge.platform.system",
+    with patch("zermes.plugins.google_meet.audio_bridge.platform.system",
                return_value="Linux"), \
-         patch("plugins.google_meet.audio_bridge.subprocess.run",
+         patch("zermes.plugins.google_meet.audio_bridge.subprocess.run",
                side_effect=_fake_run):
         br = AudioBridge()
         info = br.setup()
@@ -80,16 +80,16 @@ def test_setup_linux_loads_null_sink_and_virtual_source():
 
 
 def test_teardown_linux_unloads_modules_in_reverse_order():
-    from plugins.google_meet.audio_bridge import AudioBridge
+    from zermes.plugins.google_meet.audio_bridge import AudioBridge
 
     def _setup_run(argv, **kwargs):
         if "module-null-sink" in argv:
             return _linux_pactl_result("42\n")
         return _linux_pactl_result("43\n")
 
-    with patch("plugins.google_meet.audio_bridge.platform.system",
+    with patch("zermes.plugins.google_meet.audio_bridge.platform.system",
                return_value="Linux"), \
-         patch("plugins.google_meet.audio_bridge.subprocess.run",
+         patch("zermes.plugins.google_meet.audio_bridge.subprocess.run",
                side_effect=_setup_run):
         br = AudioBridge()
         br.setup()
@@ -100,7 +100,7 @@ def test_teardown_linux_unloads_modules_in_reverse_order():
         unload_calls.append(list(argv))
         return _linux_pactl_result("")
 
-    with patch("plugins.google_meet.audio_bridge.subprocess.run",
+    with patch("zermes.plugins.google_meet.audio_bridge.subprocess.run",
                side_effect=_teardown_run):
         br.teardown()
 
@@ -110,23 +110,23 @@ def test_teardown_linux_unloads_modules_in_reverse_order():
     assert unload_calls[1][2] == "42"
 
     # Second teardown is a no-op.
-    with patch("plugins.google_meet.audio_bridge.subprocess.run") as run_mock:
+    with patch("zermes.plugins.google_meet.audio_bridge.subprocess.run") as run_mock:
         br.teardown()
     run_mock.assert_not_called()
 
 
 def test_setup_linux_parses_module_id_from_multi_line_output():
     """Some pactl builds include trailing whitespace / notices."""
-    from plugins.google_meet.audio_bridge import AudioBridge
+    from zermes.plugins.google_meet.audio_bridge import AudioBridge
 
     def _fake_run(argv, **kwargs):
         if "module-null-sink" in argv:
             return _linux_pactl_result("42   \n")
         return _linux_pactl_result("43\n")
 
-    with patch("plugins.google_meet.audio_bridge.platform.system",
+    with patch("zermes.plugins.google_meet.audio_bridge.platform.system",
                return_value="Linux"), \
-         patch("plugins.google_meet.audio_bridge.subprocess.run",
+         patch("zermes.plugins.google_meet.audio_bridge.subprocess.run",
                side_effect=_fake_run):
         br = AudioBridge()
         info = br.setup()
@@ -135,11 +135,11 @@ def test_setup_linux_parses_module_id_from_multi_line_output():
 
 
 def test_setup_linux_pactl_missing_raises_clean_error():
-    from plugins.google_meet.audio_bridge import AudioBridge
+    from zermes.plugins.google_meet.audio_bridge import AudioBridge
 
-    with patch("plugins.google_meet.audio_bridge.platform.system",
+    with patch("zermes.plugins.google_meet.audio_bridge.platform.system",
                return_value="Linux"), \
-         patch("plugins.google_meet.audio_bridge.subprocess.run",
+         patch("zermes.plugins.google_meet.audio_bridge.subprocess.run",
                side_effect=FileNotFoundError("pactl")):
         br = AudioBridge()
         with pytest.raises(RuntimeError, match="pactl"):
@@ -166,11 +166,11 @@ _BH_ABSENT = (
 
 
 def test_setup_darwin_returns_blackhole_when_present():
-    from plugins.google_meet.audio_bridge import AudioBridge
+    from zermes.plugins.google_meet.audio_bridge import AudioBridge
 
-    with patch("plugins.google_meet.audio_bridge.platform.system",
+    with patch("zermes.plugins.google_meet.audio_bridge.platform.system",
                return_value="Darwin"), \
-         patch("plugins.google_meet.audio_bridge.subprocess.check_output",
+         patch("zermes.plugins.google_meet.audio_bridge.subprocess.check_output",
                return_value=_BH_PRESENT) as check:
         br = AudioBridge()
         info = br.setup()
@@ -188,17 +188,17 @@ def test_setup_darwin_returns_blackhole_when_present():
     assert info["channels"] == 2
 
     # teardown is a no-op on darwin (no modules to unload).
-    with patch("plugins.google_meet.audio_bridge.subprocess.run") as run_mock:
+    with patch("zermes.plugins.google_meet.audio_bridge.subprocess.run") as run_mock:
         br.teardown()
     run_mock.assert_not_called()
 
 
 def test_setup_darwin_raises_when_blackhole_missing():
-    from plugins.google_meet.audio_bridge import AudioBridge
+    from zermes.plugins.google_meet.audio_bridge import AudioBridge
 
-    with patch("plugins.google_meet.audio_bridge.platform.system",
+    with patch("zermes.plugins.google_meet.audio_bridge.platform.system",
                return_value="Darwin"), \
-         patch("plugins.google_meet.audio_bridge.subprocess.check_output",
+         patch("zermes.plugins.google_meet.audio_bridge.subprocess.check_output",
                return_value=_BH_ABSENT):
         br = AudioBridge()
         with pytest.raises(RuntimeError, match="BlackHole"):
@@ -211,9 +211,9 @@ def test_setup_darwin_raises_when_blackhole_missing():
 
 
 def test_setup_windows_raises():
-    from plugins.google_meet.audio_bridge import AudioBridge
+    from zermes.plugins.google_meet.audio_bridge import AudioBridge
 
-    with patch("plugins.google_meet.audio_bridge.platform.system",
+    with patch("zermes.plugins.google_meet.audio_bridge.platform.system",
                return_value="Windows"):
         br = AudioBridge()
         with pytest.raises(RuntimeError, match="not supported"):
@@ -226,9 +226,9 @@ def test_setup_windows_raises():
 
 
 def test_chrome_fake_audio_flags_linux():
-    from plugins.google_meet.audio_bridge import chrome_fake_audio_flags
+    from zermes.plugins.google_meet.audio_bridge import chrome_fake_audio_flags
 
-    with patch("plugins.google_meet.audio_bridge.platform.system",
+    with patch("zermes.plugins.google_meet.audio_bridge.platform.system",
                return_value="Linux"):
         flags = chrome_fake_audio_flags(
             {"platform": "linux", "device_name": "hermes_meet_src"}
@@ -237,9 +237,9 @@ def test_chrome_fake_audio_flags_linux():
 
 
 def test_chrome_fake_audio_flags_darwin():
-    from plugins.google_meet.audio_bridge import chrome_fake_audio_flags
+    from zermes.plugins.google_meet.audio_bridge import chrome_fake_audio_flags
 
-    with patch("plugins.google_meet.audio_bridge.platform.system",
+    with patch("zermes.plugins.google_meet.audio_bridge.platform.system",
                return_value="Darwin"):
         flags = chrome_fake_audio_flags(
             {"platform": "darwin", "device_name": "BlackHole 2ch"}
@@ -248,16 +248,16 @@ def test_chrome_fake_audio_flags_darwin():
 
 
 def test_chrome_fake_audio_flags_windows_raises():
-    from plugins.google_meet.audio_bridge import chrome_fake_audio_flags
+    from zermes.plugins.google_meet.audio_bridge import chrome_fake_audio_flags
 
-    with patch("plugins.google_meet.audio_bridge.platform.system",
+    with patch("zermes.plugins.google_meet.audio_bridge.platform.system",
                return_value="Windows"):
         with pytest.raises(RuntimeError):
             chrome_fake_audio_flags({"platform": "windows"})
 
 
 def test_property_access_before_setup_raises():
-    from plugins.google_meet.audio_bridge import AudioBridge
+    from zermes.plugins.google_meet.audio_bridge import AudioBridge
 
     br = AudioBridge()
     with pytest.raises(RuntimeError):

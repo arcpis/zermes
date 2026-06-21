@@ -367,14 +367,14 @@ class TestSlashCommand:
 
 class TestBundledDiscovery:
     def _write_enabled_config(self, hermes_home, names):
-        """Write plugins.enabled allow-list to config.yaml."""
+        """Write zermes.plugins.enabled allow-list to config.yaml."""
         import yaml
         cfg_path = hermes_home / "config.yaml"
         cfg_path.write_text(yaml.safe_dump({"plugins": {"enabled": list(names)}}))
 
     def test_disk_cleanup_discovered_but_not_loaded_by_default(self, _isolate_env):
         """Bundled plugins are discovered but NOT loaded without opt-in."""
-        from hermes_cli import plugins as pmod
+        from zermes.hermes_cli import plugins as pmod
         mgr = pmod.PluginManager()
         mgr.discover_and_load()
         # Discovered — appears in the registry
@@ -386,9 +386,9 @@ class TestBundledDiscovery:
         assert loaded.error and "not enabled" in loaded.error
 
     def test_disk_cleanup_loads_when_enabled(self, _isolate_env):
-        """Adding to plugins.enabled activates the bundled plugin."""
+        """Adding to zermes.plugins.enabled activates the bundled plugin."""
         self._write_enabled_config(_isolate_env, ["disk-cleanup"])
-        from hermes_cli import plugins as pmod
+        from zermes.hermes_cli import plugins as pmod
         mgr = pmod.PluginManager()
         mgr.discover_and_load()
         loaded = mgr._plugins["disk-cleanup"]
@@ -398,7 +398,7 @@ class TestBundledDiscovery:
         assert "disk-cleanup" in loaded.commands_registered
 
     def test_disabled_beats_enabled(self, _isolate_env):
-        """plugins.disabled wins even if the plugin is also in plugins.enabled."""
+        """zermes.plugins.disabled wins even if the plugin is also in zermes.plugins.enabled."""
         import yaml
         cfg_path = _isolate_env / "config.yaml"
         cfg_path.write_text(yaml.safe_dump({
@@ -407,7 +407,7 @@ class TestBundledDiscovery:
                 "disabled": ["disk-cleanup"],
             }
         }))
-        from hermes_cli import plugins as pmod
+        from zermes.hermes_cli import plugins as pmod
         mgr = pmod.PluginManager()
         mgr.discover_and_load()
         loaded = mgr._plugins["disk-cleanup"]
@@ -420,7 +420,7 @@ class TestBundledDiscovery:
         self._write_enabled_config(
             _isolate_env, ["memory", "context_engine", "disk-cleanup"]
         )
-        from hermes_cli import plugins as pmod
+        from zermes.hermes_cli import plugins as pmod
         mgr = pmod.PluginManager()
         mgr.discover_and_load()
         assert "memory" not in mgr._plugins

@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from tools.vision_tools import (
+from zermes.tools.vision_tools import (
     _detect_video_mime_type,
     _video_to_base64_data_url,
     _handle_video_analyze,
@@ -138,7 +138,7 @@ class TestHandleVideoAnalyze:
         monkeypatch.setenv("AUXILIARY_VIDEO_MODEL", "")
         monkeypatch.setenv("AUXILIARY_VISION_MODEL", "")
 
-        with patch("tools.vision_tools.video_analyze_tool", new_callable=AsyncMock) as mock_tool:
+        with patch("zermes.tools.vision_tools.video_analyze_tool", new_callable=AsyncMock) as mock_tool:
             mock_tool.return_value = json.dumps({"success": True, "analysis": "test"})
             result = _handle_video_analyze({"video_url": str(video_file), "question": "what is this?"})
             # Should return an awaitable (coroutine)
@@ -150,7 +150,7 @@ class TestHandleVideoAnalyze:
         monkeypatch.setenv("AUXILIARY_VIDEO_MODEL", "google/gemini-2.5-flash")
         monkeypatch.setenv("AUXILIARY_VISION_MODEL", "other-model")
 
-        with patch("tools.vision_tools.video_analyze_tool", new_callable=AsyncMock) as mock_tool:
+        with patch("zermes.tools.vision_tools.video_analyze_tool", new_callable=AsyncMock) as mock_tool:
             mock_tool.return_value = json.dumps({"success": True, "analysis": "ok"})
             asyncio.get_event_loop().run_until_complete(
                 _handle_video_analyze({"video_url": "/tmp/test.mp4", "question": "test"})
@@ -162,7 +162,7 @@ class TestHandleVideoAnalyze:
         monkeypatch.setenv("AUXILIARY_VIDEO_MODEL", "")
         monkeypatch.setenv("AUXILIARY_VISION_MODEL", "google/gemini-flash")
 
-        with patch("tools.vision_tools.video_analyze_tool", new_callable=AsyncMock) as mock_tool:
+        with patch("zermes.tools.vision_tools.video_analyze_tool", new_callable=AsyncMock) as mock_tool:
             mock_tool.return_value = json.dumps({"success": True, "analysis": "ok"})
             asyncio.get_event_loop().run_until_complete(
                 _handle_video_analyze({"video_url": "/tmp/test.mp4", "question": "test"})
@@ -191,8 +191,8 @@ class TestVideoAnalyzeTool:
         mock_response.choices = [MagicMock()]
         mock_response.choices[0].message.content = "A short video showing a demo."
 
-        with patch("tools.vision_tools.async_call_llm", new_callable=AsyncMock, return_value=mock_response):
-            with patch("tools.vision_tools.extract_content_or_reasoning", return_value="A short video showing a demo."):
+        with patch("zermes.tools.vision_tools.async_call_llm", new_callable=AsyncMock, return_value=mock_response):
+            with patch("zermes.tools.vision_tools.extract_content_or_reasoning", return_value="A short video showing a demo."):
                 result = self._run(video_analyze_tool(str(video), "What is this?"))
 
         data = json.loads(result)
@@ -223,7 +223,7 @@ class TestVideoAnalyzeTool:
         video.write_bytes(b"\x00" * 100)
 
         # Patch the base64 encoding to return something huge
-        with patch("tools.vision_tools._video_to_base64_data_url") as mock_encode:
+        with patch("zermes.tools.vision_tools._video_to_base64_data_url") as mock_encode:
             mock_encode.return_value = "data:video/mp4;base64," + "A" * (_MAX_VIDEO_BASE64_BYTES + 1)
             result = self._run(video_analyze_tool(str(video), "What?"))
 
@@ -236,7 +236,7 @@ class TestVideoAnalyzeTool:
         video = tmp_path / "test.mp4"
         video.write_bytes(b"\x00" * 100)
 
-        with patch("tools.interrupt.is_interrupted", return_value=True):
+        with patch("zermes.tools.interrupt.is_interrupted", return_value=True):
             result = self._run(video_analyze_tool(str(video), "What?"))
 
         data = json.loads(result)
@@ -257,8 +257,8 @@ class TestVideoAnalyzeTool:
             call_count += 1
             return mock_response
 
-        with patch("tools.vision_tools.async_call_llm", side_effect=fake_llm):
-            with patch("tools.vision_tools.extract_content_or_reasoning", side_effect=["", "Video analysis result."]):
+        with patch("zermes.tools.vision_tools.async_call_llm", side_effect=fake_llm):
+            with patch("zermes.tools.vision_tools.extract_content_or_reasoning", side_effect=["", "Video analysis result."]):
                 result = self._run(video_analyze_tool(str(video), "What?"))
 
         data = json.loads(result)
@@ -274,8 +274,8 @@ class TestVideoAnalyzeTool:
         mock_response.choices = [MagicMock()]
         mock_response.choices[0].message.content = "OK"
 
-        with patch("tools.vision_tools.async_call_llm", new_callable=AsyncMock, return_value=mock_response):
-            with patch("tools.vision_tools.extract_content_or_reasoning", return_value="OK"):
+        with patch("zermes.tools.vision_tools.async_call_llm", new_callable=AsyncMock, return_value=mock_response):
+            with patch("zermes.tools.vision_tools.extract_content_or_reasoning", return_value="OK"):
                 result = self._run(video_analyze_tool(f"file://{video}", "What?"))
 
         data = json.loads(result)
@@ -295,8 +295,8 @@ class TestVideoAnalyzeTool:
             mock_response.choices[0].message.content = "OK"
             return mock_response
 
-        with patch("tools.vision_tools.async_call_llm", side_effect=capture_llm):
-            with patch("tools.vision_tools.extract_content_or_reasoning", return_value="OK"):
+        with patch("zermes.tools.vision_tools.async_call_llm", side_effect=capture_llm):
+            with patch("zermes.tools.vision_tools.extract_content_or_reasoning", return_value="OK"):
                 self._run(video_analyze_tool(str(video), "Describe this"))
 
         messages = captured_kwargs["messages"]
@@ -318,7 +318,7 @@ class TestVideoToolsetRegistration:
     """Verify the tool is registered correctly."""
 
     def test_registered_in_video_toolset(self):
-        from tools.registry import registry
+        from zermes.tools.registry import registry
         entry = registry.get_entry("video_analyze")
         assert entry is not None
         assert entry.toolset == "video"
@@ -327,11 +327,11 @@ class TestVideoToolsetRegistration:
 
     def test_not_in_core_tools(self):
         """video_analyze should NOT be in _HERMES_CORE_TOOLS (default disabled)."""
-        from toolsets import _HERMES_CORE_TOOLS
+        from zermes.toolsets import _HERMES_CORE_TOOLS
         assert "video_analyze" not in _HERMES_CORE_TOOLS
 
     def test_in_video_toolset_definition(self):
         """Toolset 'video' should contain video_analyze."""
-        from toolsets import TOOLSETS
+        from zermes.toolsets import TOOLSETS
         assert "video" in TOOLSETS
         assert "video_analyze" in TOOLSETS["video"]["tools"]

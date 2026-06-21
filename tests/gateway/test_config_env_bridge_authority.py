@@ -1,10 +1,10 @@
 """Regression tests for the config.yaml → env var bridge in gateway/run.py.
 
 Guards against the 60-vs-500 bug where a stale `.env HERMES_MAX_ITERATIONS=60`
-entry silently shadowed `agent.max_turns: 500` in config.yaml because the
+entry silently shadowed `zermes.agent.max_turns: 500` in config.yaml because the
 bridge used `if X not in os.environ` guards. After PR#18413 the bridge
 treats config.yaml as authoritative and unconditionally overwrites .env
-values for `agent.*`, `display.*`, `timezone`, and `security.*` keys.
+values for `zermes.agent.*`, `display.*`, `timezone`, and `security.*` keys.
 """
 
 from __future__ import annotations
@@ -22,7 +22,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 
 def _run_gateway_import(hermes_home: Path, initial_env: dict[str, str]) -> dict[str, str]:
-    """Import gateway.run in a clean subprocess and return the post-import env.
+    """Import zermes.gateway.run in a clean subprocess and return the post-import env.
 
     The bridge runs at module-import time, so simply importing is enough
     to exercise it. Running in a subprocess isolates the test from other
@@ -35,7 +35,7 @@ def _run_gateway_import(hermes_home: Path, initial_env: dict[str, str]) -> dict[
         sys.path.insert(0, {str(PROJECT_ROOT)!r})
 
         try:
-            from gateway import run  # noqa: F401  — module import triggers bridge
+            from zermes.gateway import run  # noqa: F401  — module import triggers bridge
         except Exception as exc:
             print(f"IMPORT_ERROR:{{type(exc).__name__}}:{{exc}}", file=sys.stderr)
             sys.exit(2)
@@ -68,7 +68,7 @@ def _run_gateway_import(hermes_home: Path, initial_env: dict[str, str]) -> dict[
     )
     if result.returncode != 0:
         pytest.fail(
-            f"gateway.run import failed (rc={result.returncode})\n"
+            f"zermes.gateway.run import failed (rc={result.returncode})\n"
             f"stderr:\n{result.stderr}\nstdout:\n{result.stdout}"
         )
     out: dict[str, str] = {}
@@ -105,7 +105,7 @@ def hermes_home(tmp_path: Path) -> Path:
 
 
 def test_config_max_turns_wins_over_stale_env(hermes_home: Path) -> None:
-    """Regression: config.yaml:agent.max_turns=500 must beat .env=60."""
+    """Regression: config.yaml:zermes.agent.max_turns=500 must beat .env=60."""
     _write_config(hermes_home, agent_cfg={"max_turns": 500})
     _write_env(hermes_home, {"HERMES_MAX_ITERATIONS": "60"})
 
@@ -118,7 +118,7 @@ def test_config_max_turns_wins_over_stale_env(hermes_home: Path) -> None:
 
 
 def test_config_gateway_timeout_wins_over_stale_env(hermes_home: Path) -> None:
-    """Every agent.* bridge key must be config-authoritative, not .env-authoritative."""
+    """Every zermes.agent.* bridge key must be config-authoritative, not .env-authoritative."""
     _write_config(hermes_home, agent_cfg={
         "gateway_timeout": 1800,
         "gateway_timeout_warning": 900,

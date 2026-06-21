@@ -1,4 +1,4 @@
-from worker_agents.department_tool_policies import (
+from zermes.worker_agents.department_tool_policies import (
     DepartmentToolPolicyRecord,
     DepartmentToolPolicyResolutionInput,
     DepartmentToolRuleEffect,
@@ -8,7 +8,7 @@ from worker_agents.department_tool_policies import (
     resolve_department_tool_policies,
     worker_effective_tool_policy_to_dict,
 )
-from worker_agents.tool_permission_snapshot import WorkerToolPermissionSnapshot
+from zermes.worker_agents.tool_permission_snapshot import WorkerToolPermissionSnapshot
 
 
 def _worker_snapshot(**overrides):

@@ -2,13 +2,13 @@
 as a local validation error by the main agent loop.
 
 `json.JSONDecodeError` inherits from `ValueError`. The agent loop's
-non-retryable classifier at run_agent.py treats `ValueError` / `TypeError`
+non-retryable classifier at zermes.run_agent.py treats `ValueError` / `TypeError`
 as local programming bugs and skips retry. Without an explicit carve-out,
 a transient provider hiccup (malformed response body, truncated stream,
 routing-layer corruption) that surfaces as a JSONDecodeError would bypass
 the retry path and fail the turn immediately.
 
-This test mirrors the exact predicate shape used in run_agent.py so that
+This test mirrors the exact predicate shape used in zermes.run_agent.py so that
 any future refactor of that predicate must preserve the invariant:
 
     JSONDecodeError     → NOT local validation error (retryable)
@@ -22,7 +22,7 @@ import json
 
 
 def _mirror_agent_predicate(err: BaseException) -> bool:
-    """Exact shape of run_agent.py's is_local_validation_error check.
+    """Exact shape of zermes.run_agent.py's is_local_validation_error check.
 
     Kept in lock-step with the source. If you change one, change both —
     or, better, refactor the check into a shared helper and have both
@@ -73,7 +73,7 @@ class TestAgentLoopSourceStillHasCarveOut:
     revert that happens to leave the test file intact."""
 
     def test_run_agent_excludes_jsondecodeerror_from_local_validation(self):
-        import run_agent
+        import zermes.run_agent as run_agent
         import inspect
         src = inspect.getsource(run_agent)
         # The predicate we care about must reference json.JSONDecodeError
@@ -82,6 +82,6 @@ class TestAgentLoopSourceStillHasCarveOut:
         # break us.
         assert "is_local_validation_error" in src
         assert "JSONDecodeError" in src, (
-            "run_agent.py must carve out json.JSONDecodeError from the "
+            "zermes.run_agent.py must carve out json.JSONDecodeError from the "
             "is_local_validation_error classification — see #14782."
         )

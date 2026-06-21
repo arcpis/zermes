@@ -2,7 +2,7 @@
 
 ``deliver_only`` lets external services (Supabase webhooks, monitoring
 alerts, background jobs, other agents) push plain-text notifications to
-a user's chat via the webhook adapter WITHOUT invoking the agent.  The
+a user's chat via the webhook adapter WITHOUT invoking the zermes.agent.  The
 rendered prompt template becomes the literal message body.
 
 Covers:
@@ -23,9 +23,9 @@ import pytest
 from aiohttp import web
 from aiohttp.test_utils import TestClient, TestServer
 
-from gateway.config import Platform, PlatformConfig
-from gateway.platforms.base import MessageEvent, SendResult
-from gateway.platforms.webhook import WebhookAdapter, _INSECURE_NO_AUTH
+from zermes.gateway.config import Platform, PlatformConfig
+from zermes.gateway.platforms.base import MessageEvent, SendResult
+from zermes.gateway.platforms.webhook import WebhookAdapter, _INSECURE_NO_AUTH
 
 
 # ---------------------------------------------------------------------------

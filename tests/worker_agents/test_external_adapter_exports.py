@@ -1,4 +1,4 @@
-from worker_agents import (
+from zermes.worker_agents import (
     ExternalAdapterBackendState,
     ExternalAdapterRegistry,
     ExternalAdapterRunRequest,
@@ -7,15 +7,15 @@ from worker_agents import (
     build_fake_external_adapter_definition,
     normalize_external_adapter_output,
 )
-from worker_agents.external_adapter_output import ExternalAdapterRawOutput
-from worker_agents.runtime_contract import (
+from zermes.worker_agents.external_adapter_output import ExternalAdapterRawOutput
+from zermes.worker_agents.runtime_contract import (
     RuntimeExecutionBudget,
     RuntimeRequest,
     RuntimeRequestContext,
     RuntimeState,
     RuntimeType,
 )
-from worker_agents.storage import WorkerAgentRuntimeDataStore
+from zermes.worker_agents.storage import WorkerAgentRuntimeDataStore
 
 
 def test_external_adapter_public_exports_work_together(tmp_path):

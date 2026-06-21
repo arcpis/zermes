@@ -30,9 +30,9 @@ def curator_env(tmp_path, monkeypatch):
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
 
     import importlib
-    import hermes_constants
+    import zermes.hermes_constants as hermes_constants
     importlib.reload(hermes_constants)
-    from agent import curator
+    from zermes.agent import curator
     importlib.reload(curator)
     yield curator
 
@@ -572,7 +572,7 @@ def test_reconcile_model_block_visible_in_full_report(curator_env):
     after = [{"name": "llm-providers", "state": "active", "pinned": False}]
 
     llm_final_text = (
-        "Processed 3 clusters. Absorbed anthropic-api into llm-providers.\n\n"
+        "Processed 3 clusters. Absorbed anthropic-api into llm-zermes.providers.\n\n"
         "## Structured summary (required)\n"
         "```yaml\n"
         "consolidations:\n"

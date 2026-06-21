@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from worker_agents.external_adapter_output import (
+from zermes.worker_agents.external_adapter_output import (
     ExternalAdapterOutputError,
     ExternalAdapterRawOutput,
     external_adapter_audit_summary,
@@ -10,8 +10,8 @@ from worker_agents.external_adapter_output import (
     failed_external_adapter_parse_result,
     normalize_external_adapter_output,
 )
-from worker_agents.external_adapter_runner import ExternalAdapterBackendState
-from worker_agents.runtime_contract import (
+from zermes.worker_agents.external_adapter_runner import ExternalAdapterBackendState
+from zermes.worker_agents.runtime_contract import (
     RuntimeErrorCode,
     RuntimeExecutionBudget,
     RuntimeRequest,

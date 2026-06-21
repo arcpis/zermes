@@ -9,7 +9,7 @@ import logging
 import types
 from unittest.mock import MagicMock, patch
 
-from run_agent import AIAgent
+from zermes.run_agent import AIAgent
 
 
 # ---------------------------------------------------------------------------

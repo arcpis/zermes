@@ -1,4 +1,4 @@
-from worker_agents import (
+from zermes.worker_agents import (
     PRIVATE_ASSET_SCHEMA_VERSION,
     PrivateAssetKind,
     PrivateAssetSensitivity,
@@ -14,7 +14,7 @@ from worker_agents import (
     skill_experience_to_proposal_input,
     validate_private_asset_payload,
 )
-from worker_agents.profile import WorkerAgentProfile
+from zermes.worker_agents.profile import WorkerAgentProfile
 
 
 def test_private_asset_boundaries_are_available_from_package():

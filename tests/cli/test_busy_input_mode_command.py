@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 
 def _import_cli():
-    import hermes_cli.config as config_mod
+    import zermes.hermes_cli.config as config_mod
 
     if not hasattr(config_mod, "save_env_value_secure"):
         config_mod.save_env_value_secure = lambda key, value: {
@@ -15,7 +15,7 @@ def _import_cli():
             "validated": False,
         }
 
-    import cli as cli_mod
+    import zermes.cli as cli_mod
 
     return cli_mod
 
@@ -110,13 +110,13 @@ class TestHandleBusyCommand(unittest.TestCase):
 
 class TestBusyCommandRegistry(unittest.TestCase):
     def test_busy_in_registry(self):
-        from hermes_cli.commands import COMMAND_REGISTRY
+        from zermes.hermes_cli.commands import COMMAND_REGISTRY
 
         names = [c.name for c in COMMAND_REGISTRY]
         assert "busy" in names
 
     def test_busy_subcommands_documented(self):
-        from hermes_cli.commands import COMMAND_REGISTRY
+        from zermes.hermes_cli.commands import COMMAND_REGISTRY
 
         busy = next(c for c in COMMAND_REGISTRY if c.name == "busy")
         assert busy.args_hint == "[queue|steer|interrupt|status]"

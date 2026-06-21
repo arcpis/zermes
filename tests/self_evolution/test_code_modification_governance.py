@@ -4,7 +4,7 @@ from pathlib import Path
 import subprocess
 import tomllib
 
-from code_modification.governance import (
+from zermes.code_modification.governance import (
     AUDIT_FILE_NAMES,
     DEFAULT_INTEGRATION_BRANCH,
     GovernancePolicy,

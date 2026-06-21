@@ -1,6 +1,6 @@
 import pytest
 
-from worker_agents.organization import (
+from zermes.worker_agents.organization import (
     OrgLifecycleState,
     OrgLeaderKind,
     OrgLeaderRef,
@@ -10,7 +10,7 @@ from worker_agents.organization import (
     OrganizationError,
     validate_org_tree_references,
 )
-from worker_agents.registry import WorkerLifecycleStatus, WorkerRegistryRecord
+from zermes.worker_agents.registry import WorkerLifecycleStatus, WorkerRegistryRecord
 
 
 def _tree_with_worker_refs():

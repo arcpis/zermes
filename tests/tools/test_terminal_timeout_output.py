@@ -1,5 +1,5 @@
 """Verify that terminal command timeouts preserve partial output."""
-from tools.environments.local import LocalEnvironment
+from zermes.tools.environments.local import LocalEnvironment
 
 
 class TestTimeoutPreservesPartialOutput:

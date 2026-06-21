@@ -1,4 +1,4 @@
-from worker_agents.message_mentions import (
+from zermes.worker_agents.message_mentions import (
     MentionDeliveryStatus,
     MentionDeliveryUpdate,
     MentionResolutionStatus,
@@ -6,7 +6,7 @@ from worker_agents.message_mentions import (
     MentionTargetKind,
     resolve_mention_targets,
 )
-from worker_agents.message_router import (
+from zermes.worker_agents.message_router import (
     ChatMessageType,
     ChatParticipantKind,
     ChatParticipantRef,
@@ -15,7 +15,7 @@ from worker_agents.message_router import (
     MessageRouterError,
     WorkerMessageEnvelope,
 )
-from worker_agents.organization import (
+from zermes.worker_agents.organization import (
     OrgLeaderKind,
     OrgLeaderRef,
     OrgLifecycleState,
@@ -23,7 +23,7 @@ from worker_agents.organization import (
     OrgNodeType,
     OrgTree,
 )
-from worker_agents.registry import WorkerLifecycleStatus
+from zermes.worker_agents.registry import WorkerLifecycleStatus
 
 
 def _organization_tree(*, duplicate_team_name: bool = False) -> OrgTree:

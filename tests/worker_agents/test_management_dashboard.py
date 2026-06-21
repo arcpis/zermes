@@ -1,4 +1,4 @@
-from worker_agents.management import (
+from zermes.worker_agents.management import (
     DashboardDataSources,
     DepartmentManagementSummary,
     OrganizationManagementNodeSummary,
@@ -9,7 +9,7 @@ from worker_agents.management import (
     filter_worker_management_list,
     organization_tree_view_node_to_dict,
 )
-from worker_agents.organization import (
+from zermes.worker_agents.organization import (
     OrgChatPolicy,
     OrgLeaderKind,
     OrgLeaderRef,
@@ -18,7 +18,7 @@ from worker_agents.organization import (
     OrgNodeType,
     OrgTree,
 )
-from worker_agents.registry import WorkerLifecycleStatus, WorkerRegistryRecord
+from zermes.worker_agents.registry import WorkerLifecycleStatus, WorkerRegistryRecord
 
 
 def _worker(worker_id: str, **kwargs):

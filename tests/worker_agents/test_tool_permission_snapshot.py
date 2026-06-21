@@ -1,13 +1,13 @@
 import pytest
 
-from worker_agents.private_assets import PrivateAssetError
-from worker_agents.profile import (
+from zermes.worker_agents.private_assets import PrivateAssetError
+from zermes.worker_agents.profile import (
     WorkerAgentProfile,
     WorkerBudgetPolicy,
     WorkerToolPolicy,
     WorkerWorkspacePolicy,
 )
-from worker_agents.tool_permission_snapshot import (
+from zermes.worker_agents.tool_permission_snapshot import (
     ToolPolicyCandidate,
     ToolPolicyViolationCode,
     build_tool_permission_snapshot,
@@ -136,8 +136,8 @@ def test_policy_candidate_metadata_rejects_secret_material():
 
 def test_building_snapshot_does_not_mutate_profile():
     profile = _profile()
-    before = profile.tools.allowed_tools
+    before = profile.zermes.tools.allowed_tools
 
     build_tool_permission_snapshot(profile)
 
-    assert profile.tools.allowed_tools == before
+    assert profile.zermes.tools.allowed_tools == before

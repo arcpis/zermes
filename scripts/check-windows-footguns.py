@@ -77,8 +77,8 @@ EXCLUDED_DIRS = {
     ".mypy_cache",
     ".pytest_cache",
     "site-packages",
-    "website/build",
-    "optional-skills",  # external skills
+    "apps/website/build",
+    "resources/skills/optional",  # external skills
 }
 
 # File globs we never scan (beyond the dirs above).
@@ -186,7 +186,7 @@ FOOTGUNS: list[Footgun] = [
         ),
         fix=(
             "Use psutil.pid_exists(pid) (psutil is a core dependency). "
-            "Or gateway.status._pid_exists(pid) for the hermes wrapper "
+            "Or zermes.gateway.status._pid_exists(pid) for the hermes wrapper "
             "with a stdlib fallback."
         ),
     ),
@@ -568,7 +568,7 @@ def main(argv: list[str]) -> int:
             REPO_ROOT / "plugins",
             REPO_ROOT / "scripts",
             REPO_ROOT / "acp_adapter",
-            REPO_ROOT / "acp_registry",
+            REPO_ROOT / "resources" / "acp-registry",
         ]
         roots = [r for r in roots if r.exists()]
     elif args.diff:

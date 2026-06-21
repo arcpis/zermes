@@ -17,7 +17,7 @@ Docker Backend in ``website/docs/user-guide/configuration.md``.
 
 import pytest
 
-from tools import terminal_tool
+from zermes.tools import terminal_tool
 
 
 @pytest.fixture(autouse=True)

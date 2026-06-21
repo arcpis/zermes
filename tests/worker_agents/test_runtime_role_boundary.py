@@ -1,6 +1,6 @@
 import pytest
 
-from worker_agents.runtime_boundary import (
+from zermes.worker_agents.runtime_boundary import (
     AgentRuntimeBoundaryError,
     AgentRuntimeLifecycle,
     AgentRuntimePersona,

@@ -5,7 +5,7 @@ symlinks, which it swaps for a regular file.  Managed deployments that
 symlink ``~/.hermes/config.yaml`` (and other state files) to a git-tracked
 profile package were silently detached on every config write.
 
-The fix: a shared ``atomic_replace`` helper in ``utils.py`` that resolves the
+The fix: a shared ``atomic_replace`` helper in ``zermes.utils.py`` that resolves the
 target through ``os.path.realpath`` when it is a symlink, so the real file is
 overwritten in-place while the symlink survives.  All atomic-write sites in
 the codebase were migrated to the helper; these tests pin that invariant.
@@ -25,7 +25,7 @@ _REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-from utils import atomic_json_write, atomic_replace, atomic_yaml_write
+from zermes.utils import atomic_json_write, atomic_replace, atomic_yaml_write
 
 
 # ─── Direct helper ────────────────────────────────────────────────────────────

@@ -1,6 +1,6 @@
 import pytest
 
-from worker_agents.department_memory import (
+from zermes.worker_agents.department_memory import (
     DepartmentMemoryError,
     DepartmentMemoryKind,
     DepartmentMemoryProposal,

@@ -1,11 +1,11 @@
-from worker_agents.department_skills import DepartmentSkillBindingRecord
-from worker_agents.department_tool_policies import (
+from zermes.worker_agents.department_skills import DepartmentSkillBindingRecord
+from zermes.worker_agents.department_tool_policies import (
     DepartmentToolPolicyRecord,
     DepartmentToolPolicySnapshot,
     DepartmentToolRiskLevel,
     DepartmentToolRuleEffect,
 )
-from worker_agents.organization_asset_disposition import (
+from zermes.worker_agents.organization_asset_disposition import (
     GovernanceDispositionPolicy,
     PermissionDispositionDecision,
     PermissionDispositionFindingCode,
@@ -18,9 +18,9 @@ from worker_agents.organization_asset_disposition import (
     plan_tool_policy_disposition,
     review_disposition_permissions,
 )
-from worker_agents.private_assets import PrivateAssetSensitivity
-from worker_agents.private_skill_experience import PrivateSkillExperience
-from worker_agents.tool_permission_snapshot import WorkerToolPermissionSnapshot
+from zermes.worker_agents.private_assets import PrivateAssetSensitivity
+from zermes.worker_agents.private_skill_experience import PrivateSkillExperience
+from zermes.worker_agents.tool_permission_snapshot import WorkerToolPermissionSnapshot
 
 
 def test_skill_and_tool_disposition_keeps_blocked_items_out_of_active_candidates():

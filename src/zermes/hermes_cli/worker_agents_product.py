@@ -1,0 +1,2628 @@
+"""Product-facing Worker Agents management helpers.
+
+This module is intentionally a thin adapter over the low-sensitivity
+``zermes.worker_agents.management`` DTOs.  It reads only the management state file
+owned by Worker Agents product flows and the controlled message envelope
+store; it never scans raw runtime transcripts or adapter output.
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+import uuid
+from dataclasses import dataclass, replace
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any, Iterable, Mapping
+
+from zermes.hermes_cli.config import get_hermes_home
+from zermes.worker_agents.management import (
+    ApprovalActionRequest,
+    AssetReviewActionRequest,
+    DashboardDataSources,
+    EvolutionWizardInput,
+    WorkerAgentsExportPackageManifest,
+    build_approval_queue_item,
+    build_approval_risk_presentation,
+    build_asset_review_item,
+    build_dashboard_snapshot,
+    build_evolution_execution_view,
+    build_evolution_proposal_draft,
+    build_evolution_proposal_workbench_item,
+    build_import_dry_run_report,
+    build_managed_chat_thread_summary,
+    build_organization_tree_view,
+    build_retention_cleanup_plan,
+    build_thread_archive_summary_view,
+    build_worker_management_list,
+    dashboard_snapshot_to_dict,
+    evolution_execution_view_to_dict,
+    evolution_proposal_draft_to_dict,
+    evolution_proposal_workbench_item_to_dict,
+    filter_worker_management_list,
+    import_dry_run_report_to_dict,
+    managed_chat_thread_summary_to_dict,
+    organization_tree_view_node_to_dict,
+    retention_cleanup_plan_to_dict,
+    sort_worker_management_list,
+    validate_approval_action_request,
+    worker_management_list_item_to_dict,
+    approval_action_request_to_dict,
+    approval_audit_record_to_dict,
+    approval_queue_item_to_dict,
+    approval_risk_presentation_to_dict,
+    asset_review_item_to_dict,
+    create_approval_audit_record,
+    thread_archive_summary_view_to_dict,
+)
+from zermes.worker_agents.management.import_export import (
+    export_package_manifest_to_dict,
+)
+from zermes.worker_agents.management.root_workers import (
+    DEFAULT_GROUP_THREAD_ID,
+    collect_enabled_root_worker_ids,
+)
+from zermes.worker_agents.message_broadcasts import (
+    BroadcastImportance,
+    BroadcastTarget,
+    BroadcastTargetKind,
+    broadcast_delivery_record_to_dict,
+)
+from zermes.worker_agents.message_mentions import (
+    MentionTarget,
+    MentionTargetKind,
+    mention_delivery_record_to_dict,
+    resolve_mention_targets,
+)
+from zermes.worker_agents.organization import MAIN_AGENT_ID, org_tree_from_dict, org_tree_to_dict
+from zermes.worker_agents.profile import (
+    DEFAULT_WORKER_TOOLS,
+    WorkerAgentProfile,
+    WorkerBudgetPolicy,
+    WorkerCommunicationPolicy,
+    WorkerDelegationPolicy,
+    WorkerExecutionLimits,
+    WorkerModelSettings,
+    WorkerToolPolicy,
+    WorkerWorkspacePolicy,
+)
+from zermes.worker_agents.registry import WorkerRegistryError, worker_registry_record_to_dict
+from zermes.worker_agents.message_router import (
+    ChatMessageType,
+    ChatParticipantKind,
+    ChatParticipantRef,
+    ChatRecipientScope,
+    ChatThreadType,
+    MessageDeliveryStatus,
+    MessageRouter,
+    MessageRouterError,
+    MessageVisibility,
+    WorkerChatThread,
+    WorkerMessageEnvelope,
+    chat_thread_from_dict,
+    chat_thread_to_dict,
+    message_envelope_from_dict,
+    message_envelope_to_dict,
+)
+from zermes.worker_agents.runtime_reply_channel import (
+    RuntimeReplyHandler,
+    dispatch_chat_message_to_worker_runtime,
+    runtime_reply_dispatch_to_dict,
+    target_worker_ids_for_chat_message,
+)
+from zermes.worker_agents.internal_runtime_runner import InternalWorkerRuntimeRunner
+from zermes.worker_agents.runtime_facade import SharedAgentRuntimeFacade
+from zermes.worker_agents.worker_llm_executor import WorkerLLMExecutor
+from zermes.worker_agents.registry_service import WorkerRegistryService
+from zermes.worker_agents.storage import WorkerAgentProfileStore, WorkerAgentRuntimeDataStore
+from zermes.worker_agents.task_service import WorkerTaskService
+from zermes.worker_agents.task_state import TERMINAL_TASK_STATUSES, WorkerTaskError
+from zermes.worker_agents.storage.safe_paths import validate_single_path_segment
+from zermes.worker_agents.worker_prompt_summary import (
+    build_worker_prompt_summary,
+    worker_prompt_summary_to_dict,
+)
+from zermes.worker_agents.runtime_contract import RuntimeRequest
+
+
+MANAGEMENT_STATE_RELATIVE_PATH = Path("worker_agents") / "management" / "dashboard_state.json"
+FORBIDDEN_KEY_MARKERS = (
+    "api_key",
+    "credential",
+    "password",
+    "raw_transcript",
+    "secret",
+    "stderr",
+    "stdout",
+    "token",
+    "transcript",
+)
+
+_log = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class ChatHistoryQuery:
+    thread_id: str
+    limit: int = 50
+    cursor: str | None = None
+    since: str | None = None
+    message_type: str | None = None
+    sender: str | None = None
+    delivery_status: str | None = None
+
+
+def load_management_state(home: Path | None = None) -> dict[str, Any]:
+    """Load the low-sensitivity Worker Agents management state."""
+
+    state_path = _management_state_path(home)
+    if not state_path.exists():
+        return _empty_management_state()
+    with state_path.open("r", encoding="utf-8") as handle:
+        data = json.load(handle)
+    if not isinstance(data, Mapping):
+        raise ValueError("Worker Agents management state must be a JSON object")
+    return _sanitize_mapping(data)
+
+
+def write_management_state_for_tests(data: Mapping[str, Any], home: Path | None = None) -> Path:
+    """Write sanitized management state for test fixtures and local demos."""
+
+    state_path = _management_state_path(home)
+    state_path.parent.mkdir(parents=True, exist_ok=True)
+    state_path.write_text(
+        json.dumps(_sanitize_mapping(data), indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
+    return state_path
+
+
+def write_management_state(data: Mapping[str, Any], home: Path | None = None) -> Path:
+    """Write sanitized Worker Agents management state for product entrypoints."""
+
+    return write_management_state_for_tests(data, home)
+
+
+def materialize_and_persist_threads(
+    *,
+    org_node_ids: Iterable[str],
+    organization_tree: Any,
+    worker_records: Mapping[str, Any],
+    home: Path | None = None,
+    user_id: str = "user",
+) -> list[dict[str, Any]]:
+    """Materialize affected department chats into durable product state.
+
+    Evolution execution owns the registry and tree writes. This function is the
+    narrow product-state bridge that makes those writes visible to chat routing
+    immediately, instead of waiting for a later lazy list operation.
+    """
+
+    target_node_ids = tuple(
+        dict.fromkeys(
+            validate_single_path_segment(str(node_id), "org_node_id")
+            for node_id in org_node_ids
+            if str(node_id)
+        )
+    )
+    if not target_node_ids:
+        return []
+    validate_single_path_segment(user_id, "user_id")
+
+    state = load_management_state(home)
+    state["organization_tree"] = _organization_tree_payload(organization_tree)
+    state["worker_records"] = _worker_records_payload(worker_records)
+
+    changed_threads = _sync_department_threads_in_state(
+        state,
+        org_node_ids=target_node_ids,
+        user_id=user_id,
+    )
+    if not changed_threads:
+        return []
+
+    state["source_updated_at"] = _now_iso()
+    state["source_revision"] = str(
+        _mapping(state.get("organization_tree")).get("revision", "")
+    )
+    write_management_state(state, home)
+    for thread in changed_threads:
+        _persist_thread_metadata(thread, home=home)
+    _persist_thread_index(_sequence(state.get("threads")), home=home)
+    return _sanitize_sequence(changed_threads)
+
+
+def get_overview() -> dict[str, Any]:
+    state = load_management_state()
+    sources = DashboardDataSources(
+        worker_records=_mapping(state.get("worker_records")),
+        organization_tree=_optional_mapping(state.get("organization_tree")),
+        department_summaries=_sequence(state.get("department_summaries")),
+        health_summaries=_mapping(state.get("health_summaries")),
+        policy_summaries=_string_mapping(state.get("policy_summaries")),
+        source_revision=str(state.get("source_revision", "")),
+        source_updated_at=_optional_str(state.get("source_updated_at")),
+    )
+    return _sanitize_mapping(dashboard_snapshot_to_dict(build_dashboard_snapshot(sources)))
+
+
+def list_workers(
+    *,
+    status: str | None = None,
+    department_id: str | None = None,
+    runtime_type: str | None = None,
+    risk_badge: str | None = None,
+    sort_key: str = "display_name",
+) -> list[dict[str, Any]]:
+    snapshot = _dashboard_snapshot_from_state(load_management_state())
+    rows = sort_worker_management_list(
+        filter_worker_management_list(
+            build_worker_management_list(snapshot),
+            status=status,
+            department_id=department_id,
+            runtime_type=runtime_type,
+            risk_badge=risk_badge,
+        ),
+        sort_key=sort_key,
+    )
+    return _sanitize_sequence(worker_management_list_item_to_dict(row) for row in rows)
+
+
+def get_worker_prompt_summary(worker_id: str) -> dict[str, Any]:
+    """Return the low-sensitive runtime prompt summary for one worker."""
+
+    validate_single_path_segment(worker_id, "worker_id")
+    state = _state_with_materialized_department_chats(load_management_state())
+    worker = _optional_mapping(_mapping(state.get("worker_records")).get(worker_id))
+    if worker is None:
+        raise ValueError(f"worker does not exist: {worker_id!r}")
+    summary = build_worker_prompt_summary(
+        profile=_worker_profile_from_management_record(worker),
+        organization_tree=_organization_tree_from_state(state),
+        department_chat_bindings=_department_chat_bindings_from_state(state),
+        private_thread_ids=_private_thread_ids_for_worker(state, worker_id),
+    )
+    return _sanitize_mapping(worker_prompt_summary_to_dict(summary))
+
+
+def get_organization_tree() -> list[dict[str, Any]]:
+    snapshot = _dashboard_snapshot_from_state(load_management_state())
+    return _sanitize_sequence(
+        organization_tree_view_node_to_dict(node)
+        for node in build_organization_tree_view(snapshot.organization_nodes)
+    )
+
+
+def list_chats() -> list[dict[str, Any]]:
+    state = load_management_state()
+    state = _state_with_materialized_department_chats(state)
+    return _sanitize_sequence(
+        managed_chat_thread_summary_to_dict(
+            build_managed_chat_thread_summary(
+                thread,
+                status=str(thread.get("status", "active")),
+                last_summary=str(thread.get("last_summary", thread.get("audit_summary", ""))),
+            )
+        )
+        for thread in _sequence(state.get("threads"))
+    )
+
+
+def ensure_department_chat(
+    *,
+    org_node_id: str,
+    user_id: str = "user",
+    dry_run: bool = False,
+) -> dict[str, Any]:
+    """Create or return the default user-present chat for one active department."""
+
+    validate_single_path_segment(org_node_id, "org_node_id")
+    validate_single_path_segment(user_id, "user_id")
+    state = load_management_state()
+    response = _ensure_department_chat_in_state(
+        state,
+        org_node_id=org_node_id,
+        user_id=user_id,
+        dry_run=dry_run,
+    )
+    if response.get("updated_status") in ("created", "updated") and not dry_run:
+        state["source_updated_at"] = _now_iso()
+        write_management_state(state)
+    return _sanitize_mapping(response)
+
+
+def ensure_direct_worker_chat(
+    *,
+    worker_id: str,
+    user_id: str = "user",
+    dry_run: bool = False,
+) -> dict[str, Any]:
+    """Create or return the user-present direct chat for one enabled worker.
+
+    This only updates the low-sensitivity product management state. It does not
+    create worker profiles, alter the registry, or grant any new permissions.
+    """
+
+    validate_single_path_segment(worker_id, "worker_id")
+    validate_single_path_segment(user_id, "user_id")
+    state = _state_with_materialized_department_chats(load_management_state())
+    worker = _optional_mapping(_mapping(state.get("worker_records")).get(worker_id))
+    if worker is None:
+        raise ValueError(f"worker does not exist: {worker_id!r}")
+    status = str(worker.get("status", "")).lower()
+    if status != "enabled":
+        return _sanitize_mapping(
+            {
+                "action": "ensure_direct_worker_chat",
+                "target_id": worker_id,
+                "updated_status": "disabled",
+                "disabled_reason": f"worker is not enabled: {status or 'unknown'}",
+                "next_required_action": "enable_worker_before_chat",
+            }
+        )
+
+    existing = _find_direct_thread(state, worker_id, user_id)
+    if existing is not None:
+        _log.info(
+            "Worker agents direct chat thread already exists: thread_id=%s, worker_id=%s, user_id=%s",
+            existing["thread_id"],
+            worker_id,
+            user_id,
+        )
+        return _sanitize_mapping(
+            {
+                "action": "ensure_direct_worker_chat",
+                "target_id": worker_id,
+                "updated_status": "existing",
+                "thread": _thread_response(existing),
+                "audit_ref": f"worker_agents/threads/{existing['thread_id']}",
+                "next_required_action": "open_chat_thread",
+            }
+        )
+
+    thread = _build_direct_thread(worker, worker_id=worker_id, user_id=user_id)
+    if not dry_run:
+        state["threads"] = [*_sequence(state.get("threads")), thread]
+        state["source_updated_at"] = _now_iso()
+        write_management_state(state)
+    _log.info(
+        "Worker agents direct chat thread created: thread_id=%s, worker_id=%s, user_id=%s, dry_run=%s",
+        thread["thread_id"],
+        worker_id,
+        user_id,
+        dry_run,
+    )
+    return _sanitize_mapping(
+        {
+            "action": "ensure_direct_worker_chat",
+            "target_id": worker_id,
+            "updated_status": "validated" if dry_run else "created",
+            "thread": _thread_response(thread),
+            "audit_ref": f"worker_agents/threads/{thread['thread_id']}",
+            "next_required_action": "open_chat_thread",
+        }
+    )
+
+
+def list_mentions() -> list[dict[str, Any]]:
+    return _sanitize_sequence(_sequence(load_management_state().get("mentions")))
+
+
+def list_broadcasts() -> list[dict[str, Any]]:
+    return _sanitize_sequence(_sequence(load_management_state().get("broadcasts")))
+
+
+def list_approvals() -> list[dict[str, Any]]:
+    items = [build_approval_queue_item(item) for item in _sequence(load_management_state().get("approvals"))]
+    return _sanitize_sequence(approval_queue_item_to_dict(item) for item in items)
+
+
+def list_assets() -> list[dict[str, Any]]:
+    items = [build_asset_review_item(item) for item in _sequence(load_management_state().get("assets"))]
+    return _sanitize_sequence(asset_review_item_to_dict(item) for item in items)
+
+
+def list_evolution() -> list[dict[str, Any]]:
+    items = [
+        build_evolution_proposal_workbench_item(item)
+        for item in _sequence(load_management_state().get("evolution"))
+    ]
+    return _sanitize_sequence(evolution_proposal_workbench_item_to_dict(item) for item in items)
+
+
+def get_retention_cleanup_plan() -> dict[str, Any]:
+    plan = build_retention_cleanup_plan(_sequence(load_management_state().get("retention_candidates")))
+    return _sanitize_mapping(retention_cleanup_plan_to_dict(plan))
+
+
+def get_export_manifest() -> dict[str, Any]:
+    raw = _optional_mapping(load_management_state().get("export_manifest")) or {
+        "profile_id": "default",
+        "created_at": _now_iso(),
+        "sections": [],
+    }
+    manifest = WorkerAgentsExportPackageManifest(
+        profile_id=str(raw.get("profile_id", "default")),
+        created_at=str(raw.get("created_at", _now_iso())),
+    )
+    return _sanitize_mapping(export_package_manifest_to_dict(manifest))
+
+
+def get_import_dry_run(manifest_path: str | None = None) -> dict[str, Any]:
+    state = load_management_state()
+    raw_manifest = _load_manifest_payload(manifest_path) if manifest_path else _optional_mapping(state.get("export_manifest"))
+    manifest = WorkerAgentsExportPackageManifest(
+        profile_id=str((raw_manifest or {}).get("profile_id", "default")),
+        created_at=str((raw_manifest or {}).get("created_at", _now_iso())),
+        schema_version=int((raw_manifest or {}).get("schema_version", 1)),
+    )
+    report = build_import_dry_run_report(
+        manifest,
+        _optional_mapping(state.get("import_context")) or {},
+    )
+    return _sanitize_mapping(import_dry_run_report_to_dict(report))
+
+
+def get_thread_history(query: ChatHistoryQuery) -> dict[str, Any]:
+    thread = _require_thread(query.thread_id)
+    messages = _read_thread_messages(query.thread_id)
+    filtered = _filter_messages(messages, query)
+    start = _cursor_to_index(query.cursor)
+    limit = max(1, min(query.limit, 200))
+    page = filtered[start : start + limit]
+    next_cursor = str(start + limit) if start + limit < len(filtered) else None
+    return {
+        "thread": managed_chat_thread_summary_to_dict(
+            build_managed_chat_thread_summary(thread, status=str(thread.get("status", "active")))
+        ),
+        "messages": _sanitize_sequence(message_envelope_to_dict(message) for message in page),
+        "next_cursor": next_cursor,
+    }
+
+
+def get_thread_members(thread_id: str) -> list[dict[str, Any]]:
+    validate_single_path_segment(thread_id, "thread_id")
+    state = _state_with_materialized_department_chats(load_management_state())
+    thread = _require_thread_from_state(state, thread_id)
+    worker_records = _mapping(state.get("worker_records"))
+    members: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for participant in _sequence(thread.get("participants")):
+        participant_map = _optional_mapping(participant) if isinstance(participant, Mapping) else {}
+        kind = str(participant_map.get("kind", ""))
+        participant_id = str(participant_map.get("participant_id", ""))
+        if kind != "worker" or not participant_id or participant_id in seen:
+            continue
+        seen.add(participant_id)
+        worker_record = _optional_mapping(worker_records.get(participant_id))
+        display_name = str(worker_record.get("display_name", participant_id)) if worker_record else participant_id
+        members.append({
+            "worker_id": participant_id,
+            "display_name": display_name,
+        })
+    return _sanitize_sequence(members)
+
+
+def send_chat_message(
+    *,
+    thread_id: str,
+    sender_id: str,
+    text: str,
+    message_type: str = "normal",
+    sender_kind: str = "user",
+    target_ids: Iterable[str] = (),
+    target_kind: str | None = None,
+    target_id: str | None = None,
+    importance: str = "informational",
+    dry_run: bool = False,
+    runtime_reply_handler: RuntimeReplyHandler | None = None,
+) -> dict[str, Any]:
+    state = load_management_state()
+    routing_state = _state_with_materialized_department_chats(state)
+    thread = _find_thread_by_id(routing_state, thread_id)
+    if thread is None and thread_id == DEFAULT_GROUP_THREAD_ID:
+        _ensure_default_group_thread_in_state(state, user_id="user", dry_run=False)
+        state["source_updated_at"] = _now_iso()
+        write_management_state(state)
+        state = load_management_state()
+        routing_state = _state_with_materialized_department_chats(state)
+        thread = _find_thread_by_id(routing_state, thread_id)
+    if thread is None:
+        raise ValueError(f"chat thread does not exist: {thread_id!r}")
+    _require_writable_thread(thread)
+    thread_type = str(thread.get("thread_type", ""))
+    chat_kind = "direct" if thread_type == "direct" else "group"
+    message = _build_outbound_message(
+        thread_id=thread_id,
+        sender_id=sender_id,
+        sender_kind=sender_kind,
+        text=text,
+        message_type=message_type,
+        target_ids=tuple(target_ids),
+    )
+    _log.info(
+        "Worker agents chat message received: message_id=%s, thread_id=%s, chat_kind=%s, sender_id=%s, message_type=%s, text=%r",
+        message.message_id,
+        thread_id,
+        chat_kind,
+        sender_id,
+        message_type,
+        text[:200],
+    )
+    router = MessageRouter()
+    router.add_thread(chat_thread_from_dict(_thread_contract_dict(thread)))
+    for existing in _read_thread_messages(thread_id):
+        router.append_message(existing)
+    delivery_records: tuple[Mapping[str, Any], ...] = ()
+    runtime_dispatches: list[Mapping[str, Any]] = []
+    if not dry_run:
+        delivery_records = _append_routed_message(
+            router=router,
+            state=routing_state,
+            message=message,
+            target_ids=tuple(target_ids),
+            target_kind=target_kind,
+            target_id=target_id,
+            importance=importance,
+        )
+        _append_thread_message(message)
+        if runtime_reply_handler is not None:
+            runtime_dispatches = _dispatch_runtime_replies_for_message(
+                router=router,
+                thread=chat_thread_from_dict(_thread_contract_dict(thread)),
+                message=message,
+                delivery_records=delivery_records,
+                runtime_reply_handler=runtime_reply_handler,
+            )
+        if delivery_records:
+            _append_delivery_records(state, message.message_type, delivery_records)
+            state["source_updated_at"] = _now_iso()
+            write_management_state(state)
+    else:
+        delivery_records = _append_routed_message(
+            router=router,
+            state=routing_state,
+            message=message,
+            target_ids=tuple(target_ids),
+            target_kind=target_kind,
+            target_id=target_id,
+            importance=importance,
+        )
+    audit: dict[str, Any] = {}
+    if delivery_records:
+        audit["delivery_records"] = list(delivery_records)
+    if runtime_dispatches:
+        audit["runtime_dispatches"] = runtime_dispatches
+    return _action_response(
+        action=f"chat_{message_type}",
+        target_id=thread_id,
+        audit_ref=f"worker_agents/threads/{thread_id}/{message.message_id}",
+        summary="Message accepted by the managed message router."
+        if not dry_run
+        else "Message route validated; no message was written.",
+        updated_status="validated" if dry_run else "created",
+        audit=audit or None,
+    )
+
+
+def build_worker_runtime_reply_handler() -> RuntimeReplyHandler:
+    """Build the default handler used by CLI and dashboard chat sends."""
+
+    return _build_worker_runtime_handler()
+
+
+def _build_worker_runtime_handler() -> RuntimeReplyHandler:
+    """Return the concrete RuntimeReplyHandler used by product chat sends."""
+
+    def _handle_runtime_reply(request: RuntimeRequest):
+        _log.info(
+            "Worker runtime reply handler invoked: request_id=%s, worker_id=%s",
+            request.request_id,
+            request.worker_id,
+        )
+        state = _state_with_materialized_department_chats(load_management_state())
+        task_service = _build_worker_task_service_from_profile_home()
+        _ensure_runtime_worker_profile(
+            task_service,
+            worker_id=request.worker_id,
+            state=state,
+        )
+        _ensure_chat_runtime_task(task_service, request)
+
+        worker_model = _worker_default_model(task_service, request.worker_id)
+        executor = WorkerLLMExecutor.from_main_agent_runtime(
+            target_model=worker_model,
+        )
+        facade = SharedAgentRuntimeFacade(llm_executor=executor)
+
+        result = InternalWorkerRuntimeRunner(
+            task_service=task_service, facade=facade,
+        ).run_runtime_request(request)
+        _log.info(
+            "Worker runtime reply handler completed: request_id=%s, final_state=%s",
+            request.request_id,
+            result.final_state.value,
+        )
+        return result
+
+    return _handle_runtime_reply
+
+
+def _worker_default_model(task_service: WorkerTaskService, worker_id: str) -> str | None:
+    try:
+        profile = task_service.registry_service.profile_store.load_worker_profile(worker_id)
+        return profile.model.default_model or None
+    except Exception:
+        return None
+
+
+def _build_worker_task_service_from_profile_home() -> WorkerTaskService:
+    registry = WorkerRegistryService(WorkerAgentProfileStore())
+    return WorkerTaskService.from_registry_service(
+        registry,
+        runtime_store=WorkerAgentRuntimeDataStore(),
+    )
+
+
+def _ensure_runtime_worker_profile(
+    task_service: WorkerTaskService,
+    *,
+    worker_id: str,
+    state: Mapping[str, Any],
+) -> None:
+    worker = _optional_mapping(_mapping(state.get("worker_records")).get(worker_id))
+    if worker is None:
+        try:
+            task_service.registry_service.get_worker(worker_id)
+        except WorkerRegistryError:
+            raise ValueError(f"worker does not exist: {worker_id!r}")
+    else:
+        status = str(worker.get("status", "")).lower()
+        if status != "enabled":
+            raise ValueError(f"worker is not enabled: {worker_id!r}")
+        try:
+            task_service.registry_service.get_worker(worker_id)
+        except WorkerRegistryError:
+            task_service.registry_service.register_worker(
+                profile=_runtime_worker_profile_from_management_record(worker),
+                created_by="worker_chat_runtime",
+            )
+    task_service.registry_service.enable_worker(
+        worker_id,
+        updated_by="worker_chat_runtime",
+    )
+
+
+def _ensure_chat_runtime_task(
+    task_service: WorkerTaskService,
+    request: RuntimeRequest,
+) -> None:
+    try:
+        existing = task_service.get_task(request.task_id)
+    except WorkerTaskError:
+        task_service.create_task(
+            task_id=request.task_id,
+            worker_id=request.worker_id,
+            title=f"Reply to chat message {request.context.source_thread_id or request.task_id}",
+            objective=request.context.input_message,
+            created_by=request.requested_by,
+            input_summary=request.context.input_message,
+            origin_thread_id=request.context.source_thread_id,
+            report_to_thread_id=request.context.source_thread_id,
+            queue=True,
+            tags=("chat_runtime_reply",),
+            workspace={
+                "source_thread_id": request.context.source_thread_id,
+                "source_message_refs": list(request.context.source_message_refs),
+            },
+        )
+        return
+
+    if existing.status in TERMINAL_TASK_STATUSES:
+        raise WorkerTaskError(
+            f"Task {request.task_id!r} already in terminal state "
+            f"{existing.status.value!r}; cannot restart"
+        )
+
+
+def _runtime_worker_profile_from_management_record(
+    record: Mapping[str, Any],
+) -> WorkerAgentProfile:
+    profile = _worker_profile_from_management_record(record)
+    # Management records may predate durable worker profiles and omit runtime
+    # budgets. The internal context contract still needs at least one concrete
+    # execution limit to build a RuntimeExecutionBudget safely.
+    return WorkerAgentProfile(
+        **{
+            **profile.__dict__,
+            "budgets": WorkerBudgetPolicy(
+                max_task_tokens=profile.budgets.max_task_tokens or 4000,
+                max_turn_tokens=profile.budgets.max_turn_tokens or 1000,
+                max_task_cost_usd=profile.budgets.max_task_cost_usd,
+            ),
+            "limits": WorkerExecutionLimits(
+                max_concurrent_tasks=profile.limits.max_concurrent_tasks,
+                timeout_seconds=profile.limits.timeout_seconds or 120,
+                max_retries=profile.limits.max_retries,
+                queue_policy=profile.limits.queue_policy,
+            ),
+        }
+    )
+
+
+def apply_approval_action(
+    *,
+    approval_id: str,
+    decision: str,
+    actor_id: str,
+    reason: str,
+    confirm_high_risk: bool = False,
+    delegated_reviewer_id: str | None = None,
+    dry_run: bool = False,
+) -> dict[str, Any]:
+    item = _find_by_key(list_approvals(), "approval_id", approval_id)
+    queue_item = build_approval_queue_item(item)
+    request = ApprovalActionRequest(
+        approval_id=approval_id,
+        decision=decision,
+        actor_id=actor_id,
+        reason=reason,
+        explicit_high_risk_confirmation=confirm_high_risk,
+        delegated_reviewer_id=delegated_reviewer_id,
+        decided_at=_now_iso(),
+    )
+    validate_approval_action_request(queue_item, request, allowed_actor_ids=[actor_id])
+    audit = create_approval_audit_record(queue_item, request, timestamp=_now_iso())
+    return _action_response(
+        action=f"approval_{decision}",
+        target_id=approval_id,
+        audit_ref=f"worker_agents/approvals/{approval_id}/{audit.timestamp}",
+        summary="Approval action validated." if dry_run else "Approval action request accepted.",
+        updated_status="validated" if dry_run else decision,
+        request=approval_action_request_to_dict(request),
+        audit=approval_audit_record_to_dict(audit),
+    )
+
+
+def apply_asset_action(
+    *,
+    proposal_id: str,
+    decision: str,
+    actor_id: str,
+    reason: str,
+    dry_run: bool = False,
+) -> dict[str, Any]:
+    _find_by_key(list_assets(), "proposal_id", proposal_id)
+    request = AssetReviewActionRequest(proposal_id, decision, actor_id, reason)
+    return _action_response(
+        action=f"asset_{decision}",
+        target_id=proposal_id,
+        audit_ref=f"worker_agents/assets/{proposal_id}/{_now_compact()}",
+        summary="Asset review validated." if dry_run else "Asset review action request accepted.",
+        updated_status="validated" if dry_run else decision,
+        request={
+            "proposal_id": request.proposal_id,
+            "decision": request.decision.value,
+            "actor_id": request.actor_id,
+            "reason": request.reason,
+            "accepted_refs": list(request.accepted_refs),
+            "rejected_refs": list(request.rejected_refs),
+        },
+    )
+
+
+def draft_evolution_proposal(**kwargs: Any) -> dict[str, Any]:
+    draft = build_evolution_proposal_draft(EvolutionWizardInput(**kwargs))
+    return _sanitize_mapping(evolution_proposal_draft_to_dict(draft))
+
+
+def apply_evolution_draft(**kwargs: Any) -> dict[str, Any]:
+    """Apply an approved evolution draft to the management snapshot.
+
+    This is intentionally scoped to the low-sensitivity management state used by
+    the current dashboard product surface. It does not mutate active organization
+    executor state, private worker profiles, or runtime task stores.
+    """
+
+    dry_run = bool(kwargs.pop("dry_run", False))
+    draft = build_evolution_proposal_draft(EvolutionWizardInput(**kwargs))
+    draft_data = evolution_proposal_draft_to_dict(draft)
+    if draft.blockers:
+        raise ValueError("evolution draft has blockers: " + "; ".join(draft.blockers))
+
+    kind = draft.proposal_kind.value
+    actor_id = str(kwargs.get("actor_id", ""))
+    state = load_management_state()
+    now = _now_iso()
+
+    if kind == "create_child_agent":
+        target_id, department_chat = _apply_create_child_agent(state, kwargs, now)
+        action_label = "created"
+    elif kind == "delete_child_agent":
+        target_id = _apply_delete_child_agent(state, kwargs, now, actor_id)
+        department_chat = None
+        action_label = "deleted"
+    elif kind == "merge_department":
+        target_id = _apply_merge_department(state, kwargs, now)
+        department_chat = None
+        action_label = "merged"
+    elif kind == "archive_node":
+        target_id = _apply_archive_node(state, kwargs, now, actor_id)
+        department_chat = None
+        action_label = "archived"
+    else:
+        raise ValueError(f"unsupported proposal kind: {kind!r}")
+
+    state["source_revision"] = str(
+        _int_value(
+            _optional_mapping(state.get("organization_tree") or {}).get("revision", 0)
+        )
+    )
+    state["source_updated_at"] = now
+
+    if not dry_run:
+        write_management_state(state)
+
+    result = {
+        "action": "evolution_apply_draft",
+        "target_id": target_id,
+        "updated_status": "validated" if dry_run else action_label,
+        "summary": f"Validated {kind} draft for Worker Agents management state."
+        if dry_run
+        else f"Applied {kind} draft to Worker Agents management state.",
+        "draft": draft_data,
+        "overview": _sanitize_mapping(
+            dashboard_snapshot_to_dict(
+                build_dashboard_snapshot(
+                    DashboardDataSources(
+                        worker_records=_mapping(state.get("worker_records")),
+                        organization_tree=_optional_mapping(state.get("organization_tree")),
+                        department_summaries=_sequence(state.get("department_summaries")),
+                        health_summaries=_mapping(state.get("health_summaries")),
+                        policy_summaries=_string_mapping(state.get("policy_summaries")),
+                        source_revision=str(state.get("source_revision", "")),
+                        source_updated_at=_optional_str(state.get("source_updated_at")),
+                    )
+                )
+            )
+        ),
+    }
+    if department_chat is not None:
+        result["department_chat"] = department_chat
+    return _sanitize_mapping(result)
+
+
+def _apply_create_child_agent(
+    state: dict[str, Any], kwargs: dict[str, Any], now: str
+) -> tuple[str, dict[str, Any] | None]:
+    requested_worker_id = kwargs.get("requested_worker_id")
+    if not isinstance(requested_worker_id, str) or not requested_worker_id:
+        raise ValueError("requested_worker_id is required")
+    validate_single_path_segment(requested_worker_id, "requested_worker_id")
+    target_node_id = str(kwargs.get("target_node_id", ""))
+    validate_single_path_segment(target_node_id, "target_node_id")
+
+    worker_records = dict(_mapping(state.get("worker_records")))
+    if requested_worker_id in worker_records:
+        raise ValueError(f"worker already exists in management state: {requested_worker_id!r}")
+
+    reason = str(kwargs.get("reason", "") or "")
+    display_name = _display_name_from_id(requested_worker_id)
+
+    organization_tree = _ensure_management_organization_tree(state, target_node_id, now)
+    nodes = dict(_mapping(organization_tree.get("nodes")))
+    target_node = _optional_mapping(nodes.get(target_node_id))
+    if target_node is None:
+        raise ValueError(f"target organization node does not exist: {target_node_id!r}")
+    if requested_worker_id in nodes:
+        raise ValueError(f"organization node already exists: {requested_worker_id!r}")
+
+    child_node = {
+        "org_node_id": requested_worker_id,
+        "name": display_name,
+        "node_type": "department",
+        "description": reason,
+        "responsibilities": [reason] if reason else [],
+        "parent_id": target_node_id,
+        "child_ids": [],
+        "leader": {"kind": "worker", "worker_id": requested_worker_id},
+        "member_worker_ids": [requested_worker_id],
+        "chat_policy": {
+            "default_thread_policy": "parent_group_chat",
+            "allow_default_group_chat": False,
+        },
+        "lifecycle": "active",
+        "schema_version": 1,
+    }
+    nodes[requested_worker_id] = child_node
+    target_children = list(_list_value(target_node.get("child_ids")))
+    if requested_worker_id not in target_children:
+        target_children.append(requested_worker_id)
+    nodes[target_node_id] = {**target_node, "child_ids": target_children}
+
+    revision = _int_value(organization_tree.get("revision", 0)) + 1
+    state["organization_tree"] = {
+        **organization_tree,
+        "revision": revision,
+        "updated_at": now,
+        "nodes": nodes,
+    }
+    worker_records[requested_worker_id] = {
+        "worker_id": requested_worker_id,
+        "display_name": display_name,
+        "role": "managed_worker",
+        "runtime_type": "internal",
+        "status": "enabled",
+        "allowed_tools": list(DEFAULT_WORKER_TOOLS),
+        "default_model": str(kwargs.get("default_model", "")).strip() or None,
+        "created_at": now,
+        "updated_at": now,
+        "created_by": str(kwargs.get("actor_id", "")),
+        "updated_by": str(kwargs.get("actor_id", "")),
+        "metadata": {
+            "department_ids": [requested_worker_id],
+            "parent_node_id": target_node_id,
+            "source": "worker_agents_evolution_apply_draft",
+            "summary": reason,
+        },
+    }
+    state["worker_records"] = worker_records
+    state["department_summaries"] = _upsert_department_summary(
+        _sequence(state.get("department_summaries")),
+        department_id=requested_worker_id,
+        display_name=display_name,
+        owner_worker_id=requested_worker_id,
+        reason=reason,
+    )
+
+    dry_run = bool(kwargs.get("dry_run", False))
+    department_chat = _ensure_department_chat_in_state(
+        state,
+        org_node_id=target_node_id,
+        user_id="user",
+        dry_run=dry_run,
+    )
+    return requested_worker_id, department_chat
+
+
+def _apply_delete_child_agent(
+    state: dict[str, Any], kwargs: dict[str, Any], now: str, actor_id: str
+) -> str:
+    target_node_id = str(kwargs.get("target_node_id", ""))
+    requested_worker_id = kwargs.get("requested_worker_id")
+    validate_single_path_segment(target_node_id, "target_node_id")
+    if target_node_id == "root":
+        raise ValueError("cannot delete the root node")
+
+    organization_tree = _ensure_management_organization_tree(state, target_node_id, now)
+    nodes = dict(_mapping(organization_tree.get("nodes")))
+
+    delete_node_id = target_node_id
+    if isinstance(requested_worker_id, str) and requested_worker_id:
+        validate_single_path_segment(requested_worker_id, "requested_worker_id")
+        if requested_worker_id in nodes:
+            requested_node = _optional_mapping(nodes.get(requested_worker_id))
+            if requested_node is not None:
+                requested_parent = _optional_str(requested_node.get("parent_id"))
+                if requested_parent == target_node_id:
+                    delete_node_id = requested_worker_id
+
+    if delete_node_id == "root":
+        raise ValueError("cannot delete the root node")
+
+    target_node = _optional_mapping(nodes.get(delete_node_id))
+    if target_node is None:
+        raise ValueError(f"target organization node does not exist: {delete_node_id!r}")
+
+    target_children = _list_value(target_node.get("child_ids"))
+    if target_children:
+        raise ValueError(
+            f"cannot delete node {delete_node_id!r} with active children: "
+            f"{', '.join(str(c) for c in target_children)}. "
+            f"Delete or reassign children first."
+        )
+
+    parent_id = _optional_str(target_node.get("parent_id"))
+    if parent_id and parent_id in nodes:
+        parent_node = dict(nodes[parent_id])
+        parent_children = list(_list_value(parent_node.get("child_ids")))
+        if delete_node_id in parent_children:
+            parent_children.remove(delete_node_id)
+        nodes[parent_id] = {**parent_node, "child_ids": parent_children}
+
+    del nodes[delete_node_id]
+
+    worker_records = dict(_mapping(state.get("worker_records")))
+    for worker_id in _list_value(target_node.get("member_worker_ids")):
+        record = _optional_mapping(worker_records.get(worker_id))
+        if record is not None:
+            worker_records[worker_id] = {
+                **record,
+                "status": "disabled",
+                "updated_at": now,
+                "updated_by": actor_id,
+            }
+    individual_worker_id = _optional_str(target_node.get("individual_worker_id"))
+    if individual_worker_id:
+        record = _optional_mapping(worker_records.get(individual_worker_id))
+        if record is not None:
+            worker_records[individual_worker_id] = {
+                **record,
+                "status": "disabled",
+                "updated_at": now,
+                "updated_by": actor_id,
+            }
+    state["worker_records"] = worker_records
+
+    revision = _int_value(organization_tree.get("revision", 0)) + 1
+    state["organization_tree"] = {
+        **organization_tree,
+        "revision": revision,
+        "updated_at": now,
+        "nodes": nodes,
+    }
+    return delete_node_id
+
+
+def _apply_merge_department(
+    state: dict[str, Any], kwargs: dict[str, Any], now: str
+) -> str:
+    target_node_id = str(kwargs.get("target_node_id", ""))
+    destination_node_id = str(kwargs.get("destination_node_id", ""))
+    validate_single_path_segment(target_node_id, "target_node_id")
+    validate_single_path_segment(destination_node_id, "destination_node_id")
+    if target_node_id == destination_node_id:
+        raise ValueError("source and destination nodes must be different")
+
+    organization_tree = _ensure_management_organization_tree(state, target_node_id, now)
+    nodes = dict(_mapping(organization_tree.get("nodes")))
+    source_node = _optional_mapping(nodes.get(target_node_id))
+    dest_node = _optional_mapping(nodes.get(destination_node_id))
+    if source_node is None:
+        raise ValueError(f"source node does not exist: {target_node_id!r}")
+    if dest_node is None:
+        raise ValueError(f"destination node does not exist: {destination_node_id!r}")
+
+    source_children = list(_list_value(source_node.get("child_ids")))
+    dest_children = list(_list_value(dest_node.get("child_ids")))
+    conflicting_child_ids = [c for c in source_children if c in dest_children]
+    if conflicting_child_ids:
+        raise ValueError(
+            f"source and destination share child nodes that would collide: "
+            f"{', '.join(conflicting_child_ids)}. "
+            f"Reassign or delete conflicting children before merging."
+        )
+    for child_id in source_children:
+        dest_children.append(child_id)
+        if child_id in nodes:
+            nodes[child_id] = {**nodes[child_id], "parent_id": destination_node_id}
+    nodes[destination_node_id] = {**dest_node, "child_ids": dest_children}
+
+    source_members = list(_list_value(source_node.get("member_worker_ids")))
+    dest_members = list(_list_value(dest_node.get("member_worker_ids")))
+    for member_id in source_members:
+        if member_id not in dest_members:
+            dest_members.append(member_id)
+    nodes[destination_node_id] = {**nodes[destination_node_id], "member_worker_ids": dest_members}
+
+    parent_id = _optional_str(source_node.get("parent_id"))
+    if parent_id and parent_id in nodes:
+        parent_node = dict(nodes[parent_id])
+        parent_children = list(_list_value(parent_node.get("child_ids")))
+        if target_node_id in parent_children:
+            parent_children.remove(target_node_id)
+        nodes[parent_id] = {**parent_node, "child_ids": parent_children}
+
+    del nodes[target_node_id]
+
+    worker_records = dict(_mapping(state.get("worker_records")))
+    for member_id in source_members:
+        record = _optional_mapping(worker_records.get(member_id))
+        if record is not None:
+            existing_depts = list(
+                _list_value(record.get("metadata", {}).get("department_ids", []))
+            )
+            if target_node_id in existing_depts:
+                existing_depts.remove(target_node_id)
+            if destination_node_id not in existing_depts:
+                existing_depts.append(destination_node_id)
+            existing_metadata = dict(record.get("metadata", {}))
+            existing_metadata["department_ids"] = existing_depts
+            worker_records[member_id] = {
+                **record,
+                "metadata": existing_metadata,
+                "updated_at": now,
+            }
+    state["worker_records"] = worker_records
+
+    revision = _int_value(organization_tree.get("revision", 0)) + 1
+    state["organization_tree"] = {
+        **organization_tree,
+        "revision": revision,
+        "updated_at": now,
+        "nodes": nodes,
+    }
+    return destination_node_id
+
+
+def _apply_archive_node(
+    state: dict[str, Any], kwargs: dict[str, Any], now: str, actor_id: str
+) -> str:
+    target_node_id = str(kwargs.get("target_node_id", ""))
+    validate_single_path_segment(target_node_id, "target_node_id")
+
+    organization_tree = _ensure_management_organization_tree(state, target_node_id, now)
+    nodes = dict(_mapping(organization_tree.get("nodes")))
+    target_node = _optional_mapping(nodes.get(target_node_id))
+    if target_node is None:
+        raise ValueError(f"target organization node does not exist: {target_node_id!r}")
+
+    nodes[target_node_id] = {**target_node, "lifecycle": "archived"}
+
+    worker_records = dict(_mapping(state.get("worker_records")))
+    for worker_id in _list_value(target_node.get("member_worker_ids")):
+        record = _optional_mapping(worker_records.get(worker_id))
+        if record is not None:
+            worker_records[worker_id] = {
+                **record,
+                "status": "disabled",
+                "updated_at": now,
+                "updated_by": actor_id,
+            }
+    individual_worker_id = _optional_str(target_node.get("individual_worker_id"))
+    if individual_worker_id:
+        record = _optional_mapping(worker_records.get(individual_worker_id))
+        if record is not None:
+            worker_records[individual_worker_id] = {
+                **record,
+                "status": "disabled",
+                "updated_at": now,
+                "updated_by": actor_id,
+            }
+    state["worker_records"] = worker_records
+
+    revision = _int_value(organization_tree.get("revision", 0)) + 1
+    state["organization_tree"] = {
+        **organization_tree,
+        "revision": revision,
+        "updated_at": now,
+        "nodes": nodes,
+    }
+    return target_node_id
+
+
+def update_worker_profile(**kwargs: Any) -> dict[str, Any]:
+    """Update an existing worker's profile fields and sync the management snapshot.
+
+    Supported fields: display_name, description, role, responsibilities,
+    allowed_tools, approval_required_tools, allowed_skills, default_model.
+    """
+
+    worker_id = str(kwargs.pop("worker_id", ""))
+    validate_single_path_segment(worker_id, "worker_id")
+    dry_run = bool(kwargs.pop("dry_run", False))
+
+    profile_store = WorkerAgentProfileStore()
+    try:
+        profile = profile_store.load_worker_profile(worker_id)
+    except Exception as exc:
+        raise ValueError(f"worker profile not found: {worker_id!r}") from exc
+
+    updated_fields: dict[str, Any] = {}
+
+    display_name = kwargs.get("display_name")
+    if isinstance(display_name, str) and display_name.strip():
+        profile = replace(profile, display_name=display_name.strip())
+        updated_fields["display_name"] = display_name.strip()
+
+    description = kwargs.get("description")
+    if isinstance(description, str) and description.strip():
+        profile = replace(profile, description=description.strip())
+        updated_fields["description"] = description.strip()
+
+    role = kwargs.get("role")
+    if isinstance(role, str) and role.strip():
+        profile = replace(profile, role=role.strip())
+        updated_fields["role"] = role.strip()
+
+    responsibilities = kwargs.get("responsibilities")
+    if isinstance(responsibilities, str) and responsibilities.strip():
+        items = tuple(r.strip() for r in responsibilities.split(",") if r.strip())
+        profile = replace(profile, responsibilities=items)
+        updated_fields["responsibilities"] = list(items)
+
+    allowed_tools = kwargs.get("allowed_tools")
+    if isinstance(allowed_tools, str) and allowed_tools.strip():
+        items = tuple(t.strip() for t in allowed_tools.split(",") if t.strip())
+        current_tools = profile.tools
+        profile = replace(profile, tools=replace(current_tools, allowed_tools=items))
+        updated_fields["allowed_tools"] = list(items)
+
+    approval_required_tools = kwargs.get("approval_required_tools")
+    if isinstance(approval_required_tools, str) and approval_required_tools.strip():
+        items = tuple(t.strip() for t in approval_required_tools.split(",") if t.strip())
+        current_tools = profile.tools
+        profile = replace(profile, tools=replace(current_tools, approval_required_tools=items))
+        updated_fields["approval_required_tools"] = list(items)
+
+    allowed_skills = kwargs.get("allowed_skills")
+    if isinstance(allowed_skills, str) and allowed_skills.strip():
+        items = tuple(s.strip() for s in allowed_skills.split(",") if s.strip())
+        current_skills = profile.skills
+        profile = replace(profile, skills=replace(current_skills, allowed_skill_ids=items))
+        updated_fields["allowed_skills"] = list(items)
+
+    default_model = kwargs.get("default_model")
+    if isinstance(default_model, str) and default_model.strip():
+        current_model = profile.model
+        profile = replace(profile, model=replace(current_model, default_model=default_model.strip()))
+        updated_fields["default_model"] = default_model.strip()
+
+    if not updated_fields:
+        return _sanitize_mapping({
+            "action": "update_worker_profile",
+            "worker_id": worker_id,
+            "updated_status": "no_changes",
+            "summary": "No fields to update.",
+        })
+
+    if not dry_run:
+        profile_store.save_worker_profile(profile)
+        _sync_worker_record_to_management_state(worker_id, profile)
+
+    return _sanitize_mapping({
+        "action": "update_worker_profile",
+        "worker_id": worker_id,
+        "updated_status": "validated" if dry_run else "updated",
+        "updated_fields": updated_fields,
+        "summary": f"Validated profile update for {worker_id!r}."
+        if dry_run
+        else f"Updated profile for {worker_id!r}.",
+    })
+
+
+def _sync_worker_record_to_management_state(
+    worker_id: str, profile: WorkerAgentProfile
+) -> None:
+    state = load_management_state()
+    worker_records = dict(_mapping(state.get("worker_records")))
+    record = _optional_mapping(worker_records.get(worker_id))
+    if record is None:
+        return
+    now = _now_iso()
+    worker_records[worker_id] = {
+        **record,
+        "display_name": profile.display_name,
+        "description": profile.description,
+        "role": profile.role,
+        "responsibilities": list(profile.responsibilities),
+        "allowed_tools": list(profile.zermes.tools.allowed_tools),
+        "approval_required_tools": list(profile.zermes.tools.approval_required_tools),
+        "allowed_skills": list(profile.skills.allowed_skill_ids),
+        "default_model": profile.model.default_model,
+        "updated_at": now,
+    }
+    state["worker_records"] = worker_records
+    write_management_state(state)
+
+
+def get_evolution_execution(proposal_id: str) -> dict[str, Any]:
+    record = _find_by_key(
+        _sequence(load_management_state().get("evolution_executions")),
+        "proposal_id",
+        proposal_id,
+    )
+    return _sanitize_mapping(evolution_execution_view_to_dict(build_evolution_execution_view(record)))
+
+
+def get_approval_risk(approval_id: str) -> dict[str, Any]:
+    item = build_approval_queue_item(_find_by_key(list_approvals(), "approval_id", approval_id))
+    return _sanitize_mapping(approval_risk_presentation_to_dict(build_approval_risk_presentation(item)))
+
+
+def list_thread_archives() -> list[dict[str, Any]]:
+    return _sanitize_sequence(
+        thread_archive_summary_view_to_dict(build_thread_archive_summary_view(item))
+        for item in _sequence(load_management_state().get("thread_archives"))
+    )
+
+
+def _dashboard_snapshot_from_state(state: Mapping[str, Any]):
+    return build_dashboard_snapshot(
+        DashboardDataSources(
+            worker_records=_mapping(state.get("worker_records")),
+            organization_tree=_optional_mapping(state.get("organization_tree")),
+            department_summaries=_sequence(state.get("department_summaries")),
+            health_summaries=_mapping(state.get("health_summaries")),
+            policy_summaries=_string_mapping(state.get("policy_summaries")),
+            source_revision=str(state.get("source_revision", "")),
+            source_updated_at=_optional_str(state.get("source_updated_at")),
+        )
+    )
+
+
+def _require_thread(thread_id: str) -> dict[str, Any]:
+    validate_single_path_segment(thread_id, "thread_id")
+    state = _state_with_materialized_department_chats(load_management_state())
+    return _require_thread_from_state(state, thread_id)
+
+
+def _require_thread_from_state(
+    state: Mapping[str, Any], thread_id: str
+) -> dict[str, Any]:
+    validate_single_path_segment(thread_id, "thread_id")
+    for thread in _sequence(state.get("threads")):
+        if thread.get("thread_id") == thread_id:
+            return dict(thread)
+    raise ValueError(f"chat thread does not exist: {thread_id!r}")
+
+
+def _append_routed_message(
+    *,
+    router: MessageRouter,
+    state: Mapping[str, Any],
+    message: WorkerMessageEnvelope,
+    target_ids: tuple[str, ...],
+    target_kind: str | None,
+    target_id: str | None,
+    importance: str,
+) -> tuple[Mapping[str, Any], ...]:
+    if message.message_type == ChatMessageType.NORMAL:
+        if target_kind or target_id:
+            raise ValueError("normal messages do not accept target_kind or target_id")
+        router.append_message(message)
+        return ()
+    if message.message_type == ChatMessageType.MENTION:
+        targets = _mention_targets(target_ids, target_kind=target_kind, target_id=target_id)
+        records = router.append_mention_message(
+            message=message,
+            resolved_targets=resolve_mention_targets(
+                targets,
+                organization_tree=_organization_tree_from_state(state),
+                worker_lookup=_mapping(state.get("worker_records")),
+            ),
+        )
+        return tuple(mention_delivery_record_to_dict(record) for record in records)
+    if message.message_type == ChatMessageType.BROADCAST:
+        target = _broadcast_target(
+            thread_id=message.thread_id,
+            target_kind=target_kind,
+            target_id=target_id,
+        )
+        explicit_worker_ids = target_ids if target.target_kind == BroadcastTargetKind.EXPLICIT_WORKERS else ()
+        records = router.append_broadcast_message(
+            message=message,
+            target=target,
+            importance=BroadcastImportance(importance),
+            organization_tree=_organization_tree_from_state(state),
+            explicit_worker_ids=explicit_worker_ids,
+        )
+        return tuple(broadcast_delivery_record_to_dict(record) for record in records)
+    raise ValueError(f"unsupported product chat message_type: {message.message_type.value!r}")
+
+
+def _mention_targets(
+    target_ids: tuple[str, ...], *, target_kind: str | None, target_id: str | None
+) -> tuple[MentionTarget, ...]:
+    raw_targets = tuple(
+        item for item in (*target_ids, *((target_id,) if target_id else ())) if item
+    )
+    if not raw_targets:
+        raise ValueError("mention messages require at least one target")
+    kind = MentionTargetKind(target_kind) if target_kind else None
+    return tuple(MentionTarget(raw_target=raw_target, target_kind=kind) for raw_target in raw_targets)
+
+
+def _broadcast_target(
+    *, thread_id: str, target_kind: str | None, target_id: str | None
+) -> BroadcastTarget:
+    kind = BroadcastTargetKind(target_kind or BroadcastTargetKind.THREAD.value)
+    if kind == BroadcastTargetKind.THREAD:
+        return BroadcastTarget(kind, target_id or thread_id)
+    if kind == BroadcastTargetKind.EXPLICIT_WORKERS:
+        return BroadcastTarget(kind, target_id or "explicit_workers")
+    if not target_id:
+        raise ValueError(f"{kind.value} broadcasts require target_id")
+    return BroadcastTarget(kind, target_id)
+
+
+def _organization_tree_from_state(state: Mapping[str, Any]):
+    tree = _optional_mapping(state.get("organization_tree"))
+    if tree is None:
+        return None
+    data = dict(tree)
+    nodes = _mapping(data.get("nodes"))
+    data.setdefault("tree_id", "management")
+    data.setdefault("root_node_id", _infer_root_node_id(nodes))
+    if isinstance(data.get("revision"), str) and str(data["revision"]).isdigit():
+        data["revision"] = int(str(data["revision"]))
+    return org_tree_from_dict(data)
+
+
+def _worker_profile_from_management_record(record: Mapping[str, Any]) -> WorkerAgentProfile:
+    worker_id = str(record.get("worker_id", ""))
+    default_model = str(record.get("default_model") or "").strip() or None
+    return WorkerAgentProfile(
+        worker_id=worker_id,
+        display_name=str(record.get("display_name") or _display_name_from_id(worker_id)),
+        description=str(record.get("description") or record.get("role") or worker_id),
+        role=str(record.get("role") or "worker"),
+        responsibilities=tuple(
+            str(item) for item in _list_value(record.get("responsibilities")) if item
+        ),
+        model=WorkerModelSettings(
+            default_model=default_model,
+            allowed_models=tuple(
+                str(item) for item in _list_value(record.get("allowed_models")) if item
+            ),
+        ),
+        tools=WorkerToolPolicy(
+            allowed_tools=tuple(
+                dict.fromkeys(
+                    DEFAULT_WORKER_TOOLS
+                    + tuple(
+                        str(item)
+                        for item in _list_value(record.get("allowed_tools"))
+                        if item
+                    )
+                )
+            ),
+            approval_required_tools=tuple(
+                str(item)
+                for item in _list_value(record.get("approval_required_tools"))
+                if item
+            ),
+        ),
+        workspace=WorkerWorkspacePolicy(
+            read_roots=tuple(
+                str(item) for item in _list_value(record.get("workspace_read_roots")) if item
+            ),
+            write_roots=tuple(
+                str(item) for item in _list_value(record.get("workspace_write_roots")) if item
+            ),
+        ),
+        communication=WorkerCommunicationPolicy(
+            allow_direct_user_chat=True,
+            allow_group_chat=True,
+        ),
+        budgets=WorkerBudgetPolicy(
+            max_task_tokens=_int_value(record.get("max_task_tokens")),
+            max_turn_tokens=_int_value(record.get("max_turn_tokens")),
+            max_task_cost_usd=_optional_float(record.get("max_task_cost_usd")),
+        ),
+        limits=WorkerExecutionLimits(
+            max_concurrent_tasks=max(1, _int_value(record.get("max_concurrent_tasks"))),
+            timeout_seconds=_positive_int_or_none(record.get("timeout_seconds")),
+        ),
+        delegation=WorkerDelegationPolicy(
+            allow_temporary_child_agents=bool(record.get("allow_delegation", False)),
+            allowed_child_models=tuple(
+                str(item) for item in _list_value(record.get("allowed_child_models")) if item
+            ),
+            allowed_child_tools=tuple(
+                str(item) for item in _list_value(record.get("allowed_child_tools")) if item
+            ),
+            max_child_task_tokens=_int_value(record.get("max_child_task_tokens")),
+        ),
+    )
+
+
+def _department_chat_bindings_from_state(state: Mapping[str, Any]):
+    from zermes.worker_agents.department_chats import (
+        DepartmentChatBinding,
+        DepartmentChatBindingType,
+    )
+
+    bindings = []
+    organization_tree = _optional_mapping(state.get("organization_tree"))
+    nodes = _mapping(organization_tree.get("nodes")) if organization_tree else {}
+    for thread in _sequence(state.get("threads")):
+        if str(thread.get("thread_type", "")) != "organization_group":
+            continue
+        thread_id = str(thread.get("thread_id", ""))
+        worker_ids = tuple(
+            str(participant.get("participant_id"))
+            for participant in _sequence(thread.get("participants"))
+            if participant.get("kind") == "worker" and participant.get("participant_id")
+        )
+        org_node_id = _org_node_id_from_department_thread_id(
+            thread_id
+        ) or _infer_thread_org_node_id(worker_ids, nodes)
+        if not org_node_id:
+            continue
+        if not worker_ids:
+            continue
+        bindings.append(
+            DepartmentChatBinding(
+                binding_id=f"{org_node_id}-default",
+                org_node_id=org_node_id,
+                thread_id=thread_id,
+                binding_type=DepartmentChatBindingType.DEPARTMENT_DEFAULT,
+                owner_worker_id=worker_ids[0],
+                member_worker_ids=worker_ids,
+                required_participants=tuple(
+                    ChatParticipantRef(
+                        str(participant.get("kind")),
+                        str(participant.get("participant_id")),
+                    )
+                    for participant in _sequence(thread.get("participants"))
+                    if participant.get("kind") in {"user", "main_agent"}
+                    and participant.get("participant_id")
+                ),
+                audit_summary=str(thread.get("audit_summary", "")),
+            )
+        )
+    return tuple(bindings)
+
+
+def _private_thread_ids_for_worker(
+    state: Mapping[str, Any],
+    worker_id: str,
+) -> tuple[str, ...]:
+    thread_ids = []
+    for thread in _sequence(state.get("threads")):
+        if str(thread.get("thread_type", "")) != "direct":
+            continue
+        worker_ids = [
+            str(participant.get("participant_id"))
+            for participant in _sequence(thread.get("participants"))
+            if participant.get("kind") == "worker"
+        ]
+        if worker_id in worker_ids:
+            thread_ids.append(str(thread.get("thread_id", "")))
+    return tuple(thread_id for thread_id in thread_ids if thread_id)
+
+
+def _org_node_id_from_department_thread_id(thread_id: str) -> str | None:
+    if thread_id.startswith("dept-") and len(thread_id) > len("dept-"):
+        return thread_id[len("dept-"):]
+    return None
+
+
+def _infer_thread_org_node_id(
+    worker_ids: tuple[str, ...],
+    nodes: Mapping[str, Any],
+) -> str | None:
+    thread_workers = set(worker_ids)
+    if not thread_workers:
+        return None
+    for node_id, node in sorted(nodes.items()):
+        node_data = _optional_mapping(node)
+        if node_data is None or not _node_supports_department_chat(node_data):
+            continue
+        node_workers = set(_department_worker_ids(node_data, nodes))
+        if thread_workers and thread_workers.issubset(node_workers):
+            return str(node_id)
+    return None
+
+
+def _infer_root_node_id(nodes: Mapping[str, Any]) -> str:
+    for node_id, node in nodes.items():
+        node_data = _optional_mapping(node)
+        if node_data is not None and str(node_data.get("node_type", "")).lower() == "root":
+            return str(node_id)
+    raise ValueError("organization tree root node is missing")
+
+
+def _append_delivery_records(
+    state: dict[str, Any],
+    message_type: ChatMessageType,
+    records: tuple[Mapping[str, Any], ...],
+) -> None:
+    if not records:
+        return
+    if message_type == ChatMessageType.MENTION:
+        state["mentions"] = [*_sequence(state.get("mentions")), *records]
+        return
+    if message_type == ChatMessageType.BROADCAST:
+        state["broadcasts"] = [*_sequence(state.get("broadcasts")), *records]
+
+
+def _dispatch_runtime_replies_for_message(
+    *,
+    router: MessageRouter,
+    thread: WorkerChatThread,
+    message: WorkerMessageEnvelope,
+    runtime_reply_handler: RuntimeReplyHandler,
+    delivery_records: tuple[Mapping[str, Any], ...] = (),
+) -> list[Mapping[str, Any]]:
+    """Persist public runtime replies through the same thread message store."""
+
+    if message.message_type not in {ChatMessageType.NORMAL, ChatMessageType.MENTION, ChatMessageType.BROADCAST}:
+        return []
+    dispatches = []
+    for worker_id in _runtime_target_worker_ids(thread, message, delivery_records):
+        dispatch = dispatch_chat_message_to_worker_runtime(
+            router=router,
+            thread=thread,
+            source_message=message,
+            target_worker_id=worker_id,
+            reply_handler=runtime_reply_handler,
+        )
+        for delivered in dispatch.delivered_messages:
+            _append_thread_message(delivered)
+        dispatches.append(runtime_reply_dispatch_to_dict(dispatch))
+    return dispatches
+
+
+def _runtime_target_worker_ids(
+    thread: WorkerChatThread,
+    message: WorkerMessageEnvelope,
+    delivery_records: tuple[Mapping[str, Any], ...],
+) -> tuple[str, ...]:
+    """Return runtime targets for normal sends, resolved mentions and broadcasts.
+
+    Normal messages use the existing recipient-scope rules. Mention and broadcast
+    messages additionally use resolved delivery recipients so an @department
+    mention or a broadcast can trigger recipients instead of remaining only
+    tracking records.
+    """
+
+    worker_ids = list(target_worker_ids_for_chat_message(thread, message))
+    if message.message_type == ChatMessageType.MENTION:
+        for record in delivery_records:
+            recipient = _optional_mapping(record.get("resolved_recipient"))
+            if (
+                recipient is None
+                or recipient.get("kind") != ChatParticipantKind.WORKER.value
+            ):
+                continue
+            worker_id = recipient.get("participant_id")
+            if isinstance(worker_id, str) and worker_id:
+                worker_ids.append(worker_id)
+    elif message.message_type == ChatMessageType.BROADCAST:
+        for record in delivery_records:
+            recipient = _optional_mapping(record.get("recipient"))
+            if (
+                recipient is None
+                or recipient.get("kind") != ChatParticipantKind.WORKER.value
+            ):
+                continue
+            worker_id = recipient.get("participant_id")
+            if isinstance(worker_id, str) and worker_id:
+                worker_ids.append(worker_id)
+    return tuple(dict.fromkeys(worker_ids))
+
+
+def _thread_contract_dict(thread: Mapping[str, Any]) -> dict[str, Any]:
+    allowed = {
+        "thread_id",
+        "schema_version",
+        "thread_type",
+        "participants",
+        "title",
+        "created_at",
+        "updated_at",
+        "main_agent_visible",
+        "audit_summary",
+    }
+    return {key: value for key, value in thread.items() if key in allowed}
+
+
+def _state_with_materialized_department_chats(state: Mapping[str, Any]) -> dict[str, Any]:
+    result = dict(state)
+    existing_threads = [dict(thread) for thread in _sequence(result.get("threads"))]
+    thread_order = [str(thread.get("thread_id", "")) for thread in existing_threads]
+    threads_by_id = {
+        str(thread.get("thread_id", "")): thread
+        for thread in existing_threads
+        if str(thread.get("thread_id", ""))
+    }
+    for thread in _materialized_department_threads(result):
+        thread_id = str(thread.get("thread_id", ""))
+        if not thread_id:
+            continue
+        existing = threads_by_id.get(thread_id)
+        if existing is not None:
+            thread["created_at"] = existing.get("created_at", thread.get("created_at", ""))
+        if thread_id not in thread_order:
+            thread_order.append(thread_id)
+        threads_by_id[thread_id] = thread
+    result["threads"] = [
+        threads_by_id[thread_id]
+        for thread_id in thread_order
+        if thread_id in threads_by_id
+    ]
+    return result
+
+
+def _sync_department_threads_in_state(
+    state: dict[str, Any],
+    *,
+    org_node_ids: Iterable[str],
+    user_id: str,
+) -> list[dict[str, Any]]:
+    organization_tree = _optional_mapping(state.get("organization_tree"))
+    if organization_tree is None:
+        return []
+    nodes = _mapping(organization_tree.get("nodes"))
+    existing_threads = [dict(thread) for thread in _sequence(state.get("threads"))]
+    thread_order = [str(thread.get("thread_id", "")) for thread in existing_threads]
+    threads_by_id = {
+        str(thread.get("thread_id", "")): thread
+        for thread in existing_threads
+        if str(thread.get("thread_id", ""))
+    }
+    changed_threads: list[dict[str, Any]] = []
+
+    for node_id in org_node_ids:
+        thread_id = _department_thread_id(node_id)
+        node = _optional_mapping(nodes.get(node_id))
+        thread = _department_thread_for_node(state, node_id=node_id, user_id=user_id)
+        if thread is None:
+            existing = threads_by_id.get(thread_id)
+            if existing is None:
+                continue
+            thread = _archived_department_thread(existing, node=node, node_id=node_id)
+        else:
+            existing = threads_by_id.get(thread_id)
+            if existing is not None:
+                thread["created_at"] = existing.get("created_at", thread["created_at"])
+
+        threads_by_id[thread_id] = thread
+        if thread_id not in thread_order:
+            thread_order.append(thread_id)
+        changed_threads.append(thread)
+
+    state["threads"] = [
+        threads_by_id[thread_id]
+        for thread_id in thread_order
+        if thread_id in threads_by_id
+    ]
+    return changed_threads
+
+
+def _materialized_department_threads(state: Mapping[str, Any]) -> list[dict[str, Any]]:
+    organization_tree = _optional_mapping(state.get("organization_tree"))
+    if organization_tree is None:
+        return []
+    nodes = _mapping(organization_tree.get("nodes"))
+    threads: list[dict[str, Any]] = []
+    for node_id in sorted(nodes):
+        node = _optional_mapping(nodes.get(node_id))
+        if node is None or not _node_supports_department_chat(node):
+            continue
+        thread = _department_thread_for_node(state, node_id=node_id, user_id="user")
+        if thread is not None:
+            threads.append(thread)
+    return threads
+
+
+def _department_thread_for_node(
+    state: Mapping[str, Any],
+    *,
+    node_id: str,
+    user_id: str,
+) -> dict[str, Any] | None:
+    organization_tree = _optional_mapping(state.get("organization_tree"))
+    if organization_tree is None:
+        return None
+    nodes = _mapping(organization_tree.get("nodes"))
+    node = _optional_mapping(nodes.get(node_id))
+    if node is None or not _node_supports_department_chat(node):
+        return None
+    worker_records = _mapping(state.get("worker_records"))
+    worker_ids = _department_worker_ids(node, nodes)
+    enabled_workers = [
+        worker_id
+        for worker_id in worker_ids
+        if _worker_is_enabled(worker_records.get(worker_id))
+    ]
+    if len(enabled_workers) < 2:
+        return None
+    return _build_department_thread(node, enabled_workers, user_id=user_id)
+
+
+def _node_supports_department_chat(node: Mapping[str, Any]) -> bool:
+    return (
+        str(node.get("lifecycle", "")).lower() == "active"
+        and str(node.get("node_type", "")).lower() in {"department", "team"}
+    )
+
+
+def _department_worker_ids(
+    node: Mapping[str, Any],
+    nodes: Mapping[str, Any],
+) -> list[str]:
+    result: list[str] = []
+    leader = _optional_mapping(node.get("leader"))
+    if leader is not None and leader.get("kind") == "worker":
+        worker_id = leader.get("worker_id")
+        if isinstance(worker_id, str) and worker_id:
+            result.append(worker_id)
+    for worker_id in _list_value(node.get("member_worker_ids")):
+        if isinstance(worker_id, str) and worker_id:
+            result.append(worker_id)
+    # Direct child leads are department members; their own members stay scoped
+    # to the child department chat.
+    for child_id in _list_value(node.get("child_ids")):
+        if not isinstance(child_id, str):
+            continue
+        child = _optional_mapping(nodes.get(child_id))
+        if child is None:
+            continue
+        child_worker_id = _direct_child_worker_id(child)
+        if child_worker_id:
+            result.append(child_worker_id)
+    return list(dict.fromkeys(result))
+
+
+def _direct_child_worker_id(node: Mapping[str, Any]) -> str | None:
+    if str(node.get("node_type", "")).lower() == "individual":
+        worker_id = node.get("individual_worker_id")
+        return worker_id if isinstance(worker_id, str) and worker_id else None
+    leader = _optional_mapping(node.get("leader"))
+    if leader is None or leader.get("kind") != "worker":
+        return None
+    worker_id = leader.get("worker_id")
+    return worker_id if isinstance(worker_id, str) and worker_id else None
+
+
+def _worker_is_enabled(worker: Any) -> bool:
+    record = _optional_mapping(worker)
+    return record is not None and str(record.get("status", "")).lower() == "enabled"
+
+
+def _ensure_department_chat_in_state(
+    state: dict[str, Any],
+    *,
+    org_node_id: str,
+    user_id: str,
+    dry_run: bool,
+) -> dict[str, Any]:
+    organization_tree = _optional_mapping(state.get("organization_tree"))
+    if organization_tree is None:
+        raise ValueError("organization tree is missing")
+    nodes = _mapping(organization_tree.get("nodes"))
+    node = _optional_mapping(nodes.get(org_node_id))
+    if node is None:
+        raise ValueError(f"organization node does not exist: {org_node_id!r}")
+    thread_id = _department_thread_id(org_node_id)
+    existing = _find_thread_by_id(state, thread_id)
+    if existing is not None:
+        worker_records = _mapping(state.get("worker_records"))
+        worker_ids = _department_worker_ids(node, nodes)
+        enabled_workers = [
+            worker_id
+            for worker_id in worker_ids
+            if _worker_is_enabled(worker_records.get(worker_id))
+        ]
+        if len(enabled_workers) < 2:
+            thread = _archived_department_thread(existing, node=node, node_id=org_node_id)
+            updated_status = "archived"
+        else:
+            thread = _build_department_thread(node, enabled_workers, user_id=user_id)
+            thread["created_at"] = existing.get("created_at", thread["created_at"])
+            updated_status = "updated"
+        if not dry_run:
+            threads = [dict(t) for t in _sequence(state.get("threads"))]
+            replaced = False
+            for i, t in enumerate(threads):
+                if t.get("thread_id") == thread_id:
+                    threads[i] = thread
+                    replaced = True
+                    break
+            if not replaced:
+                threads.append(thread)
+            state["threads"] = threads
+        _log.info(
+            "Worker agents department chat thread updated: thread_id=%s, org_node_id=%s, enabled_workers=%s, dry_run=%s",
+            thread_id,
+            org_node_id,
+            enabled_workers,
+            dry_run,
+        )
+        return {
+            "action": "ensure_department_chat",
+            "target_id": org_node_id,
+            "updated_status": updated_status,
+            "thread": _thread_response(thread),
+            "audit_ref": f"worker_agents/threads/{thread_id}",
+            "next_required_action": "open_chat_thread",
+        }
+    if not _node_supports_department_chat(node):
+        return _department_chat_skipped_response(
+            org_node_id,
+            "node is not an active department or team",
+        )
+
+    worker_records = _mapping(state.get("worker_records"))
+    worker_ids = _department_worker_ids(node, nodes)
+    enabled_workers = [
+        worker_id
+        for worker_id in worker_ids
+        if _worker_is_enabled(worker_records.get(worker_id))
+    ]
+    if len(enabled_workers) < 2:
+        return _department_chat_skipped_response(
+            org_node_id,
+            "department needs an enabled owner and at least one enabled direct member",
+        )
+
+    thread = _build_department_thread(node, enabled_workers, user_id=user_id)
+    if not dry_run:
+        state["threads"] = [*_sequence(state.get("threads")), thread]
+    _log.info(
+        "Worker agents department chat thread created: thread_id=%s, org_node_id=%s, enabled_workers=%s, dry_run=%s",
+        thread_id,
+        org_node_id,
+        enabled_workers,
+        dry_run,
+    )
+    return {
+        "action": "ensure_department_chat",
+        "target_id": org_node_id,
+        "updated_status": "validated" if dry_run else "created",
+        "thread": _thread_response(thread),
+        "audit_ref": f"worker_agents/threads/{thread_id}",
+        "next_required_action": "open_chat_thread",
+    }
+
+
+def _department_chat_skipped_response(org_node_id: str, reason: str) -> dict[str, Any]:
+    return {
+        "action": "ensure_department_chat",
+        "target_id": org_node_id,
+        "updated_status": "skipped",
+        "disabled_reason": reason,
+        "next_required_action": "add_direct_department_member_before_chat",
+    }
+
+
+def _collect_root_workers(state: Mapping[str, Any]) -> list[str]:
+    """Compatibility wrapper for older product tests and local imports."""
+
+    return collect_enabled_root_worker_ids(state)
+
+
+def _build_default_group_thread(
+    worker_ids: list[str],
+    *,
+    user_id: str,
+) -> dict[str, Any]:
+    """构建默认群聊线程数据，包含所有顶层 Worker Agent。"""
+    worker_participants = tuple(
+        ChatParticipantRef(ChatParticipantKind.WORKER, worker_id)
+        for worker_id in worker_ids
+    )
+    org_node_participant = (
+        (ChatParticipantRef(ChatParticipantKind.ORGANIZATION_NODE, "root"),)
+        if not worker_participants
+        else ()
+    )
+    thread = WorkerChatThread(
+        thread_id=DEFAULT_GROUP_THREAD_ID,
+        thread_type=ChatThreadType.ORGANIZATION_GROUP,
+        participants=(
+            ChatParticipantRef(ChatParticipantKind.USER, user_id),
+            ChatParticipantRef(ChatParticipantKind.MAIN_AGENT, MAIN_AGENT_ID),
+            *worker_participants,
+            *org_node_participant,
+        ),
+        title="默认群聊",
+        created_at=_now_iso(),
+        updated_at=_now_iso(),
+        main_agent_visible=True,
+        audit_summary=f"默认群聊，包含 {len(worker_ids)} 个启用的 Worker Agent。",
+    )
+    data = chat_thread_to_dict(thread)
+    data.update(
+        {
+            "status": "active",
+            "org_node_id": "root",
+            "binding_id": "root-default-group",
+            "last_summary": f"默认群聊，包含 {len(worker_ids)} 个启用的 Worker Agent。",
+        }
+    )
+    return data
+
+
+def _ensure_default_group_thread_in_state(
+    state: dict[str, Any],
+    *,
+    user_id: str,
+    dry_run: bool,
+) -> dict[str, Any]:
+    """在内存状态中创建或更新默认群聊。
+
+    与 _ensure_department_chat_in_state 逻辑一致：存在则更新参与者，
+    不存在则新建。不强制要求最少 Worker 数，允许空群聊。
+    """
+    thread_id = DEFAULT_GROUP_THREAD_ID
+    existing = _find_thread_by_id(state, thread_id)
+    worker_ids = _collect_root_workers(state)
+
+    if existing is not None:
+        thread = _build_default_group_thread(worker_ids, user_id=user_id)
+        thread["created_at"] = existing.get("created_at", thread["created_at"])
+        updated_status = "updated"
+        if not dry_run:
+            threads = [dict(t) for t in _sequence(state.get("threads"))]
+            replaced = False
+            for i, t in enumerate(threads):
+                if t.get("thread_id") == thread_id:
+                    threads[i] = thread
+                    replaced = True
+                    break
+            if not replaced:
+                threads.append(thread)
+            state["threads"] = threads
+        _log.info(
+            "Default group thread updated: thread_id=%s, worker_count=%s, dry_run=%s",
+            thread_id,
+            len(worker_ids),
+            dry_run,
+        )
+        return {
+            "action": "ensure_default_group_thread",
+            "target_id": thread_id,
+            "updated_status": updated_status,
+            "thread": _thread_response(thread),
+            "audit_ref": f"worker_agents/threads/{thread_id}",
+            "next_required_action": "open_chat_thread",
+        }
+
+    thread = _build_default_group_thread(worker_ids, user_id=user_id)
+    if not dry_run:
+        state["threads"] = [*_sequence(state.get("threads")), thread]
+    _log.info(
+        "Default group thread created: thread_id=%s, worker_count=%s, dry_run=%s",
+        thread_id,
+        len(worker_ids),
+        dry_run,
+    )
+    return {
+        "action": "ensure_default_group_thread",
+        "target_id": thread_id,
+        "updated_status": "validated" if dry_run else "created",
+        "thread": _thread_response(thread),
+        "audit_ref": f"worker_agents/threads/{thread_id}",
+        "next_required_action": "open_chat_thread",
+    }
+
+
+def ensure_default_group_thread(
+    *,
+    user_id: str = "user",
+    dry_run: bool = False,
+) -> dict[str, Any]:
+    """创建或返回默认群聊，包含组织树中所有已启用的 Worker Agent。
+
+    主Agent启动时调用此函数以确保默认群聊存在，通过此群聊分发任务。
+    """
+    validate_single_path_segment(user_id, "user_id")
+    state = load_management_state()
+    response = _ensure_default_group_thread_in_state(
+        state, user_id=user_id, dry_run=dry_run,
+    )
+    if response.get("updated_status") in ("created", "updated") and not dry_run:
+        state["source_updated_at"] = _now_iso()
+        write_management_state(state)
+    return _sanitize_mapping(response)
+
+
+def _find_thread_by_id(state: Mapping[str, Any], thread_id: str) -> dict[str, Any] | None:
+    for thread in _sequence(state.get("threads")):
+        if thread.get("thread_id") == thread_id:
+            return dict(thread)
+    return None
+
+
+def _department_thread_id(org_node_id: str) -> str:
+    return f"dept-{org_node_id}"
+
+
+def _build_department_thread(
+    node: Mapping[str, Any],
+    worker_ids: list[str],
+    *,
+    user_id: str,
+) -> dict[str, Any]:
+    node_id = str(node.get("org_node_id", ""))
+    title = str(node.get("name", node_id))
+    thread = WorkerChatThread(
+        thread_id=_department_thread_id(node_id),
+        thread_type=ChatThreadType.ORGANIZATION_GROUP,
+        participants=(
+            ChatParticipantRef(ChatParticipantKind.USER, user_id),
+            ChatParticipantRef(ChatParticipantKind.MAIN_AGENT, MAIN_AGENT_ID),
+            *(
+                ChatParticipantRef(ChatParticipantKind.WORKER, worker_id)
+                for worker_id in worker_ids
+            ),
+            ChatParticipantRef(ChatParticipantKind.ORGANIZATION_NODE, node_id),
+        ),
+        title=title,
+        created_at=_now_iso(),
+        updated_at=_now_iso(),
+        audit_summary=_department_thread_summary(node, worker_ids, user_id),
+    )
+    data = chat_thread_to_dict(thread)
+    data.update(
+        {
+            "status": "active",
+            "org_node_id": node_id,
+            "binding_id": f"{node_id}-default",
+            "last_summary": _department_thread_summary(node, worker_ids, user_id),
+        }
+    )
+    return data
+
+
+def _archived_department_thread(
+    existing: Mapping[str, Any],
+    *,
+    node: Mapping[str, Any] | None,
+    node_id: str,
+) -> dict[str, Any]:
+    title = str((node or {}).get("name", existing.get("title", node_id)))
+    summary = f"Default department chat for {title} is inactive after organization sync."
+    return {
+        **existing,
+        "thread_id": _department_thread_id(node_id),
+        "status": "archived",
+        "org_node_id": node_id,
+        "updated_at": _now_iso(),
+        "read_only": True,
+        "last_summary": summary,
+        "audit_summary": summary,
+    }
+
+
+def _department_thread_summary(
+    node: Mapping[str, Any],
+    worker_ids: list[str],
+    user_id: str,
+) -> str:
+    node_id = str(node.get("org_node_id", ""))
+    title = str(node.get("name", node_id))
+    owner_worker_id = _owner_worker_id(node)
+    direct_members = [worker_id for worker_id in worker_ids if worker_id != owner_worker_id]
+    member_text = ", ".join(direct_members) if direct_members else "none"
+    owner_text = owner_worker_id or "none"
+    return (
+        f"Default department chat for {title}. "
+        f"User: {user_id}. Department owner: {owner_text}. "
+        f"Direct members: {member_text}."
+    )
+
+
+def _owner_worker_id(node: Mapping[str, Any]) -> str | None:
+    leader = _optional_mapping(node.get("leader"))
+    if leader is None or leader.get("kind") != "worker":
+        return None
+    worker_id = leader.get("worker_id")
+    return worker_id if isinstance(worker_id, str) and worker_id else None
+
+
+def _find_direct_thread(
+    state: Mapping[str, Any],
+    worker_id: str,
+    user_id: str,
+) -> dict[str, Any] | None:
+    expected_id = _direct_thread_id(worker_id, user_id)
+    for thread in _sequence(state.get("threads")):
+        if thread.get("thread_id") == expected_id:
+            return dict(thread)
+        if _is_direct_thread_for_worker(thread, worker_id=worker_id, user_id=user_id):
+            return dict(thread)
+    return None
+
+
+def _is_direct_thread_for_worker(
+    thread: Mapping[str, Any],
+    *,
+    worker_id: str,
+    user_id: str,
+) -> bool:
+    if str(thread.get("thread_type", "")) != "direct":
+        return False
+    participants = _sequence(thread.get("participants"))
+    return (
+        {"kind": "user", "participant_id": user_id} in participants
+        and {"kind": "worker", "participant_id": worker_id} in participants
+    )
+
+
+def _build_direct_thread(
+    worker: Mapping[str, Any],
+    *,
+    worker_id: str,
+    user_id: str,
+) -> dict[str, Any]:
+    display_name = str(worker.get("display_name", worker_id))
+    thread = WorkerChatThread(
+        thread_id=_direct_thread_id(worker_id, user_id),
+        thread_type=ChatThreadType.DIRECT,
+        participants=(
+            ChatParticipantRef(ChatParticipantKind.USER, user_id),
+            ChatParticipantRef(ChatParticipantKind.WORKER, worker_id),
+        ),
+        title=display_name,
+        created_at=_now_iso(),
+        updated_at=_now_iso(),
+        main_agent_visible=True,
+        audit_summary=f"Direct user-present worker chat for {worker_id}.",
+    )
+    data = chat_thread_to_dict(thread)
+    data.update({"status": "active", "worker_id": worker_id})
+    return data
+
+
+def _direct_thread_id(worker_id: str, user_id: str) -> str:
+    return f"direct-{user_id}-{worker_id}"
+
+
+def _thread_response(thread: Mapping[str, Any]) -> dict[str, Any]:
+    summary = build_managed_chat_thread_summary(
+        thread,
+        status=str(thread.get("status", "active")),
+        last_summary=str(thread.get("last_summary", thread.get("audit_summary", ""))),
+    )
+    return managed_chat_thread_summary_to_dict(summary)
+
+
+def _require_writable_thread(thread: Mapping[str, Any]) -> None:
+    status = str(thread.get("status", "active")).lower()
+    if status in {"archived", "frozen"} or bool(thread.get("read_only", False)):
+        raise ValueError("chat thread is read-only")
+
+
+def _build_outbound_message(
+    *,
+    thread_id: str,
+    sender_id: str,
+    sender_kind: str,
+    text: str,
+    message_type: str,
+    target_ids: tuple[str, ...],
+) -> WorkerMessageEnvelope:
+    sender = ChatParticipantRef(ChatParticipantKind(sender_kind), sender_id)
+    participant_refs = tuple(
+        ChatParticipantRef(ChatParticipantKind.WORKER, target_id)
+        for target_id in target_ids
+    )
+    return WorkerMessageEnvelope(
+        message_id=f"msg-{uuid.uuid4().hex[:16]}",
+        thread_id=thread_id,
+        sender=sender,
+        recipient_scope=ChatRecipientScope(
+            participant_refs=participant_refs,
+            include_entire_thread=not participant_refs,
+        ),
+        message_type=ChatMessageType(message_type),
+        created_at=_now_iso(),
+        delivery_status=MessageDeliveryStatus.CREATED,
+        visibility=MessageVisibility.TARGETED if participant_refs else MessageVisibility.THREAD,
+        body_preview=_redact_text(text[:500]),
+        audit_summary="Submitted through Worker Agents product entrypoint.",
+    )
+
+
+def _read_thread_messages(thread_id: str) -> list[WorkerMessageEnvelope]:
+    path = _thread_messages_path(thread_id)
+    if not path.exists():
+        return []
+    messages: list[WorkerMessageEnvelope] = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        messages.append(message_envelope_from_dict(json.loads(line)))
+    return messages
+
+
+def _append_thread_message(message: WorkerMessageEnvelope) -> None:
+    path = _thread_messages_path(message.thread_id)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(message_envelope_to_dict(message), sort_keys=True) + "\n")
+
+
+def _thread_messages_path(thread_id: str) -> Path:
+    validate_single_path_segment(thread_id, "thread_id")
+    return get_hermes_home() / "worker_agents" / "threads" / thread_id / "messages.jsonl"
+
+
+def _organization_tree_payload(organization_tree: Any) -> dict[str, Any]:
+    if isinstance(organization_tree, Mapping):
+        return dict(organization_tree)
+    return org_tree_to_dict(organization_tree)
+
+
+def _worker_records_payload(worker_records: Mapping[str, Any]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for worker_id, record in worker_records.items():
+        safe_worker_id = validate_single_path_segment(str(worker_id), "worker_id")
+        if isinstance(record, Mapping):
+            result[safe_worker_id] = dict(record)
+        else:
+            result[safe_worker_id] = worker_registry_record_to_dict(record)
+    return result
+
+
+def _persist_thread_metadata(thread: Mapping[str, Any], *, home: Path | None) -> None:
+    path = _thread_metadata_path(str(thread.get("thread_id", "")), home=home)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(_sanitize_mapping(thread), indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
+
+
+def _persist_thread_index(threads: Iterable[Mapping[str, Any]], *, home: Path | None) -> None:
+    path = _thread_index_path(home=home)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    rows = []
+    for thread in threads:
+        thread_id = str(thread.get("thread_id", ""))
+        if not thread_id:
+            continue
+        rows.append(
+            {
+                "thread_id": thread_id,
+                "thread_type": str(thread.get("thread_type", "")),
+                "status": str(thread.get("status", "active")),
+                "org_node_id": thread.get("org_node_id"),
+                "worker_id": thread.get("worker_id"),
+                "updated_at": thread.get("updated_at"),
+            }
+        )
+    path.write_text(
+        json.dumps({"schema_version": 1, "threads": rows}, indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
+
+
+def _thread_metadata_path(thread_id: str, *, home: Path | None) -> Path:
+    validate_single_path_segment(thread_id, "thread_id")
+    return (home or get_hermes_home()) / "worker_agents" / "threads" / thread_id / "thread.json"
+
+
+def _thread_index_path(*, home: Path | None) -> Path:
+    return (home or get_hermes_home()) / "worker_agents" / "threads" / "_index.json"
+
+
+def _management_state_path(home: Path | None) -> Path:
+    return (home or get_hermes_home()) / MANAGEMENT_STATE_RELATIVE_PATH
+
+
+def _filter_messages(
+    messages: list[WorkerMessageEnvelope],
+    query: ChatHistoryQuery,
+) -> list[WorkerMessageEnvelope]:
+    result = []
+    for message in messages:
+        if query.since and (message.created_at or "") < query.since:
+            continue
+        if query.message_type and message.message_type.value != query.message_type:
+            continue
+        if query.delivery_status and message.delivery_status.value != query.delivery_status:
+            continue
+        if query.sender and message.sender.participant_id != query.sender:
+            continue
+        result.append(message)
+    return result
+
+
+def _cursor_to_index(cursor: str | None) -> int:
+    if cursor is None:
+        return 0
+    try:
+        return max(0, int(cursor))
+    except ValueError as exc:
+        raise ValueError("cursor must be an integer offset") from exc
+
+
+def _action_response(
+    *,
+    action: str,
+    target_id: str,
+    audit_ref: str,
+    summary: str,
+    updated_status: str,
+    request: Mapping[str, Any] | None = None,
+    audit: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    data: dict[str, Any] = {
+        "action": action,
+        "target_id": target_id,
+        "audit_ref": audit_ref,
+        "updated_status": updated_status,
+        "next_required_action": "review_audit_result",
+        "summary": summary,
+    }
+    if request is not None:
+        data["request"] = request
+    if audit is not None:
+        data["audit"] = audit
+    return _sanitize_mapping(data)
+
+
+def _load_manifest_payload(path_text: str) -> Mapping[str, Any]:
+    path = Path(path_text).expanduser()
+    data = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(data, Mapping):
+        raise ValueError("import manifest must be a JSON object")
+    return _sanitize_mapping(data)
+
+
+def _find_by_key(items: Iterable[Mapping[str, Any]], key: str, value: str) -> Mapping[str, Any]:
+    for item in items:
+        if item.get(key) == value:
+            return item
+    raise ValueError(f"{key} does not exist: {value!r}")
+
+
+def _sanitize_mapping(data: Mapping[str, Any]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for key, value in data.items():
+        key_text = str(key)
+        if _is_forbidden_key(key_text):
+            continue
+        result[key_text] = _sanitize_value(value)
+    return result
+
+
+def _sanitize_value(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        return _sanitize_mapping(value)
+    if isinstance(value, list):
+        return [_sanitize_value(item) for item in value]
+    if isinstance(value, tuple):
+        return [_sanitize_value(item) for item in value]
+    if isinstance(value, str):
+        return _redact_text(value)
+    return value
+
+
+def _sanitize_sequence(items: Iterable[Any]) -> list[Any]:
+    return [_sanitize_value(item) for item in items]
+
+
+def _redact_text(value: str) -> str:
+    lowered = value.lower()
+    if any(marker in lowered for marker in FORBIDDEN_KEY_MARKERS):
+        return "[redacted summary]"
+    return value
+
+
+def _is_forbidden_key(key: str) -> bool:
+    lowered = key.lower()
+    return any(marker in lowered for marker in FORBIDDEN_KEY_MARKERS)
+
+
+def _empty_management_state() -> dict[str, Any]:
+    return {
+        "worker_records": {},
+        "organization_tree": None,
+        "department_summaries": [],
+        "threads": [],
+        "mentions": [],
+        "broadcasts": [],
+        "approvals": [],
+        "assets": [],
+        "evolution": [],
+        "retention_candidates": [],
+    }
+
+
+def _mapping(value: Any) -> Mapping[str, Any]:
+    return value if isinstance(value, Mapping) else {}
+
+
+def _optional_mapping(value: Any) -> Mapping[str, Any] | None:
+    return value if isinstance(value, Mapping) else None
+
+
+def _string_mapping(value: Any) -> Mapping[str, str]:
+    if not isinstance(value, Mapping):
+        return {}
+    return {str(key): str(item) for key, item in value.items() if isinstance(item, str)}
+
+
+def _sequence(value: Any) -> list[Mapping[str, Any]]:
+    if not isinstance(value, list):
+        return []
+    return [item for item in value if isinstance(item, Mapping)]
+
+
+def _optional_str(value: Any) -> str | None:
+    return value if isinstance(value, str) and value else None
+
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def _now_compact() -> str:
+    return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+
+
+def _ensure_management_organization_tree(
+    state: Mapping[str, Any],
+    target_node_id: str,
+    now: str,
+) -> dict[str, Any]:
+    existing = _optional_mapping(state.get("organization_tree"))
+    if existing is not None:
+        return dict(existing)
+    if target_node_id != "root":
+        raise ValueError("management organization tree is missing; create under 'root' first")
+    return {
+        "schema_version": 1,
+        "tree_id": "active",
+        "root_node_id": "root",
+        "revision": 0,
+        "created_at": now,
+        "updated_at": now,
+        "nodes": {
+            "root": {
+                "schema_version": 1,
+                "org_node_id": "root",
+                "name": "Root",
+                "node_type": "root",
+                "description": "Worker Agents root organization",
+                "responsibilities": [],
+                "parent_id": None,
+                "child_ids": [],
+                "leader": {"kind": "main_agent"},
+                "member_worker_ids": [],
+                "chat_policy": {
+                    "default_thread_policy": "none",
+                    "allow_default_group_chat": False,
+                },
+                "lifecycle": "active",
+            }
+        },
+    }
+
+
+def _display_name_from_id(value: str) -> str:
+    return " ".join(part.capitalize() for part in value.replace("_", "-").split("-") if part) or value
+
+
+def _list_value(value: Any) -> list[Any]:
+    return list(value) if isinstance(value, list) else []
+
+
+def _int_value(value: Any) -> int:
+    if isinstance(value, bool) or not isinstance(value, int):
+        return 0
+    return value
+
+
+def _positive_int_or_none(value: Any) -> int | None:
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        return None
+    return value
+
+
+def _optional_float(value: Any) -> float | None:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    if value < 0:
+        return None
+    return float(value)
+
+
+def _upsert_department_summary(
+    summaries: list[Mapping[str, Any]],
+    *,
+    department_id: str,
+    display_name: str,
+    owner_worker_id: str,
+    reason: str,
+) -> list[dict[str, Any]]:
+    row = {
+        "department_id": department_id,
+        "display_name": display_name,
+        "owner_worker_id": owner_worker_id,
+        "member_count": 1,
+        "default_chat_available": False,
+        "collaboration_mode": "private_or_parent_chat",
+        "public_metadata": {"summary": reason} if reason else {},
+    }
+    result = [dict(item) for item in summaries if item.get("department_id") != department_id]
+    result.append(row)
+    return sorted(result, key=lambda item: str(item.get("department_id", "")))

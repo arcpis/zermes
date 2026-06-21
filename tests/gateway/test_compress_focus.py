@@ -5,9 +5,9 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from gateway.config import GatewayConfig, Platform, PlatformConfig
-from gateway.platforms.base import MessageEvent
-from gateway.session import SessionEntry, SessionSource, build_session_key
+from zermes.gateway.config import GatewayConfig, Platform, PlatformConfig
+from zermes.gateway.platforms.base import MessageEvent
+from zermes.gateway.session import SessionEntry, SessionSource, build_session_key
 
 
 def _make_source() -> SessionSource:
@@ -34,7 +34,7 @@ def _make_history() -> list[dict[str, str]]:
 
 
 def _make_runner(history: list[dict[str, str]]):
-    from gateway.run import GatewayRunner
+    from zermes.gateway.run import GatewayRunner
 
     runner = object.__new__(GatewayRunner)
     runner.config = GatewayConfig(
@@ -72,10 +72,10 @@ async def test_compress_focus_topic_passed_to_agent():
         return 100
 
     with (
-        patch("gateway.run._resolve_runtime_agent_kwargs", return_value={"api_key": "***"}),
-        patch("gateway.run._resolve_gateway_model", return_value="test-model"),
-        patch("run_agent.AIAgent", return_value=agent_instance),
-        patch("agent.model_metadata.estimate_messages_tokens_rough", side_effect=_estimate),
+        patch("zermes.gateway.run._resolve_runtime_agent_kwargs", return_value={"api_key": "***"}),
+        patch("zermes.gateway.run._resolve_gateway_model", return_value="test-model"),
+        patch("zermes.run_agent.AIAgent", return_value=agent_instance),
+        patch("zermes.agent.model_metadata.estimate_messages_tokens_rough", side_effect=_estimate),
     ):
         result = await runner._handle_compress_command(_make_event("/compress database schema"))
 
@@ -99,10 +99,10 @@ async def test_compress_no_focus_passes_none():
     agent_instance._compress_context.return_value = (list(history), "")
 
     with (
-        patch("gateway.run._resolve_runtime_agent_kwargs", return_value={"api_key": "***"}),
-        patch("gateway.run._resolve_gateway_model", return_value="test-model"),
-        patch("run_agent.AIAgent", return_value=agent_instance),
-        patch("agent.model_metadata.estimate_messages_tokens_rough", return_value=100),
+        patch("zermes.gateway.run._resolve_runtime_agent_kwargs", return_value={"api_key": "***"}),
+        patch("zermes.gateway.run._resolve_gateway_model", return_value="test-model"),
+        patch("zermes.run_agent.AIAgent", return_value=agent_instance),
+        patch("zermes.agent.model_metadata.estimate_messages_tokens_rough", return_value=100),
     ):
         result = await runner._handle_compress_command(_make_event("/compress"))
 

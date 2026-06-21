@@ -30,14 +30,14 @@ VALID = {
 
 @pytest.fixture
 def repair():
-    """Return a bound _repair_tool_call built on a minimal shell agent.
+    """Return a bound _repair_tool_call built on a minimal shell zermes.agent.
 
     We avoid constructing a real AIAgent (which pulls in credential
     resolution, session DB, etc.) because the repair routine only
     reads self.valid_tool_names. A SimpleNamespace stub is enough to
     bind the unbound function.
     """
-    from run_agent import AIAgent
+    from zermes.run_agent import AIAgent
     stub = SimpleNamespace(valid_tool_names=VALID)
     return AIAgent._repair_tool_call.__get__(stub, AIAgent)
 

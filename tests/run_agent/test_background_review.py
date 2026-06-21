@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-import run_agent as run_agent_module
-from run_agent import AIAgent
+import zermes.run_agent as run_agent_module
+from zermes.run_agent import AIAgent
 
 
 def _bare_agent() -> AIAgent:
@@ -81,7 +81,7 @@ def test_background_review_installs_auto_deny_approval_callback(monkeypatch):
     trips falls back to input() on a daemon thread, which deadlocks against
     the parent's prompt_toolkit TUI.
     """
-    import tools.terminal_tool as tt
+    import zermes.tools.terminal_tool as tt
 
     observed: dict = {"during_run": "<unread>", "after_finally": "<unread>"}
 

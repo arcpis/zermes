@@ -27,8 +27,8 @@ from unittest.mock import MagicMock
 
 def _make_adapter():
     """Construct a DiscordAdapter without going through __init__ / token checks."""
-    from gateway.platforms.discord import DiscordAdapter
-    from gateway.platforms.base import Platform
+    from zermes.gateway.platforms.discord import DiscordAdapter
+    from zermes.gateway.platforms.base import Platform
     adapter = object.__new__(DiscordAdapter)
     adapter.config = MagicMock()
     adapter.config.extra = {}
@@ -69,7 +69,7 @@ class TestRefreshSkillGroup:
             )
 
         monkeypatch.setattr(
-            "hermes_cli.commands.discord_skill_commands_by_category",
+            "zermes.hermes_cli.commands.discord_skill_commands_by_category",
             fake_collector,
         )
 
@@ -100,7 +100,7 @@ class TestRefreshSkillGroup:
             )
 
         monkeypatch.setattr(
-            "hermes_cli.commands.discord_skill_commands_by_category",
+            "zermes.hermes_cli.commands.discord_skill_commands_by_category",
             fake_collector,
         )
 
@@ -123,7 +123,7 @@ class TestRefreshSkillGroup:
             raise RuntimeError("simulated collector failure")
 
         monkeypatch.setattr(
-            "hermes_cli.commands.discord_skill_commands_by_category",
+            "zermes.hermes_cli.commands.discord_skill_commands_by_category",
             boom,
         )
 
@@ -164,7 +164,7 @@ class TestRegisterSkillGroupUsesInstanceState:
                 0,
             )
         monkeypatch.setattr(
-            "hermes_cli.commands.discord_skill_commands_by_category",
+            "zermes.hermes_cli.commands.discord_skill_commands_by_category",
             fake_collector,
         )
 
@@ -198,7 +198,7 @@ class TestHandleReloadSkillsCallsRefreshSkillGroup:
 
         # Import without constructing a real runner — test the method
         # directly against an ``object.__new__`` instance.
-        from gateway.run import GatewayRunner
+        from zermes.gateway.run import GatewayRunner
         runner = object.__new__(GatewayRunner)
 
         sync_refresh = MagicMock(return_value=(5, 0))
@@ -227,7 +227,7 @@ class TestHandleReloadSkillsCallsRefreshSkillGroup:
         # Mock reload_skills itself so no disk scan runs.
         fake_result = {"added": [], "removed": [], "total": 7}
         with patch(
-            "agent.skill_commands.reload_skills", return_value=fake_result
+            "zermes.agent.skill_commands.reload_skills", return_value=fake_result
         ):
             event = MagicMock()
             event.source = MagicMock()

@@ -7,8 +7,8 @@ from pathlib import Path
 import httpx
 import pytest
 
-from tools.microsoft_graph_auth import GraphCredentials, MicrosoftGraphTokenProvider
-from tools.microsoft_graph_client import (
+from zermes.tools.microsoft_graph_auth import GraphCredentials, MicrosoftGraphTokenProvider
+from zermes.tools.microsoft_graph_client import (
     MicrosoftGraphAPIError,
     MicrosoftGraphClient,
     MicrosoftGraphClientError,

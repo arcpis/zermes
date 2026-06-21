@@ -22,7 +22,7 @@ import pytest
 class TestCompressionBoundaryHook:
     def _make_agent(self, session_db):
         with patch.dict(os.environ, {"OPENROUTER_API_KEY": "test-key"}):
-            from run_agent import AIAgent
+            from zermes.run_agent import AIAgent
             return AIAgent(
                 api_key="test-key",
                 base_url="https://openrouter.ai/api/v1",
@@ -35,7 +35,7 @@ class TestCompressionBoundaryHook:
             )
 
     def test_on_session_start_called_with_compression_boundary(self):
-        from hermes_state import SessionDB
+        from zermes.hermes_state import SessionDB
 
         with tempfile.TemporaryDirectory() as tmpdir:
             db = SessionDB(db_path=Path(tmpdir) / "test.db")
@@ -62,7 +62,7 @@ class TestCompressionBoundaryHook:
             agent._compress_context(messages, "sys", approx_tokens=10_000)
 
             # Session_id rotated
-            assert agent.session_id != original_sid, \
+            assert agent.session_id != original_sid,\
                 "compression should rotate session_id when session_db is set"
 
             # Hook fired with boundary_reason="compression" and old_session_id
@@ -81,14 +81,14 @@ class TestCompressionBoundaryHook:
             )
             call = comp_calls[-1]
             # Positional new session_id
-            assert call.args and call.args[0] == agent.session_id, \
+            assert call.args and call.args[0] == agent.session_id,\
                 f"Expected new session_id as first positional arg, got {call!r}"
-            assert call.kwargs.get("old_session_id") == original_sid, \
+            assert call.kwargs.get("old_session_id") == original_sid,\
                 f"Expected old_session_id={original_sid!r}, got {call.kwargs!r}"
 
     def test_no_hook_when_no_session_db(self):
         """Without session_db, session_id does not rotate and the hook is not fired."""
-        from run_agent import AIAgent
+        from zermes.run_agent import AIAgent
         with patch.dict(os.environ, {"OPENROUTER_API_KEY": "test-key"}):
             agent = AIAgent(
                 api_key="test-key",
@@ -125,7 +125,7 @@ class TestCompressionBoundaryHook:
 
     def test_hook_failure_does_not_break_compression(self):
         """If the context engine raises from on_session_start, compression still completes."""
-        from hermes_state import SessionDB
+        from zermes.hermes_state import SessionDB
 
         with tempfile.TemporaryDirectory() as tmpdir:
             db = SessionDB(db_path=Path(tmpdir) / "test.db")

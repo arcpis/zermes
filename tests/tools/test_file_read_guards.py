@@ -14,7 +14,7 @@ import time
 import unittest
 from unittest.mock import patch, MagicMock
 
-from tools.file_tools import (
+from zermes.tools.file_tools import (
     read_file_tool,
     write_file_tool,
     reset_file_dedup,
@@ -104,8 +104,8 @@ class TestCharacterCountGuard(unittest.TestCase):
     def tearDown(self):
         _read_tracker.clear()
 
-    @patch("tools.file_tools._get_file_ops")
-    @patch("tools.file_tools._get_max_read_chars", return_value=_DEFAULT_MAX_READ_CHARS)
+    @patch("zermes.tools.file_tools._get_file_ops")
+    @patch("zermes.tools.file_tools._get_max_read_chars", return_value=_DEFAULT_MAX_READ_CHARS)
     def test_oversized_read_rejected(self, _mock_limit, mock_ops):
         """A read that returns >max chars is rejected."""
         big_content = "x" * (_DEFAULT_MAX_READ_CHARS + 1)
@@ -120,7 +120,7 @@ class TestCharacterCountGuard(unittest.TestCase):
         self.assertIn("offset and limit", result["error"])
         self.assertIn("total_lines", result)
 
-    @patch("tools.file_tools._get_file_ops")
+    @patch("zermes.tools.file_tools._get_file_ops")
     def test_small_read_not_rejected(self, mock_ops):
         """Normal-sized reads pass through fine."""
         mock_ops.return_value = _make_fake_ops(content="short\n", file_size=6)
@@ -128,8 +128,8 @@ class TestCharacterCountGuard(unittest.TestCase):
         self.assertNotIn("error", result)
         self.assertIn("content", result)
 
-    @patch("tools.file_tools._get_file_ops")
-    @patch("tools.file_tools._get_max_read_chars", return_value=_DEFAULT_MAX_READ_CHARS)
+    @patch("zermes.tools.file_tools._get_file_ops")
+    @patch("zermes.tools.file_tools._get_max_read_chars", return_value=_DEFAULT_MAX_READ_CHARS)
     def test_content_under_limit_passes(self, _mock_limit, mock_ops):
         """Content just under the limit should pass through fine."""
         mock_ops.return_value = _make_fake_ops(
@@ -163,7 +163,7 @@ class TestFileDedup(unittest.TestCase):
         except OSError:
             pass
 
-    @patch("tools.file_tools._get_file_ops")
+    @patch("zermes.tools.file_tools._get_file_ops")
     def test_second_read_returns_dedup_stub(self, mock_ops):
         """Second read of same file+range returns non-content dedup status."""
         mock_ops.return_value = _make_fake_ops(
@@ -181,7 +181,7 @@ class TestFileDedup(unittest.TestCase):
         self.assertFalse(r2.get("content_returned"))
         self.assertNotIn("content", r2)
 
-    @patch("tools.file_tools._get_file_ops")
+    @patch("zermes.tools.file_tools._get_file_ops")
     def test_write_rejects_internal_read_status_text(self, mock_ops):
         """write_file must not persist internal read_file status text."""
         fake = MagicMock()
@@ -198,7 +198,7 @@ class TestFileDedup(unittest.TestCase):
         self.assertIn("internal read_file status text", result["error"])
         fake.write_file.assert_not_called()
 
-    @patch("tools.file_tools._get_file_ops")
+    @patch("zermes.tools.file_tools._get_file_ops")
     def test_write_rejects_status_text_with_small_framing(self, mock_ops):
         """write_file rejects small wrappers around the status text too.
 
@@ -222,7 +222,7 @@ class TestFileDedup(unittest.TestCase):
         self.assertIn("internal read_file status text", result["error"])
         fake.write_file.assert_not_called()
 
-    @patch("tools.file_tools._get_file_ops")
+    @patch("zermes.tools.file_tools._get_file_ops")
     def test_write_allows_large_file_that_quotes_status_text(self, mock_ops):
         """Legitimate large content that happens to quote the status is allowed.
 
@@ -254,7 +254,7 @@ class TestFileDedup(unittest.TestCase):
         self.assertNotIn("error", result)
         self.assertTrue(result.get("success"))
 
-    @patch("tools.file_tools._get_file_ops")
+    @patch("zermes.tools.file_tools._get_file_ops")
     def test_modified_file_not_deduped(self, mock_ops):
         """After the file is modified, dedup returns full content."""
         mock_ops.return_value = _make_fake_ops(
@@ -270,7 +270,7 @@ class TestFileDedup(unittest.TestCase):
         r2 = json.loads(read_file_tool(self._tmpfile, task_id="mod"))
         self.assertNotEqual(r2.get("dedup"), True, "Modified file should not dedup")
 
-    @patch("tools.file_tools._get_file_ops")
+    @patch("zermes.tools.file_tools._get_file_ops")
     def test_different_range_not_deduped(self, mock_ops):
         """Same file but different offset/limit should not dedup."""
         mock_ops.return_value = _make_fake_ops(
@@ -283,7 +283,7 @@ class TestFileDedup(unittest.TestCase):
         ))
         self.assertNotEqual(r2.get("dedup"), True)
 
-    @patch("tools.file_tools._get_file_ops")
+    @patch("zermes.tools.file_tools._get_file_ops")
     def test_different_task_not_deduped(self, mock_ops):
         """Different task_ids have separate dedup caches."""
         mock_ops.return_value = _make_fake_ops(
@@ -319,7 +319,7 @@ class TestDedupStubLoopGuard(unittest.TestCase):
         except OSError:
             pass
 
-    @patch("tools.file_tools._get_file_ops")
+    @patch("zermes.tools.file_tools._get_file_ops")
     def test_third_read_is_blocked(self, mock_ops):
         """read → stub → BLOCKED.  Second stub escalates to hard error."""
         mock_ops.return_value = _make_fake_ops(
@@ -345,7 +345,7 @@ class TestDedupStubLoopGuard(unittest.TestCase):
         # same passive message it has been ignoring.
         self.assertNotIn("dedup", r3)
 
-    @patch("tools.file_tools._get_file_ops")
+    @patch("zermes.tools.file_tools._get_file_ops")
     def test_subsequent_reads_stay_blocked(self, mock_ops):
         """Once blocked, continued hammering keeps returning BLOCKED."""
         mock_ops.return_value = _make_fake_ops(
@@ -361,7 +361,7 @@ class TestDedupStubLoopGuard(unittest.TestCase):
             self.assertIn("error", rN)
             self.assertIn("BLOCKED", rN["error"])
 
-    @patch("tools.file_tools._get_file_ops")
+    @patch("zermes.tools.file_tools._get_file_ops")
     def test_file_modification_clears_block(self, mock_ops):
         """Real file change should break out of the block — new content
         is legitimately different and the agent should see it."""
@@ -382,7 +382,7 @@ class TestDedupStubLoopGuard(unittest.TestCase):
         self.assertNotIn("error", r4)
         self.assertNotIn("dedup", r4)
 
-    @patch("tools.file_tools._get_file_ops")
+    @patch("zermes.tools.file_tools._get_file_ops")
     def test_other_tool_call_clears_hits(self, mock_ops):
         """An intervening non-read tool call resets stub-hit counters,
         just like it resets the consecutive-read counter."""
@@ -401,7 +401,7 @@ class TestDedupStubLoopGuard(unittest.TestCase):
         self.assertTrue(r3.get("dedup"))
         self.assertNotIn("error", r3)
 
-    @patch("tools.file_tools._get_file_ops")
+    @patch("zermes.tools.file_tools._get_file_ops")
     def test_different_ranges_tracked_independently(self, mock_ops):
         """Stub-hit counter is keyed by (path, offset, limit), so hammering
         one range shouldn't block reads of a different range."""
@@ -422,7 +422,7 @@ class TestDedupStubLoopGuard(unittest.TestCase):
         ))
         self.assertNotIn("error", r_other)
 
-    @patch("tools.file_tools._get_file_ops")
+    @patch("zermes.tools.file_tools._get_file_ops")
     def test_reset_file_dedup_clears_hits(self, mock_ops):
         """Post-compression reset must clear stub-hit counters too,
         otherwise the agent stays blocked after compression."""
@@ -465,7 +465,7 @@ class TestDedupResetOnCompression(unittest.TestCase):
         except OSError:
             pass
 
-    @patch("tools.file_tools._get_file_ops")
+    @patch("zermes.tools.file_tools._get_file_ops")
     def test_reset_clears_dedup(self, mock_ops):
         """After reset_file_dedup, the same read returns full content."""
         mock_ops.return_value = _make_fake_ops(
@@ -486,7 +486,7 @@ class TestDedupResetOnCompression(unittest.TestCase):
         self.assertNotEqual(r_post.get("dedup"), True,
                             "Post-compression read should return full content")
 
-    @patch("tools.file_tools._get_file_ops")
+    @patch("zermes.tools.file_tools._get_file_ops")
     def test_reset_all_tasks(self, mock_ops):
         """reset_file_dedup(None) clears all tasks."""
         mock_ops.return_value = _make_fake_ops(
@@ -502,7 +502,7 @@ class TestDedupResetOnCompression(unittest.TestCase):
         self.assertNotEqual(r1.get("dedup"), True)
         self.assertNotEqual(r2.get("dedup"), True)
 
-    @patch("tools.file_tools._get_file_ops")
+    @patch("zermes.tools.file_tools._get_file_ops")
     def test_reset_preserves_loop_detection(self, mock_ops):
         """reset_file_dedup does NOT affect the consecutive-read counter."""
         mock_ops.return_value = _make_fake_ops(
@@ -537,7 +537,7 @@ class TestLargeFileHint(unittest.TestCase):
     def tearDown(self):
         _read_tracker.clear()
 
-    @patch("tools.file_tools._get_file_ops")
+    @patch("zermes.tools.file_tools._get_file_ops")
     def test_large_truncated_file_gets_hint(self, mock_ops):
         content = "line\n" * 400  # 2000 chars, small enough to pass char guard
         fake = _make_fake_ops(content=content, total_lines=10000, file_size=600_000)
@@ -570,16 +570,16 @@ class TestConfigOverride(unittest.TestCase):
     def setUp(self):
         _read_tracker.clear()
         # Reset the cached value so each test gets a fresh lookup
-        import tools.file_tools as _ft
+        import zermes.tools.file_tools as _ft
         _ft._max_read_chars_cached = None
 
     def tearDown(self):
         _read_tracker.clear()
-        import tools.file_tools as _ft
+        import zermes.tools.file_tools as _ft
         _ft._max_read_chars_cached = None
 
-    @patch("tools.file_tools._get_file_ops")
-    @patch("hermes_cli.config.load_config", return_value={"file_read_max_chars": 50})
+    @patch("zermes.tools.file_tools._get_file_ops")
+    @patch("zermes.hermes_cli.config.load_config", return_value={"file_read_max_chars": 50})
     def test_custom_config_lowers_limit(self, _mock_cfg, mock_ops):
         """A config value of 50 should reject reads over 50 chars."""
         mock_ops.return_value = _make_fake_ops(content="x" * 60, file_size=60)
@@ -588,8 +588,8 @@ class TestConfigOverride(unittest.TestCase):
         self.assertIn("safety limit", result["error"])
         self.assertIn("50", result["error"])  # should show the configured limit
 
-    @patch("tools.file_tools._get_file_ops")
-    @patch("hermes_cli.config.load_config", return_value={"file_read_max_chars": 500_000})
+    @patch("zermes.tools.file_tools._get_file_ops")
+    @patch("zermes.hermes_cli.config.load_config", return_value={"file_read_max_chars": 500_000})
     def test_custom_config_raises_limit(self, _mock_cfg, mock_ops):
         """A config value of 500K should allow reads up to 500K chars."""
         # 200K chars would be rejected at the default 100K but passes at 500K
@@ -628,7 +628,7 @@ class TestWriteInvalidatesDedup(unittest.TestCase):
         except OSError:
             pass
 
-    @patch("tools.file_tools._get_file_ops")
+    @patch("zermes.tools.file_tools._get_file_ops")
     def test_write_invalidates_dedup_same_second(self, mock_ops):
         """read→write→read within the same mtime second returns fresh content.
 
@@ -663,7 +663,7 @@ class TestWriteInvalidatesDedup(unittest.TestCase):
                             "read after write must not return dedup stub")
         self.assertIn("content", r2)
 
-    @patch("tools.file_tools._get_file_ops")
+    @patch("zermes.tools.file_tools._get_file_ops")
     def test_write_invalidates_all_offsets(self, mock_ops):
         """A write invalidates dedup entries for ALL offset/limit combos."""
         fake = MagicMock()
@@ -690,7 +690,7 @@ class TestWriteInvalidatesDedup(unittest.TestCase):
         self.assertNotEqual(r2.get("dedup"), True,
                             "offset=50 should not dedup after write")
 
-    @patch("tools.file_tools._get_file_ops")
+    @patch("zermes.tools.file_tools._get_file_ops")
     def test_write_does_not_invalidate_other_files(self, mock_ops):
         """Writing file A should not invalidate dedup for file B."""
         other = os.path.join(self._tmpdir, "other.txt")
@@ -722,7 +722,7 @@ class TestWriteInvalidatesDedup(unittest.TestCase):
         except OSError:
             pass
 
-    @patch("tools.file_tools._get_file_ops")
+    @patch("zermes.tools.file_tools._get_file_ops")
     def test_write_does_not_invalidate_other_tasks(self, mock_ops):
         """Writing in task A should not invalidate dedup for task B."""
         fake = MagicMock()

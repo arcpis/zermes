@@ -1,4 +1,4 @@
-"""Tests for agent.api_max_retries config surface.
+"""Tests for zermes.agent.api_max_retries config surface.
 
 Closes #11616 — make the hardcoded ``max_retries = 3`` in the agent's API
 retry loop user-configurable so fallback-provider setups can fail over
@@ -6,18 +6,18 @@ faster on flaky primaries instead of burning ~3x180s on the same stall.
 """
 from unittest.mock import MagicMock, patch
 
-from run_agent import AIAgent
+from zermes.run_agent import AIAgent
 
 
 def _make_agent(api_max_retries=None):
     """Build an AIAgent with a mocked config.load_config that returns a
-    config tree containing the given agent.api_max_retries (or default)."""
+    config tree containing the given zermes.agent.api_max_retries (or default)."""
     cfg = {"agent": {}}
     if api_max_retries is not None:
         cfg["agent"]["api_max_retries"] = api_max_retries
 
-    with patch("run_agent.OpenAI"), \
-         patch("hermes_cli.config.load_config", return_value=cfg):
+    with patch("zermes.run_agent.OpenAI"),\
+         patch("zermes.hermes_cli.config.load_config", return_value=cfg):
         return AIAgent(
             api_key="test-key",
             base_url="https://openrouter.ai/api/v1",
@@ -35,7 +35,7 @@ def test_default_api_max_retries_is_three():
 
 
 def test_api_max_retries_honors_config_override():
-    """Setting agent.api_max_retries in config propagates to the agent."""
+    """Setting zermes.agent.api_max_retries in config propagates to the zermes.agent."""
     agent = _make_agent(api_max_retries=1)
     assert agent._api_max_retries == 1
 

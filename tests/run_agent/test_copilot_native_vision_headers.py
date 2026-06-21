@@ -1,10 +1,10 @@
 from unittest.mock import MagicMock, patch
 
-from run_agent import AIAgent
+from zermes.run_agent import AIAgent
 
 
 def _make_copilot_agent():
-    with patch("run_agent.OpenAI") as mock_openai:
+    with patch("zermes.run_agent.OpenAI") as mock_openai:
         mock_openai.return_value = MagicMock()
         agent = AIAgent(
             api_key="gh-token",

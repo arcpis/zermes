@@ -25,11 +25,11 @@ class TestGeneric400Heuristic:
     def _make_agent(self):
         """Create a minimal AIAgent for testing error handling."""
         with (
-            patch("run_agent.get_tool_definitions", return_value=[]),
-            patch("run_agent.check_toolset_requirements", return_value={}),
-            patch("run_agent.OpenAI"),
+            patch("zermes.run_agent.get_tool_definitions", return_value=[]),
+            patch("zermes.run_agent.check_toolset_requirements", return_value={}),
+            patch("zermes.run_agent.OpenAI"),
         ):
-            from run_agent import AIAgent
+            from zermes.run_agent import AIAgent
             a = AIAgent(
                 api_key="test-key-12345",
                 base_url="https://openrouter.ai/api/v1",
@@ -177,7 +177,7 @@ class TestCompressionExhaustedFlag:
     auto-reset the session.  (#9893)"""
 
     def test_compression_exhausted_returns_carry_flag(self):
-        """Simulate the return dict from a compression-exhausted agent."""
+        """Simulate the return dict from a compression-exhausted zermes.agent."""
         agent_result = {
             "messages": [],
             "completed": False,

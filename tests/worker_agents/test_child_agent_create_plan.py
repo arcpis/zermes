@@ -1,6 +1,6 @@
 import pytest
 
-from worker_agents.organization_evolution import (
+from zermes.worker_agents.organization_evolution import (
     CHILD_AGENT_LIFECYCLE_SCHEMA_VERSION,
     ChildAgentBudgetPolicy,
     ChildAgentChatPolicy,
@@ -22,7 +22,7 @@ def _permission_boundary(**overrides):
         "requested_tools": ["read_file"],
         "parent_policy_allowed_tools": ["read_file", "search_docs"],
         "main_policy_allowed_tools": ["read_file", "search_docs", "open_issue"],
-        "policy_ref": "policies/platform-tools.json",
+        "policy_ref": "policies/platform-zermes.tools.json",
     }
     data.update(overrides)
     return data

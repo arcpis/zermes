@@ -1,4 +1,4 @@
-"""Tests verifying interrupt key consistency between adapter and gateway.
+"""Tests verifying interrupt key consistency between adapter and zermes.gateway.
 
 Regression test for a bug where monitor_for_interrupt() in _run_agent used
 source.chat_id to query the adapter, but the adapter stores interrupts under
@@ -10,9 +10,9 @@ import asyncio
 
 import pytest
 
-from gateway.config import Platform, PlatformConfig
-from gateway.platforms.base import BasePlatformAdapter, MessageEvent, MessageType, SendResult
-from gateway.session import SessionSource, build_session_key
+from zermes.gateway.config import Platform, PlatformConfig
+from zermes.gateway.platforms.base import BasePlatformAdapter, MessageEvent, MessageType, SendResult
+from zermes.gateway.session import SessionSource, build_session_key
 
 
 class StubAdapter(BasePlatformAdapter):

@@ -2,7 +2,7 @@
 
 import json
 
-from plugins.memory.openviking import OpenVikingMemoryProvider
+from zermes.plugins.memory.openviking import OpenVikingMemoryProvider
 
 
 class FakeVikingClient:

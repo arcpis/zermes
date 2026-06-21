@@ -1,4 +1,4 @@
-"""Unit tests for run_agent.py (AIAgent).
+"""Unit tests for zermes.run_agent.py (AIAgent).
 
 Tests cover pure functions, state/structure methods, and conversation loop
 pieces. The OpenAI client and tool loading are mocked so no network calls
@@ -16,12 +16,12 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from agent.codex_responses_adapter import _chat_messages_to_responses_input, _normalize_codex_response, _preflight_codex_input_items
+from zermes.agent.codex_responses_adapter import _chat_messages_to_responses_input, _normalize_codex_response, _preflight_codex_input_items
 
-import run_agent
-from run_agent import AIAgent
-from agent.error_classifier import FailoverReason
-from agent.prompt_builder import DEFAULT_AGENT_IDENTITY
+import zermes.run_agent as run_agent
+from zermes.run_agent import AIAgent
+from zermes.agent.error_classifier import FailoverReason
+from zermes.agent.prompt_builder import DEFAULT_AGENT_IDENTITY
 
 
 # ---------------------------------------------------------------------------
@@ -45,11 +45,11 @@ def _make_tool_defs(*names: str) -> list:
 
 
 def test_is_destructive_command_treats_cp_as_mutating():
-    assert run_agent._is_destructive_command("cp .env.local .env") is True
+    assert zermes.run_agent._is_destructive_command("cp .env.local .env") is True
 
 
 def test_is_destructive_command_treats_install_as_mutating():
-    assert run_agent._is_destructive_command("install template.env .env") is True
+    assert zermes.run_agent._is_destructive_command("install template.env .env") is True
 
 
 @pytest.fixture()
@@ -57,10 +57,10 @@ def agent():
     """Minimal AIAgent with mocked OpenAI client and tool loading."""
     with (
         patch(
-            "run_agent.get_tool_definitions", return_value=_make_tool_defs("web_search")
+            "zermes.run_agent.get_tool_definitions", return_value=_make_tool_defs("web_search")
         ),
-        patch("run_agent.check_toolset_requirements", return_value={}),
-        patch("run_agent.OpenAI"),
+        patch("zermes.run_agent.check_toolset_requirements", return_value={}),
+        patch("zermes.run_agent.OpenAI"),
     ):
         a = AIAgent(
             api_key="test-key-1234567890",
@@ -78,11 +78,11 @@ def agent_with_memory_tool():
     """Agent whose valid_tool_names includes 'memory'."""
     with (
         patch(
-            "run_agent.get_tool_definitions",
+            "zermes.run_agent.get_tool_definitions",
             return_value=_make_tool_defs("web_search", "memory"),
         ),
-        patch("run_agent.check_toolset_requirements", return_value={}),
-        patch("run_agent.OpenAI"),
+        patch("zermes.run_agent.check_toolset_requirements", return_value={}),
+        patch("zermes.run_agent.OpenAI"),
     ):
         a = AIAgent(
             api_key="test-k...7890",
@@ -99,7 +99,7 @@ def test_aiagent_reuses_existing_errors_log_handler():
     """Repeated AIAgent init should not accumulate duplicate errors.log handlers."""
     root_logger = logging.getLogger()
     original_handlers = list(root_logger.handlers)
-    error_log_path = (run_agent._hermes_home / "logs" / "errors.log").resolve()
+    error_log_path = (zermes.run_agent._hermes_home / "logs" / "errors.log").resolve()
 
     try:
         for handler in list(root_logger.handlers):
@@ -115,11 +115,11 @@ def test_aiagent_reuses_existing_errors_log_handler():
 
         with (
             patch(
-                "run_agent.get_tool_definitions",
+                "zermes.run_agent.get_tool_definitions",
                 return_value=_make_tool_defs("web_search"),
             ),
-            patch("run_agent.check_toolset_requirements", return_value={}),
-            patch("run_agent.OpenAI"),
+            patch("zermes.run_agent.check_toolset_requirements", return_value={}),
+            patch("zermes.run_agent.OpenAI"),
         ):
             AIAgent(
                 api_key="test-k...7890",
@@ -155,10 +155,10 @@ class TestProviderModelNormalization:
     def test_aiagent_strips_matching_native_provider_prefix(self):
         with (
             patch(
-                "run_agent.get_tool_definitions", return_value=_make_tool_defs("web_search")
+                "zermes.run_agent.get_tool_definitions", return_value=_make_tool_defs("web_search")
             ),
-            patch("run_agent.check_toolset_requirements", return_value={}),
-            patch("run_agent.OpenAI"),
+            patch("zermes.run_agent.check_toolset_requirements", return_value={}),
+            patch("zermes.run_agent.OpenAI"),
         ):
             agent = AIAgent(
                 model="zai/glm-5.1",
@@ -175,10 +175,10 @@ class TestProviderModelNormalization:
     def test_aiagent_keeps_aggregator_vendor_slug(self):
         with (
             patch(
-                "run_agent.get_tool_definitions", return_value=_make_tool_defs("web_search")
+                "zermes.run_agent.get_tool_definitions", return_value=_make_tool_defs("web_search")
             ),
-            patch("run_agent.check_toolset_requirements", return_value={}),
-            patch("run_agent.OpenAI"),
+            patch("zermes.run_agent.check_toolset_requirements", return_value={}),
+            patch("zermes.run_agent.OpenAI"),
         ):
             agent = AIAgent(
                 model="anthropic/claude-sonnet-4.6",
@@ -603,9 +603,9 @@ class TestInit:
     def test_anthropic_base_url_accepted(self):
         """Anthropic base URLs should route to native Anthropic client."""
         with (
-            patch("run_agent.get_tool_definitions", return_value=[]),
-            patch("run_agent.check_toolset_requirements", return_value={}),
-            patch("agent.anthropic_adapter._anthropic_sdk") as mock_anthropic,
+            patch("zermes.run_agent.get_tool_definitions", return_value=[]),
+            patch("zermes.run_agent.check_toolset_requirements", return_value={}),
+            patch("zermes.agent.anthropic_adapter._anthropic_sdk") as mock_anthropic,
         ):
             agent = AIAgent(
                 api_key="test-key-1234567890",
@@ -620,9 +620,9 @@ class TestInit:
     def test_prompt_caching_claude_openrouter(self):
         """Claude model via OpenRouter should enable prompt caching."""
         with (
-            patch("run_agent.get_tool_definitions", return_value=[]),
-            patch("run_agent.check_toolset_requirements", return_value={}),
-            patch("run_agent.OpenAI"),
+            patch("zermes.run_agent.get_tool_definitions", return_value=[]),
+            patch("zermes.run_agent.check_toolset_requirements", return_value={}),
+            patch("zermes.run_agent.OpenAI"),
         ):
             a = AIAgent(
                 api_key="test-k...7890",
@@ -637,9 +637,9 @@ class TestInit:
     def test_prompt_caching_non_claude(self):
         """Non-Claude model should disable prompt caching."""
         with (
-            patch("run_agent.get_tool_definitions", return_value=[]),
-            patch("run_agent.check_toolset_requirements", return_value={}),
-            patch("run_agent.OpenAI"),
+            patch("zermes.run_agent.get_tool_definitions", return_value=[]),
+            patch("zermes.run_agent.check_toolset_requirements", return_value={}),
+            patch("zermes.run_agent.OpenAI"),
         ):
             a = AIAgent(
                 api_key="test-key-1234567890",
@@ -654,9 +654,9 @@ class TestInit:
     def test_prompt_caching_non_openrouter(self):
         """Custom base_url (not OpenRouter) should disable prompt caching."""
         with (
-            patch("run_agent.get_tool_definitions", return_value=[]),
-            patch("run_agent.check_toolset_requirements", return_value={}),
-            patch("run_agent.OpenAI"),
+            patch("zermes.run_agent.get_tool_definitions", return_value=[]),
+            patch("zermes.run_agent.check_toolset_requirements", return_value={}),
+            patch("zermes.run_agent.OpenAI"),
         ):
             a = AIAgent(
                 api_key="test-key-1234567890",
@@ -671,9 +671,9 @@ class TestInit:
     def test_prompt_caching_native_anthropic(self):
         """Native Anthropic provider should enable prompt caching."""
         with (
-            patch("run_agent.get_tool_definitions", return_value=[]),
-            patch("run_agent.check_toolset_requirements", return_value={}),
-            patch("agent.anthropic_adapter._anthropic_sdk"),
+            patch("zermes.run_agent.get_tool_definitions", return_value=[]),
+            patch("zermes.run_agent.check_toolset_requirements", return_value={}),
+            patch("zermes.agent.anthropic_adapter._anthropic_sdk"),
         ):
             a = AIAgent(
                 api_key="test-key-1234567890",
@@ -688,10 +688,10 @@ class TestInit:
     def test_prompt_caching_cache_ttl_defaults_without_config(self):
         """cache_ttl stays 5m when prompt_caching is absent from config."""
         with (
-            patch("run_agent.get_tool_definitions", return_value=[]),
-            patch("run_agent.check_toolset_requirements", return_value={}),
-            patch("run_agent.OpenAI"),
-            patch("hermes_cli.config.load_config", return_value={}),
+            patch("zermes.run_agent.get_tool_definitions", return_value=[]),
+            patch("zermes.run_agent.check_toolset_requirements", return_value={}),
+            patch("zermes.run_agent.OpenAI"),
+            patch("zermes.hermes_cli.config.load_config", return_value={}),
         ):
             a = AIAgent(
                 api_key="test-k...7890",
@@ -706,11 +706,11 @@ class TestInit:
     def test_prompt_caching_cache_ttl_custom_1h(self):
         """prompt_caching.cache_ttl 1h is applied when present in config."""
         with (
-            patch("run_agent.get_tool_definitions", return_value=[]),
-            patch("run_agent.check_toolset_requirements", return_value={}),
-            patch("run_agent.OpenAI"),
+            patch("zermes.run_agent.get_tool_definitions", return_value=[]),
+            patch("zermes.run_agent.check_toolset_requirements", return_value={}),
+            patch("zermes.run_agent.OpenAI"),
             patch(
-                "hermes_cli.config.load_config",
+                "zermes.hermes_cli.config.load_config",
                 return_value={"prompt_caching": {"cache_ttl": "1h"}},
             ),
         ):
@@ -727,11 +727,11 @@ class TestInit:
     def test_model_max_tokens_from_config(self):
         """model.max_tokens config populates the chat-completions request cap."""
         with (
-            patch("run_agent.get_tool_definitions", return_value=_make_tool_defs("terminal")),
-            patch("run_agent.check_toolset_requirements", return_value={}),
-            patch("run_agent.OpenAI"),
+            patch("zermes.run_agent.get_tool_definitions", return_value=_make_tool_defs("terminal")),
+            patch("zermes.run_agent.check_toolset_requirements", return_value={}),
+            patch("zermes.run_agent.OpenAI"),
             patch(
-                "hermes_cli.config.load_config",
+                "zermes.hermes_cli.config.load_config",
                 return_value={"model": {"max_tokens": 4096}},
             ),
         ):
@@ -753,11 +753,11 @@ class TestInit:
     def test_constructor_max_tokens_wins_over_config(self):
         """Explicit constructor max_tokens keeps programmatic callers stable."""
         with (
-            patch("run_agent.get_tool_definitions", return_value=[]),
-            patch("run_agent.check_toolset_requirements", return_value={}),
-            patch("run_agent.OpenAI"),
+            patch("zermes.run_agent.get_tool_definitions", return_value=[]),
+            patch("zermes.run_agent.check_toolset_requirements", return_value={}),
+            patch("zermes.run_agent.OpenAI"),
             patch(
-                "hermes_cli.config.load_config",
+                "zermes.hermes_cli.config.load_config",
                 return_value={"model": {"max_tokens": 4096}},
             ),
         ):
@@ -777,11 +777,11 @@ class TestInit:
     def test_prompt_caching_cache_ttl_invalid_falls_back(self):
         """Non-Anthropic TTL values keep default 5m without raising."""
         with (
-            patch("run_agent.get_tool_definitions", return_value=[]),
-            patch("run_agent.check_toolset_requirements", return_value={}),
-            patch("run_agent.OpenAI"),
+            patch("zermes.run_agent.get_tool_definitions", return_value=[]),
+            patch("zermes.run_agent.check_toolset_requirements", return_value={}),
+            patch("zermes.run_agent.OpenAI"),
             patch(
-                "hermes_cli.config.load_config",
+                "zermes.hermes_cli.config.load_config",
                 return_value={"prompt_caching": {"cache_ttl": "30m"}},
             ),
         ):
@@ -796,12 +796,12 @@ class TestInit:
             assert a._cache_ttl == "5m"
 
     def test_valid_tool_names_populated(self):
-        """valid_tool_names should contain names from loaded tools."""
+        """valid_tool_names should contain names from loaded zermes.tools."""
         tools = _make_tool_defs("web_search", "terminal")
         with (
-            patch("run_agent.get_tool_definitions", return_value=tools),
-            patch("run_agent.check_toolset_requirements", return_value={}),
-            patch("run_agent.OpenAI"),
+            patch("zermes.run_agent.get_tool_definitions", return_value=tools),
+            patch("zermes.run_agent.check_toolset_requirements", return_value={}),
+            patch("zermes.run_agent.OpenAI"),
         ):
             a = AIAgent(
                 api_key="test-key-1234567890",
@@ -815,9 +815,9 @@ class TestInit:
     def test_session_id_auto_generated(self):
         """Session ID should be auto-generated in YYYYMMDD_HHMMSS_<hex6> format."""
         with (
-            patch("run_agent.get_tool_definitions", return_value=[]),
-            patch("run_agent.check_toolset_requirements", return_value={}),
-            patch("run_agent.OpenAI"),
+            patch("zermes.run_agent.get_tool_definitions", return_value=[]),
+            patch("zermes.run_agent.check_toolset_requirements", return_value={}),
+            patch("zermes.run_agent.OpenAI"),
         ):
             a = AIAgent(
                 api_key="test-key-1234567890",
@@ -834,17 +834,17 @@ class TestInit:
 
 class TestInterrupt:
     def test_interrupt_sets_flag(self, agent):
-        with patch("run_agent._set_interrupt"):
+        with patch("zermes.run_agent._set_interrupt"):
             agent.interrupt()
             assert agent._interrupt_requested is True
 
     def test_interrupt_with_message(self, agent):
-        with patch("run_agent._set_interrupt"):
+        with patch("zermes.run_agent._set_interrupt"):
             agent.interrupt("new question")
             assert agent._interrupt_message == "new question"
 
     def test_clear_interrupt(self, agent):
-        with patch("run_agent._set_interrupt"):
+        with patch("zermes.run_agent._set_interrupt"):
             agent.interrupt("msg")
             agent.clear_interrupt()
             assert agent._interrupt_requested is False
@@ -852,7 +852,7 @@ class TestInterrupt:
 
     def test_is_interrupted_property(self, agent):
         assert agent.is_interrupted is False
-        with patch("run_agent._set_interrupt"):
+        with patch("zermes.run_agent._set_interrupt"):
             agent.interrupt()
             assert agent.is_interrupted is True
 
@@ -863,7 +863,7 @@ class TestHydrateTodoStore:
             {"role": "user", "content": "hello"},
             {"role": "assistant", "content": "hi"},
         ]
-        with patch("run_agent._set_interrupt"):
+        with patch("zermes.run_agent._set_interrupt"):
             agent._hydrate_todo_store(history)
         assert not agent._todo_store.has_items()
 
@@ -878,7 +878,7 @@ class TestHydrateTodoStore:
                 "tool_call_id": "c1",
             },
         ]
-        with patch("run_agent._set_interrupt"):
+        with patch("zermes.run_agent._set_interrupt"):
             agent._hydrate_todo_store(history)
         assert agent._todo_store.has_items()
 
@@ -890,7 +890,7 @@ class TestHydrateTodoStore:
                 "tool_call_id": "c1",
             },
         ]
-        with patch("run_agent._set_interrupt"):
+        with patch("zermes.run_agent._set_interrupt"):
             agent._hydrate_todo_store(history)
         assert not agent._todo_store.has_items()
 
@@ -902,7 +902,7 @@ class TestHydrateTodoStore:
                 "tool_call_id": "c1",
             },
         ]
-        with patch("run_agent._set_interrupt"):
+        with patch("zermes.run_agent._set_interrupt"):
             agent._hydrate_todo_store(history)
         assert not agent._todo_store.has_items()
 
@@ -914,10 +914,10 @@ class TestBuildSystemPrompt:
 
     def test_can_use_soul_identity_even_when_context_files_are_skipped(self):
         with (
-            patch("run_agent.get_tool_definitions", return_value=_make_tool_defs("terminal")),
-            patch("run_agent.check_toolset_requirements", return_value={}),
-            patch("run_agent.OpenAI"),
-            patch("run_agent.load_soul_md", return_value="SOUL IDENTITY"),
+            patch("zermes.run_agent.get_tool_definitions", return_value=_make_tool_defs("terminal")),
+            patch("zermes.run_agent.check_toolset_requirements", return_value={}),
+            patch("zermes.run_agent.OpenAI"),
+            patch("zermes.run_agent.load_soul_md", return_value="SOUL IDENTITY"),
         ):
             agent = AIAgent(
                 api_key="test-k...7890",
@@ -937,13 +937,13 @@ class TestBuildSystemPrompt:
         assert "Custom instruction" in prompt
 
     def test_memory_guidance_when_memory_tool_loaded(self, agent_with_memory_tool):
-        from agent.prompt_builder import MEMORY_GUIDANCE
+        from zermes.agent.prompt_builder import MEMORY_GUIDANCE
 
         prompt = agent_with_memory_tool._build_system_prompt()
         assert MEMORY_GUIDANCE in prompt
 
     def test_no_memory_guidance_without_tool(self, agent):
-        from agent.prompt_builder import MEMORY_GUIDANCE
+        from zermes.agent.prompt_builder import MEMORY_GUIDANCE
 
         prompt = agent._build_system_prompt()
         assert MEMORY_GUIDANCE not in prompt
@@ -968,14 +968,14 @@ class TestBuildSystemPrompt:
         }
 
         with (
-            patch("run_agent.get_tool_definitions", return_value=tools),
+            patch("zermes.run_agent.get_tool_definitions", return_value=tools),
             patch(
-                "run_agent.check_toolset_requirements",
+                "zermes.run_agent.check_toolset_requirements",
                 side_effect=AssertionError("should not re-check toolset requirements"),
             ),
-            patch("run_agent.get_toolset_for_tool", create=True, side_effect=toolset_map.get),
-            patch("run_agent.build_skills_system_prompt", return_value="SKILLS_PROMPT") as mock_skills,
-            patch("run_agent.OpenAI"),
+            patch("zermes.run_agent.get_toolset_for_tool", create=True, side_effect=toolset_map.get),
+            patch("zermes.run_agent.build_skills_system_prompt", return_value="SKILLS_PROMPT") as mock_skills,
+            patch("zermes.run_agent.OpenAI"),
         ):
             agent = AIAgent(
                 api_key="test-k...7890",
@@ -993,19 +993,19 @@ class TestBuildSystemPrompt:
 
 
 class TestToolUseEnforcementConfig:
-    """Tests for the agent.tool_use_enforcement config option."""
+    """Tests for the zermes.agent.tool_use_enforcement config option."""
 
     def _make_agent(self, model="openai/gpt-4.1", tool_use_enforcement="auto"):
         """Create an agent with tools and a specific enforcement config."""
         with (
             patch(
-                "run_agent.get_tool_definitions",
+                "zermes.run_agent.get_tool_definitions",
                 return_value=_make_tool_defs("terminal", "web_search"),
             ),
-            patch("run_agent.check_toolset_requirements", return_value={}),
-            patch("run_agent.OpenAI"),
+            patch("zermes.run_agent.check_toolset_requirements", return_value={}),
+            patch("zermes.run_agent.OpenAI"),
             patch(
-                "hermes_cli.config.load_config",
+                "zermes.hermes_cli.config.load_config",
                 return_value={"agent": {"tool_use_enforcement": tool_use_enforcement}},
             ),
         ):
@@ -1021,55 +1021,55 @@ class TestToolUseEnforcementConfig:
             return a
 
     def test_auto_injects_for_gpt(self):
-        from agent.prompt_builder import TOOL_USE_ENFORCEMENT_GUIDANCE
+        from zermes.agent.prompt_builder import TOOL_USE_ENFORCEMENT_GUIDANCE
         agent = self._make_agent(model="openai/gpt-4.1", tool_use_enforcement="auto")
         prompt = agent._build_system_prompt()
         assert TOOL_USE_ENFORCEMENT_GUIDANCE in prompt
 
     def test_auto_injects_for_codex(self):
-        from agent.prompt_builder import TOOL_USE_ENFORCEMENT_GUIDANCE
+        from zermes.agent.prompt_builder import TOOL_USE_ENFORCEMENT_GUIDANCE
         agent = self._make_agent(model="openai/codex-mini", tool_use_enforcement="auto")
         prompt = agent._build_system_prompt()
         assert TOOL_USE_ENFORCEMENT_GUIDANCE in prompt
 
     def test_auto_skips_for_claude(self):
-        from agent.prompt_builder import TOOL_USE_ENFORCEMENT_GUIDANCE
+        from zermes.agent.prompt_builder import TOOL_USE_ENFORCEMENT_GUIDANCE
         agent = self._make_agent(model="anthropic/claude-sonnet-4", tool_use_enforcement="auto")
         prompt = agent._build_system_prompt()
         assert TOOL_USE_ENFORCEMENT_GUIDANCE not in prompt
 
     def test_true_forces_for_all_models(self):
-        from agent.prompt_builder import TOOL_USE_ENFORCEMENT_GUIDANCE
+        from zermes.agent.prompt_builder import TOOL_USE_ENFORCEMENT_GUIDANCE
         agent = self._make_agent(model="anthropic/claude-sonnet-4", tool_use_enforcement=True)
         prompt = agent._build_system_prompt()
         assert TOOL_USE_ENFORCEMENT_GUIDANCE in prompt
 
     def test_string_true_forces_for_all_models(self):
-        from agent.prompt_builder import TOOL_USE_ENFORCEMENT_GUIDANCE
+        from zermes.agent.prompt_builder import TOOL_USE_ENFORCEMENT_GUIDANCE
         agent = self._make_agent(model="anthropic/claude-sonnet-4", tool_use_enforcement="true")
         prompt = agent._build_system_prompt()
         assert TOOL_USE_ENFORCEMENT_GUIDANCE in prompt
 
     def test_always_forces_for_all_models(self):
-        from agent.prompt_builder import TOOL_USE_ENFORCEMENT_GUIDANCE
+        from zermes.agent.prompt_builder import TOOL_USE_ENFORCEMENT_GUIDANCE
         agent = self._make_agent(model="deepseek/deepseek-r1", tool_use_enforcement="always")
         prompt = agent._build_system_prompt()
         assert TOOL_USE_ENFORCEMENT_GUIDANCE in prompt
 
     def test_false_disables_for_gpt(self):
-        from agent.prompt_builder import TOOL_USE_ENFORCEMENT_GUIDANCE
+        from zermes.agent.prompt_builder import TOOL_USE_ENFORCEMENT_GUIDANCE
         agent = self._make_agent(model="openai/gpt-4.1", tool_use_enforcement=False)
         prompt = agent._build_system_prompt()
         assert TOOL_USE_ENFORCEMENT_GUIDANCE not in prompt
 
     def test_string_false_disables(self):
-        from agent.prompt_builder import TOOL_USE_ENFORCEMENT_GUIDANCE
+        from zermes.agent.prompt_builder import TOOL_USE_ENFORCEMENT_GUIDANCE
         agent = self._make_agent(model="openai/gpt-4.1", tool_use_enforcement="off")
         prompt = agent._build_system_prompt()
         assert TOOL_USE_ENFORCEMENT_GUIDANCE not in prompt
 
     def test_custom_list_matches(self):
-        from agent.prompt_builder import TOOL_USE_ENFORCEMENT_GUIDANCE
+        from zermes.agent.prompt_builder import TOOL_USE_ENFORCEMENT_GUIDANCE
         agent = self._make_agent(
             model="deepseek/deepseek-r1",
             tool_use_enforcement=["deepseek", "gemini"],
@@ -1078,7 +1078,7 @@ class TestToolUseEnforcementConfig:
         assert TOOL_USE_ENFORCEMENT_GUIDANCE in prompt
 
     def test_custom_list_no_match(self):
-        from agent.prompt_builder import TOOL_USE_ENFORCEMENT_GUIDANCE
+        from zermes.agent.prompt_builder import TOOL_USE_ENFORCEMENT_GUIDANCE
         agent = self._make_agent(
             model="anthropic/claude-sonnet-4",
             tool_use_enforcement=["deepseek", "gemini"],
@@ -1087,7 +1087,7 @@ class TestToolUseEnforcementConfig:
         assert TOOL_USE_ENFORCEMENT_GUIDANCE not in prompt
 
     def test_custom_list_case_insensitive(self):
-        from agent.prompt_builder import TOOL_USE_ENFORCEMENT_GUIDANCE
+        from zermes.agent.prompt_builder import TOOL_USE_ENFORCEMENT_GUIDANCE
         agent = self._make_agent(
             model="openai/GPT-4.1",
             tool_use_enforcement=["GPT", "Codex"],
@@ -1096,14 +1096,14 @@ class TestToolUseEnforcementConfig:
         assert TOOL_USE_ENFORCEMENT_GUIDANCE in prompt
 
     def test_no_tools_never_injects(self):
-        """Even with enforcement=true, no injection when agent has no tools."""
-        from agent.prompt_builder import TOOL_USE_ENFORCEMENT_GUIDANCE
+        """Even with enforcement=true, no injection when agent has no zermes.tools."""
+        from zermes.agent.prompt_builder import TOOL_USE_ENFORCEMENT_GUIDANCE
         with (
-            patch("run_agent.get_tool_definitions", return_value=[]),
-            patch("run_agent.check_toolset_requirements", return_value={}),
-            patch("run_agent.OpenAI"),
+            patch("zermes.run_agent.get_tool_definitions", return_value=[]),
+            patch("zermes.run_agent.check_toolset_requirements", return_value={}),
+            patch("zermes.run_agent.OpenAI"),
             patch(
-                "hermes_cli.config.load_config",
+                "zermes.hermes_cli.config.load_config",
                 return_value={"agent": {"tool_use_enforcement": True}},
             ),
         ):
@@ -1314,8 +1314,8 @@ class TestBuildApiKwargs:
 
     def test_reasoning_sent_for_copilot_gpt5(self, agent):
         """Copilot/GitHub Models: GPT-5 reasoning goes in extra_body.reasoning."""
-        from agent.transports import get_transport
-        from providers import get_provider_profile
+        from zermes.agent.transports import get_transport
+        from zermes.providers import get_provider_profile
 
         transport = get_transport("chat_completions")
         profile = get_provider_profile("copilot")
@@ -1331,8 +1331,8 @@ class TestBuildApiKwargs:
 
     def test_reasoning_xhigh_normalized_for_copilot(self, agent):
         """xhigh effort should normalize to high for Copilot GitHub Models."""
-        from agent.transports import get_transport
-        from providers import get_provider_profile
+        from zermes.agent.transports import get_transport
+        from zermes.providers import get_provider_profile
 
         transport = get_transport("chat_completions")
         profile = get_provider_profile("copilot")
@@ -1665,7 +1665,7 @@ class TestExecuteToolCalls:
         mock_msg = _mock_assistant_msg(content="", tool_calls=[tc])
         messages = []
         with patch(
-            "run_agent.handle_function_call", return_value="search result"
+            "zermes.run_agent.handle_function_call", return_value="search result"
         ) as mock_hfc:
             agent._execute_tool_calls(mock_msg, messages, "task-1")
             # enabled_tools passes the agent's own valid_tool_names
@@ -1682,7 +1682,7 @@ class TestExecuteToolCalls:
         mock_msg = _mock_assistant_msg(content="", tool_calls=[tc1, tc2])
         messages = []
 
-        with patch("run_agent._set_interrupt"):
+        with patch("zermes.run_agent._set_interrupt"):
             agent.interrupt()
 
         agent._execute_tool_calls(mock_msg, messages, "task-1")
@@ -1699,7 +1699,7 @@ class TestExecuteToolCalls:
         )
         mock_msg = _mock_assistant_msg(content="", tool_calls=[tc])
         messages = []
-        with patch("run_agent.handle_function_call", return_value="ok") as mock_hfc:
+        with patch("zermes.run_agent.handle_function_call", return_value="ok") as mock_hfc:
             agent._execute_tool_calls(mock_msg, messages, "task-1")
             # Invalid JSON args should fall back to empty dict
             args, kwargs = mock_hfc.call_args
@@ -1716,7 +1716,7 @@ class TestExecuteToolCalls:
         mock_msg = _mock_assistant_msg(content="", tool_calls=[tc])
         messages = []
         big_result = "x" * 150_000
-        with patch("run_agent.handle_function_call", return_value=big_result):
+        with patch("zermes.run_agent.handle_function_call", return_value=big_result):
             agent._execute_tool_calls(mock_msg, messages, "task-1")
         # Content should be replaced with persisted-output or truncation
         assert len(messages[0]["content"]) < 150_000
@@ -1728,7 +1728,7 @@ class TestExecuteToolCalls:
         messages = []
         agent.tool_progress_callback = lambda *args, **kwargs: None
 
-        with patch("run_agent.handle_function_call", return_value="search result"), \
+        with patch("zermes.run_agent.handle_function_call", return_value="search result"),\
              patch.object(agent, "_safe_print") as mock_print:
             agent._execute_tool_calls(mock_msg, messages, "task-1")
 
@@ -1743,7 +1743,7 @@ class TestExecuteToolCalls:
         agent.platform = "cli"
         agent.tool_progress_callback = None
 
-        with patch("run_agent.handle_function_call", return_value="search result"), \
+        with patch("zermes.run_agent.handle_function_call", return_value="search result"),\
              patch.object(agent, "_safe_print") as mock_print:
             agent._execute_tool_calls(mock_msg, messages, "task-1")
 
@@ -1759,7 +1759,7 @@ class TestExecuteToolCalls:
         agent.platform = None
         agent.tool_progress_callback = None
 
-        with patch("run_agent.handle_function_call", return_value="search result"), \
+        with patch("zermes.run_agent.handle_function_call", return_value="search result"),\
              patch.object(agent, "_safe_print") as mock_print:
             agent._execute_tool_calls(mock_msg, messages, "task-1")
 
@@ -1800,7 +1800,7 @@ class TestExecuteToolCalls:
         captured = io.StringIO()
         agent._print_fn = lambda *args, **kw: print(*args, file=captured, **kw)
 
-        with patch("run_agent.time.sleep", return_value=None):
+        with patch("zermes.run_agent.time.sleep", return_value=None):
             result = agent.run_conversation("hello")
 
         assert result["completed"] is True
@@ -1950,7 +1950,7 @@ class TestConcurrentToolExecution:
             call_log.append(name)
             return json.dumps({"result": args.get("q", "")})
 
-        with patch("run_agent.handle_function_call", side_effect=fake_handle):
+        with patch("zermes.run_agent.handle_function_call", side_effect=fake_handle):
             agent._execute_tool_calls_concurrent(mock_msg, messages, "task-1")
 
         assert len(messages) == 3
@@ -1980,7 +1980,7 @@ class TestConcurrentToolExecution:
                 _time.sleep(0.1)  # Slow tool
             return f"result_{q}"
 
-        with patch("run_agent.handle_function_call", side_effect=fake_handle):
+        with patch("zermes.run_agent.handle_function_call", side_effect=fake_handle):
             agent._execute_tool_calls_concurrent(mock_msg, messages, "task-1")
 
         assert messages[0]["tool_call_id"] == "c1"
@@ -2002,7 +2002,7 @@ class TestConcurrentToolExecution:
                 raise RuntimeError("boom")
             return "success"
 
-        with patch("run_agent.handle_function_call", side_effect=fake_handle):
+        with patch("zermes.run_agent.handle_function_call", side_effect=fake_handle):
             agent._execute_tool_calls_concurrent(mock_msg, messages, "task-1")
 
         assert len(messages) == 2
@@ -2018,7 +2018,7 @@ class TestConcurrentToolExecution:
         mock_msg = _mock_assistant_msg(content="", tool_calls=[tc1, tc2])
         messages = []
 
-        with patch("run_agent._set_interrupt"):
+        with patch("zermes.run_agent._set_interrupt"):
             agent.interrupt()
 
         agent._execute_tool_calls_concurrent(mock_msg, messages, "task-1")
@@ -2036,7 +2036,7 @@ class TestConcurrentToolExecution:
         messages = []
         big_result = "x" * 150_000
 
-        with patch("run_agent.handle_function_call", return_value=big_result):
+        with patch("zermes.run_agent.handle_function_call", return_value=big_result):
             agent._execute_tool_calls_concurrent(mock_msg, messages, "task-1")
 
         assert len(messages) == 2
@@ -2046,7 +2046,7 @@ class TestConcurrentToolExecution:
 
     def test_invoke_tool_dispatches_to_handle_function_call(self, agent):
         """_invoke_tool should route regular tools through handle_function_call."""
-        with patch("run_agent.handle_function_call", return_value="result") as mock_hfc:
+        with patch("zermes.run_agent.handle_function_call", return_value="result") as mock_hfc:
             result = agent._invoke_tool("web_search", {"q": "test"}, "task-1")
             mock_hfc.assert_called_once_with(
                 "web_search", {"q": "test"}, "task-1",
@@ -2066,7 +2066,7 @@ class TestConcurrentToolExecution:
         agent.tool_start_callback = lambda tool_call_id, function_name, function_args: starts.append((tool_call_id, function_name, function_args))
         agent.tool_complete_callback = lambda tool_call_id, function_name, function_args, function_result: completes.append((tool_call_id, function_name, function_args, function_result))
 
-        with patch("run_agent.handle_function_call", return_value='{"success": true}'):
+        with patch("zermes.run_agent.handle_function_call", return_value='{"success": true}'):
             agent._execute_tool_calls_sequential(mock_msg, messages, "task-1")
 
         assert starts == [("c1", "web_search", {"query": "hello"})]
@@ -2082,7 +2082,7 @@ class TestConcurrentToolExecution:
         agent.tool_start_callback = lambda tool_call_id, function_name, function_args: starts.append((tool_call_id, function_name, function_args))
         agent.tool_complete_callback = lambda tool_call_id, function_name, function_args, function_result: completes.append((tool_call_id, function_name, function_args, function_result))
 
-        with patch("run_agent.handle_function_call", side_effect=['{"id":1}', '{"id":2}']):
+        with patch("zermes.run_agent.handle_function_call", side_effect=['{"id":1}', '{"id":2}']):
             agent._execute_tool_calls_concurrent(mock_msg, messages, "task-1")
 
         assert starts == [
@@ -2095,7 +2095,7 @@ class TestConcurrentToolExecution:
 
     def test_invoke_tool_handles_agent_level_tools(self, agent):
         """_invoke_tool should handle todo tool directly."""
-        with patch("tools.todo_tool.todo_tool", return_value='{"ok":true}') as mock_todo:
+        with patch("zermes.tools.todo_tool.todo_tool", return_value='{"ok":true}') as mock_todo:
             result = agent._invoke_tool("todo", {"todos": []}, "task-1")
             mock_todo.assert_called_once()
         assert "ok" in result
@@ -2103,10 +2103,10 @@ class TestConcurrentToolExecution:
     def test_invoke_tool_blocked_returns_error_and_skips_execution(self, agent, monkeypatch):
         """_invoke_tool should return error JSON when a plugin blocks the tool."""
         monkeypatch.setattr(
-            "hermes_cli.plugins.get_pre_tool_call_block_message",
+            "zermes.hermes_cli.plugins.get_pre_tool_call_block_message",
             lambda *args, **kwargs: "Blocked by test policy",
         )
-        with patch("tools.todo_tool.todo_tool", side_effect=AssertionError("should not run")) as mock_todo:
+        with patch("zermes.tools.todo_tool.todo_tool", side_effect=AssertionError("should not run")) as mock_todo:
             result = agent._invoke_tool("todo", {"todos": []}, "task-1")
 
         assert json.loads(result) == {"error": "Blocked by test policy"}
@@ -2115,10 +2115,10 @@ class TestConcurrentToolExecution:
     def test_invoke_tool_blocked_skips_handle_function_call(self, agent, monkeypatch):
         """Blocked registry tools should not reach handle_function_call."""
         monkeypatch.setattr(
-            "hermes_cli.plugins.get_pre_tool_call_block_message",
+            "zermes.hermes_cli.plugins.get_pre_tool_call_block_message",
             lambda *args, **kwargs: "Blocked",
         )
-        with patch("run_agent.handle_function_call", side_effect=AssertionError("should not run")):
+        with patch("zermes.run_agent.handle_function_call", side_effect=AssertionError("should not run")):
             result = agent._invoke_tool("web_search", {"q": "test"}, "task-1")
 
         assert json.loads(result) == {"error": "Blocked"}
@@ -2132,7 +2132,7 @@ class TestConcurrentToolExecution:
         messages = []
 
         monkeypatch.setattr(
-            "hermes_cli.plugins.get_pre_tool_call_block_message",
+            "zermes.hermes_cli.plugins.get_pre_tool_call_block_message",
             lambda *args, **kwargs: "Blocked by policy",
         )
         agent._checkpoint_mgr.enabled = True
@@ -2143,7 +2143,7 @@ class TestConcurrentToolExecution:
         starts = []
         agent.tool_start_callback = lambda *a: starts.append(a)
 
-        with patch("run_agent.handle_function_call", side_effect=AssertionError("should not run")):
+        with patch("zermes.run_agent.handle_function_call", side_effect=AssertionError("should not run")):
             agent._execute_tool_calls_sequential(mock_msg, messages, "task-1")
 
         agent._checkpoint_mgr.ensure_checkpoint.assert_not_called()
@@ -2156,10 +2156,10 @@ class TestConcurrentToolExecution:
         """Blocked memory tool should not reset the nudge counter."""
         agent._turns_since_memory = 5
         monkeypatch.setattr(
-            "hermes_cli.plugins.get_pre_tool_call_block_message",
+            "zermes.hermes_cli.plugins.get_pre_tool_call_block_message",
             lambda *args, **kwargs: "Blocked",
         )
-        with patch("tools.memory_tool.memory_tool", side_effect=AssertionError("should not run")):
+        with patch("zermes.tools.memory_tool.memory_tool", side_effect=AssertionError("should not run")):
             result = agent._invoke_tool(
                 "memory", {"action": "add", "target": "memory", "content": "x"}, "task-1",
             )
@@ -2172,38 +2172,38 @@ class TestPathsOverlap:
     """Unit tests for the _paths_overlap helper."""
 
     def test_same_path_overlaps(self):
-        from run_agent import _paths_overlap
+        from zermes.run_agent import _paths_overlap
         assert _paths_overlap(Path("src/a.py"), Path("src/a.py"))
 
     def test_siblings_do_not_overlap(self):
-        from run_agent import _paths_overlap
+        from zermes.run_agent import _paths_overlap
         assert not _paths_overlap(Path("src/a.py"), Path("src/b.py"))
 
     def test_parent_child_overlap(self):
-        from run_agent import _paths_overlap
+        from zermes.run_agent import _paths_overlap
         assert _paths_overlap(Path("src"), Path("src/sub/a.py"))
 
     def test_different_roots_do_not_overlap(self):
-        from run_agent import _paths_overlap
+        from zermes.run_agent import _paths_overlap
         assert not _paths_overlap(Path("src/a.py"), Path("other/a.py"))
 
     def test_nested_vs_flat_do_not_overlap(self):
-        from run_agent import _paths_overlap
+        from zermes.run_agent import _paths_overlap
         assert not _paths_overlap(Path("src/sub/a.py"), Path("src/a.py"))
 
     def test_empty_paths_do_not_overlap(self):
-        from run_agent import _paths_overlap
+        from zermes.run_agent import _paths_overlap
         assert not _paths_overlap(Path(""), Path(""))
 
     def test_one_empty_path_does_not_overlap(self):
-        from run_agent import _paths_overlap
+        from zermes.run_agent import _paths_overlap
         assert not _paths_overlap(Path(""), Path("src/a.py"))
         assert not _paths_overlap(Path("src/a.py"), Path(""))
 
 
 class TestParallelScopePathNormalization:
     def test_extract_parallel_scope_path_normalizes_relative_to_cwd(self, tmp_path, monkeypatch):
-        from run_agent import _extract_parallel_scope_path
+        from zermes.run_agent import _extract_parallel_scope_path
 
         monkeypatch.chdir(tmp_path)
 
@@ -2212,7 +2212,7 @@ class TestParallelScopePathNormalization:
         assert scoped == tmp_path / "notes.txt"
 
     def test_extract_parallel_scope_path_treats_relative_and_absolute_same_file_as_same_scope(self, tmp_path, monkeypatch):
-        from run_agent import _extract_parallel_scope_path, _paths_overlap
+        from zermes.run_agent import _extract_parallel_scope_path, _paths_overlap
 
         monkeypatch.chdir(tmp_path)
         abs_path = tmp_path / "notes.txt"
@@ -2224,7 +2224,7 @@ class TestParallelScopePathNormalization:
         assert _paths_overlap(rel_scoped, abs_scoped)
 
     def test_should_parallelize_tool_batch_rejects_same_file_with_mixed_path_spellings(self, tmp_path, monkeypatch):
-        from run_agent import _should_parallelize_tool_batch
+        from zermes.run_agent import _should_parallelize_tool_batch
 
         monkeypatch.chdir(tmp_path)
         tc1 = _mock_tool_call(name="write_file", arguments='{"path":"notes.txt","content":"one"}', call_id="c1")
@@ -2447,7 +2447,7 @@ class TestRunConversation:
         resp2 = _mock_response(content="Done searching", finish_reason="stop")
         agent.client.chat.completions.create.side_effect = [resp1, resp2]
         with (
-            patch("run_agent.handle_function_call", return_value="search result") as mock_handle_function_call,
+            patch("zermes.run_agent.handle_function_call", return_value="search result") as mock_handle_function_call,
             patch.object(agent, "_persist_session"),
             patch.object(agent, "_save_trajectory"),
             patch.object(agent, "_cleanup_task_resources"),
@@ -2472,8 +2472,8 @@ class TestRunConversation:
             return []
 
         with (
-            patch("run_agent.handle_function_call", return_value="search result"),
-            patch("hermes_cli.plugins.invoke_hook", side_effect=_record_hook),
+            patch("zermes.run_agent.handle_function_call", return_value="search result"),
+            patch("zermes.hermes_cli.plugins.invoke_hook", side_effect=_record_hook),
             patch.object(agent, "_persist_session"),
             patch.object(agent, "_save_trajectory"),
             patch.object(agent, "_cleanup_task_resources"),
@@ -2504,7 +2504,7 @@ class TestRunConversation:
         agent.client.chat.completions.create.side_effect = [resp1, resp2]
 
         with (
-            patch("run_agent.handle_function_call", return_value="search result"),
+            patch("zermes.run_agent.handle_function_call", return_value="search result"),
             patch.object(agent, "_safe_print") as mock_print,
             patch.object(agent, "_persist_session"),
             patch.object(agent, "_save_trajectory"),
@@ -2526,7 +2526,7 @@ class TestRunConversation:
             patch.object(agent, "_persist_session"),
             patch.object(agent, "_save_trajectory"),
             patch.object(agent, "_cleanup_task_resources"),
-            patch("run_agent._set_interrupt"),
+            patch("zermes.run_agent._set_interrupt"),
             patch.object(
                 agent, "_interruptible_api_call", side_effect=interrupt_side_effect
             ),
@@ -2910,7 +2910,7 @@ class TestRunConversation:
         agent.client.chat.completions.create.side_effect = [resp1, resp2]
 
         with (
-            patch("run_agent.handle_function_call", return_value="result"),
+            patch("zermes.run_agent.handle_function_call", return_value="result"),
             patch.object(
                 agent.context_compressor, "should_compress", return_value=True
             ),
@@ -3091,7 +3091,7 @@ class TestRunConversation:
         ]
 
         with (
-            patch("run_agent.handle_function_call", return_value="search result"),
+            patch("zermes.run_agent.handle_function_call", return_value="search result"),
             patch.object(agent, "_persist_session"),
             patch.object(agent, "_save_trajectory"),
             patch.object(agent, "_cleanup_task_resources"),
@@ -3128,7 +3128,7 @@ class TestRunConversation:
         agent.client.chat.completions.create.side_effect = [tool_turn, complete_stop]
 
         with (
-            patch("run_agent.handle_function_call", return_value="search result"),
+            patch("zermes.run_agent.handle_function_call", return_value="search result"),
             patch.object(agent, "_persist_session"),
             patch.object(agent, "_save_trajectory"),
             patch.object(agent, "_cleanup_task_resources"),
@@ -3161,7 +3161,7 @@ class TestRunConversation:
         agent.client.chat.completions.create.side_effect = [tool_turn, normal_stop]
 
         with (
-            patch("run_agent.handle_function_call", return_value="search result"),
+            patch("zermes.run_agent.handle_function_call", return_value="search result"),
             patch.object(agent, "_persist_session"),
             patch.object(agent, "_save_trajectory"),
             patch.object(agent, "_cleanup_task_resources"),
@@ -3228,7 +3228,7 @@ class TestRunConversation:
         agent.client.chat.completions.create.return_value = resp
 
         with (
-            patch("run_agent.handle_function_call") as mock_handle_function_call,
+            patch("zermes.run_agent.handle_function_call") as mock_handle_function_call,
             patch.object(agent, "_persist_session"),
             patch.object(agent, "_save_trajectory"),
             patch.object(agent, "_cleanup_task_resources"),
@@ -3262,7 +3262,7 @@ class TestRunConversation:
             content="", finish_reason="stop", tool_calls=[good_tc],
         )
         with (
-            patch("run_agent.handle_function_call", return_value='{"success":true}') as mock_hfc,
+            patch("zermes.run_agent.handle_function_call", return_value='{"success":true}') as mock_hfc,
             patch.object(agent, "_persist_session"),
             patch.object(agent, "_save_trajectory"),
             patch.object(agent, "_cleanup_task_resources"),
@@ -3296,7 +3296,7 @@ class TestRunConversation:
         agent.client.chat.completions.create.return_value = resp
 
         with (
-            patch("run_agent.handle_function_call") as mock_handle_function_call,
+            patch("zermes.run_agent.handle_function_call") as mock_handle_function_call,
             patch.object(agent, "_persist_session"),
             patch.object(agent, "_save_trajectory"),
             patch.object(agent, "_cleanup_task_resources"),
@@ -3353,7 +3353,7 @@ class TestRetryExhaustion:
             patch.object(agent, "_persist_session"),
             patch.object(agent, "_save_trajectory"),
             patch.object(agent, "_cleanup_task_resources"),
-            patch("run_agent.time", self._make_fast_time_mock()),
+            patch("zermes.run_agent.time", self._make_fast_time_mock()),
         ):
             result = agent.run_conversation("hello")
         assert result.get("completed") is False, (
@@ -3371,7 +3371,7 @@ class TestRetryExhaustion:
             patch.object(agent, "_persist_session"),
             patch.object(agent, "_save_trajectory"),
             patch.object(agent, "_cleanup_task_resources"),
-            patch("run_agent.time", self._make_fast_time_mock()),
+            patch("zermes.run_agent.time", self._make_fast_time_mock()),
         ):
             result = agent.run_conversation("hello")
         assert result.get("completed") is False
@@ -3391,7 +3391,7 @@ class TestRetryExhaustion:
             patch.object(agent, "_persist_session"),
             patch.object(agent, "_save_trajectory"),
             patch.object(agent, "_cleanup_task_resources"),
-            patch("run_agent.time", self._make_fast_time_mock()),
+            patch("zermes.run_agent.time", self._make_fast_time_mock()),
         ):
             result = agent.run_conversation("hello")
         # Must surface the real error, not UnboundLocalError
@@ -3475,11 +3475,11 @@ class TestNousCredentialRefresh:
             return _RebuiltClient()
 
         monkeypatch.setattr(
-            "hermes_cli.auth.resolve_nous_runtime_credentials", _fake_resolve
+            "zermes.hermes_cli.auth.resolve_nous_runtime_credentials", _fake_resolve
         )
 
         agent.client = _ExistingClient()
-        with patch("run_agent.OpenAI", side_effect=_fake_openai):
+        with patch("zermes.run_agent.OpenAI", side_effect=_fake_openai):
             ok = agent._try_refresh_nous_client_credentials(force=True)
 
         assert ok is True
@@ -3910,7 +3910,7 @@ class TestSafeWriter:
 
     def test_write_delegates_normally(self):
         """When stdout is healthy, _SafeWriter is transparent."""
-        from run_agent import _SafeWriter
+        from zermes.run_agent import _SafeWriter
         from io import StringIO
         inner = StringIO()
         writer = _SafeWriter(inner)
@@ -3919,7 +3919,7 @@ class TestSafeWriter:
 
     def test_write_catches_oserror(self):
         """OSError on write is silently caught, returns len(data)."""
-        from run_agent import _SafeWriter
+        from zermes.run_agent import _SafeWriter
         from unittest.mock import MagicMock
         inner = MagicMock()
         inner.write.side_effect = OSError(5, "Input/output error")
@@ -3929,7 +3929,7 @@ class TestSafeWriter:
 
     def test_flush_catches_oserror(self):
         """OSError on flush is silently caught."""
-        from run_agent import _SafeWriter
+        from zermes.run_agent import _SafeWriter
         from unittest.mock import MagicMock
         inner = MagicMock()
         inner.flush.side_effect = OSError(5, "Input/output error")
@@ -3939,7 +3939,7 @@ class TestSafeWriter:
     def test_print_survives_broken_stdout(self, monkeypatch):
         """print() through _SafeWriter doesn't crash on broken pipe."""
         import sys
-        from run_agent import _SafeWriter
+        from zermes.run_agent import _SafeWriter
         from unittest.mock import MagicMock
         broken = MagicMock()
         broken.write.side_effect = OSError(5, "Input/output error")
@@ -3953,7 +3953,7 @@ class TestSafeWriter:
     def test_installed_in_run_conversation(self, agent):
         """run_conversation installs _SafeWriter on stdio."""
         import sys
-        from run_agent import _SafeWriter
+        from zermes.run_agent import _SafeWriter
         resp = _mock_response(content="Done", finish_reason="stop")
         agent.client.chat.completions.create.return_value = resp
         original_stdout = sys.stdout
@@ -3977,7 +3977,7 @@ class TestSafeWriter:
     def test_double_wrap_prevented(self):
         """Wrapping an already-wrapped stream doesn't add layers."""
         import sys
-        from run_agent import _SafeWriter
+        from zermes.run_agent import _SafeWriter
         from io import StringIO
         inner = StringIO()
         wrapped = _SafeWriter(inner)
@@ -3996,7 +3996,7 @@ class TestSaveSessionLogAtomicWrite:
         agent.session_log_file = tmp_path / "session.json"
         messages = [{"role": "user", "content": "hello"}]
 
-        with patch("run_agent.atomic_json_write", create=True) as mock_atomic_write:
+        with patch("zermes.run_agent.atomic_json_write", create=True) as mock_atomic_write:
             agent._save_session_log(messages)
 
         mock_atomic_write.assert_called_once()
@@ -4022,7 +4022,7 @@ class TestBuildApiKwargsAnthropicMaxTokens:
         agent.max_tokens = 4096
         agent.reasoning_config = None
 
-        with patch("agent.anthropic_adapter.build_anthropic_kwargs") as mock_build:
+        with patch("zermes.agent.anthropic_adapter.build_anthropic_kwargs") as mock_build:
             mock_build.return_value = {"model": "claude-sonnet-4-20250514", "messages": [], "max_tokens": 4096}
             agent._build_api_kwargs([{"role": "user", "content": "test"}])
             _, kwargs = mock_build.call_args
@@ -4038,7 +4038,7 @@ class TestBuildApiKwargsAnthropicMaxTokens:
         agent.max_tokens = None
         agent.reasoning_config = None
 
-        with patch("agent.anthropic_adapter.build_anthropic_kwargs") as mock_build:
+        with patch("zermes.agent.anthropic_adapter.build_anthropic_kwargs") as mock_build:
             mock_build.return_value = {"model": "claude-sonnet-4-20250514", "messages": [], "max_tokens": 16384}
             agent._build_api_kwargs([{"role": "user", "content": "test"}])
             call_args = mock_build.call_args
@@ -4063,8 +4063,8 @@ class TestAnthropicImageFallback:
         }]
 
         with (
-            patch("tools.vision_tools.vision_analyze_tool", new=AsyncMock(return_value=json.dumps({"success": True, "analysis": "A cat sitting on a chair."}))),
-            patch("agent.anthropic_adapter.build_anthropic_kwargs") as mock_build,
+            patch("zermes.tools.vision_tools.vision_analyze_tool", new=AsyncMock(return_value=json.dumps({"success": True, "analysis": "A cat sitting on a chair."}))),
+            patch("zermes.agent.anthropic_adapter.build_anthropic_kwargs") as mock_build,
         ):
             mock_build.return_value = {"model": "claude-sonnet-4-20250514", "messages": [], "max_tokens": 4096}
             agent._build_api_kwargs(api_messages)
@@ -4103,8 +4103,8 @@ class TestAnthropicImageFallback:
 
         mock_vision = AsyncMock(return_value=json.dumps({"success": True, "analysis": "A small test image."}))
         with (
-            patch("tools.vision_tools.vision_analyze_tool", new=mock_vision),
-            patch("agent.anthropic_adapter.build_anthropic_kwargs") as mock_build,
+            patch("zermes.tools.vision_tools.vision_analyze_tool", new=mock_vision),
+            patch("zermes.agent.anthropic_adapter.build_anthropic_kwargs") as mock_build,
         ):
             mock_build.return_value = {"model": "claude-sonnet-4-20250514", "messages": [], "max_tokens": 4096}
             agent._build_api_kwargs(api_messages)
@@ -4126,9 +4126,9 @@ class TestFallbackAnthropicProvider:
         mock_client.api_key = "sk-ant-api03-test"
 
         with (
-            patch("agent.auxiliary_client.resolve_provider_client", return_value=(mock_client, None)),
-            patch("agent.anthropic_adapter.build_anthropic_client") as mock_build,
-            patch("agent.anthropic_adapter.resolve_anthropic_token", return_value=None),
+            patch("zermes.agent.auxiliary_client.resolve_provider_client", return_value=(mock_client, None)),
+            patch("zermes.agent.anthropic_adapter.build_anthropic_client") as mock_build,
+            patch("zermes.agent.anthropic_adapter.resolve_anthropic_token", return_value=None),
         ):
             mock_build.return_value = MagicMock()
             result = agent._try_activate_fallback()
@@ -4149,9 +4149,9 @@ class TestFallbackAnthropicProvider:
         mock_client.api_key = "sk-ant-api03-test"
 
         with (
-            patch("agent.auxiliary_client.resolve_provider_client", return_value=(mock_client, None)),
-            patch("agent.anthropic_adapter.build_anthropic_client", return_value=MagicMock()),
-            patch("agent.anthropic_adapter.resolve_anthropic_token", return_value=None),
+            patch("zermes.agent.auxiliary_client.resolve_provider_client", return_value=(mock_client, None)),
+            patch("zermes.agent.anthropic_adapter.build_anthropic_client", return_value=MagicMock()),
+            patch("zermes.agent.anthropic_adapter.resolve_anthropic_token", return_value=None),
         ):
             agent._try_activate_fallback()
 
@@ -4167,7 +4167,7 @@ class TestFallbackAnthropicProvider:
         mock_client.base_url = "https://openrouter.ai/api/v1"
         mock_client.api_key = "sk-or-test"
 
-        with patch("agent.auxiliary_client.resolve_provider_client", return_value=(mock_client, None)):
+        with patch("zermes.agent.auxiliary_client.resolve_provider_client", return_value=(mock_client, None)):
             result = agent._try_activate_fallback()
 
         assert result is True
@@ -4177,10 +4177,10 @@ class TestFallbackAnthropicProvider:
 
 def test_aiagent_uses_copilot_acp_client():
     with (
-        patch("run_agent.get_tool_definitions", return_value=_make_tool_defs("web_search")),
-        patch("run_agent.check_toolset_requirements", return_value={}),
-        patch("run_agent.OpenAI") as mock_openai,
-        patch("agent.copilot_acp_client.CopilotACPClient") as mock_acp_client,
+        patch("zermes.run_agent.get_tool_definitions", return_value=_make_tool_defs("web_search")),
+        patch("zermes.run_agent.check_toolset_requirements", return_value={}),
+        patch("zermes.run_agent.OpenAI") as mock_openai,
+        patch("zermes.agent.copilot_acp_client.CopilotACPClient") as mock_acp_client,
     ):
         acp_client = MagicMock()
         mock_acp_client.return_value = acp_client
@@ -4207,19 +4207,19 @@ def test_aiagent_uses_copilot_acp_client():
 
 def test_quiet_spinner_allowed_with_explicit_print_fn(agent):
     agent._print_fn = lambda *_a, **_kw: None
-    with patch.object(run_agent.sys.stdout, "isatty", return_value=False):
+    with patch.object(zermes.run_agent.sys.stdout, "isatty", return_value=False):
         assert agent._should_start_quiet_spinner() is True
 
 
 def test_quiet_spinner_allowed_on_real_tty(agent):
     agent._print_fn = None
-    with patch.object(run_agent.sys.stdout, "isatty", return_value=True):
+    with patch.object(zermes.run_agent.sys.stdout, "isatty", return_value=True):
         assert agent._should_start_quiet_spinner() is True
 
 
 def test_quiet_spinner_suppressed_on_non_tty_without_print_fn(agent):
     agent._print_fn = None
-    with patch.object(run_agent.sys.stdout, "isatty", return_value=False):
+    with patch.object(zermes.run_agent.sys.stdout, "isatty", return_value=False):
         assert agent._should_start_quiet_spinner() is False
 
 
@@ -4273,9 +4273,9 @@ class TestAnthropicBaseUrlPassthrough:
 
     def test_custom_proxy_base_url_passed_through(self):
         with (
-            patch("run_agent.get_tool_definitions", return_value=_make_tool_defs("web_search")),
-            patch("run_agent.check_toolset_requirements", return_value={}),
-            patch("agent.anthropic_adapter.build_anthropic_client") as mock_build,
+            patch("zermes.run_agent.get_tool_definitions", return_value=_make_tool_defs("web_search")),
+            patch("zermes.run_agent.check_toolset_requirements", return_value={}),
+            patch("zermes.agent.anthropic_adapter.build_anthropic_client") as mock_build,
         ):
             mock_build.return_value = MagicMock()
             a = AIAgent(
@@ -4292,9 +4292,9 @@ class TestAnthropicBaseUrlPassthrough:
 
     def test_none_base_url_passed_as_none(self):
         with (
-            patch("run_agent.get_tool_definitions", return_value=_make_tool_defs("web_search")),
-            patch("run_agent.check_toolset_requirements", return_value={}),
-            patch("agent.anthropic_adapter.build_anthropic_client") as mock_build,
+            patch("zermes.run_agent.get_tool_definitions", return_value=_make_tool_defs("web_search")),
+            patch("zermes.run_agent.check_toolset_requirements", return_value={}),
+            patch("zermes.agent.anthropic_adapter.build_anthropic_client") as mock_build,
         ):
             mock_build.return_value = MagicMock()
             a = AIAgent(
@@ -4313,9 +4313,9 @@ class TestAnthropicBaseUrlPassthrough:
 class TestAnthropicCredentialRefresh:
     def test_try_refresh_anthropic_client_credentials_rebuilds_client(self):
         with (
-            patch("run_agent.get_tool_definitions", return_value=_make_tool_defs("web_search")),
-            patch("run_agent.check_toolset_requirements", return_value={}),
-            patch("agent.anthropic_adapter.build_anthropic_client") as mock_build,
+            patch("zermes.run_agent.get_tool_definitions", return_value=_make_tool_defs("web_search")),
+            patch("zermes.run_agent.check_toolset_requirements", return_value={}),
+            patch("zermes.agent.anthropic_adapter.build_anthropic_client") as mock_build,
         ):
             old_client = MagicMock()
             new_client = MagicMock()
@@ -4335,8 +4335,8 @@ class TestAnthropicCredentialRefresh:
         agent.provider = "anthropic"
 
         with (
-            patch("agent.anthropic_adapter.resolve_anthropic_token", return_value="sk-ant-oat01-fresh-token"),
-            patch("agent.anthropic_adapter.build_anthropic_client", return_value=new_client) as rebuild,
+            patch("zermes.agent.anthropic_adapter.resolve_anthropic_token", return_value="sk-ant-oat01-fresh-token"),
+            patch("zermes.agent.anthropic_adapter.build_anthropic_client", return_value=new_client) as rebuild,
         ):
             assert agent._try_refresh_anthropic_client_credentials() is True
 
@@ -4349,9 +4349,9 @@ class TestAnthropicCredentialRefresh:
 
     def test_try_refresh_anthropic_client_credentials_returns_false_when_token_unchanged(self):
         with (
-            patch("run_agent.get_tool_definitions", return_value=_make_tool_defs("web_search")),
-            patch("run_agent.check_toolset_requirements", return_value={}),
-            patch("agent.anthropic_adapter.build_anthropic_client", return_value=MagicMock()),
+            patch("zermes.run_agent.get_tool_definitions", return_value=_make_tool_defs("web_search")),
+            patch("zermes.run_agent.check_toolset_requirements", return_value={}),
+            patch("zermes.agent.anthropic_adapter.build_anthropic_client", return_value=MagicMock()),
         ):
             agent = AIAgent(
                 api_key="sk-ant-oat01-same-token",
@@ -4367,8 +4367,8 @@ class TestAnthropicCredentialRefresh:
         agent._anthropic_api_key = "sk-ant-oat01-same-token"
 
         with (
-            patch("agent.anthropic_adapter.resolve_anthropic_token", return_value="sk-ant-oat01-same-token"),
-            patch("agent.anthropic_adapter.build_anthropic_client") as rebuild,
+            patch("zermes.agent.anthropic_adapter.resolve_anthropic_token", return_value="sk-ant-oat01-same-token"),
+            patch("zermes.agent.anthropic_adapter.build_anthropic_client") as rebuild,
         ):
             assert agent._try_refresh_anthropic_client_credentials() is False
 
@@ -4377,9 +4377,9 @@ class TestAnthropicCredentialRefresh:
 
     def test_anthropic_messages_create_preflights_refresh(self):
         with (
-            patch("run_agent.get_tool_definitions", return_value=_make_tool_defs("web_search")),
-            patch("run_agent.check_toolset_requirements", return_value={}),
-            patch("agent.anthropic_adapter.build_anthropic_client", return_value=MagicMock()),
+            patch("zermes.run_agent.get_tool_definitions", return_value=_make_tool_defs("web_search")),
+            patch("zermes.run_agent.check_toolset_requirements", return_value={}),
+            patch("zermes.agent.anthropic_adapter.build_anthropic_client", return_value=MagicMock()),
         ):
             agent = AIAgent(
                 api_key="sk-ant-oat01-current-token",
@@ -4660,21 +4660,21 @@ class TestAnthropicInterruptHandler:
         """The interrupt handler must check api_mode == 'anthropic_messages'."""
         import inspect
         source = inspect.getsource(AIAgent._interruptible_api_call)
-        assert "anthropic_messages" in source, \
+        assert "anthropic_messages" in source,\
             "_interruptible_api_call must handle Anthropic interrupt (api_mode check)"
 
     def test_interruptible_rebuilds_anthropic_client(self):
         """After interrupting, the Anthropic client should be rebuilt."""
         import inspect
         source = inspect.getsource(AIAgent._interruptible_api_call)
-        assert "build_anthropic_client" in source, \
+        assert "build_anthropic_client" in source,\
             "_interruptible_api_call must rebuild Anthropic client after interrupt"
 
     def test_streaming_has_anthropic_branch(self):
         """_streaming_api_call must also handle Anthropic interrupt."""
         import inspect
         source = inspect.getsource(AIAgent._interruptible_streaming_api_call)
-        assert "anthropic_messages" in source, \
+        assert "anthropic_messages" in source,\
             "_streaming_api_call must handle Anthropic interrupt"
 
 
@@ -4986,9 +4986,9 @@ class TestOAuthFlagAfterCredentialRefresh:
         agent._is_anthropic_oauth = False
 
         with (
-            patch("agent.anthropic_adapter.resolve_anthropic_token",
+            patch("zermes.agent.anthropic_adapter.resolve_anthropic_token",
                   return_value="sk-ant-setup-oauth-token"),
-            patch("agent.anthropic_adapter.build_anthropic_client",
+            patch("zermes.agent.anthropic_adapter.build_anthropic_client",
                   return_value=MagicMock()),
         ):
             result = agent._try_refresh_anthropic_client_credentials()
@@ -5005,9 +5005,9 @@ class TestOAuthFlagAfterCredentialRefresh:
         agent._is_anthropic_oauth = True
 
         with (
-            patch("agent.anthropic_adapter.resolve_anthropic_token",
+            patch("zermes.agent.anthropic_adapter.resolve_anthropic_token",
                   return_value="sk-ant-api03-new-key"),
-            patch("agent.anthropic_adapter.build_anthropic_client",
+            patch("zermes.agent.anthropic_adapter.build_anthropic_client",
                   return_value=MagicMock()),
         ):
             result = agent._try_refresh_anthropic_client_credentials()
@@ -5030,11 +5030,11 @@ class TestFallbackSetsOAuthFlag:
         mock_client.api_key = "sk-ant-setup-oauth-token"
 
         with (
-            patch("agent.auxiliary_client.resolve_provider_client",
+            patch("zermes.agent.auxiliary_client.resolve_provider_client",
                   return_value=(mock_client, None)),
-            patch("agent.anthropic_adapter.build_anthropic_client",
+            patch("zermes.agent.anthropic_adapter.build_anthropic_client",
                   return_value=MagicMock()),
-            patch("agent.anthropic_adapter.resolve_anthropic_token",
+            patch("zermes.agent.anthropic_adapter.resolve_anthropic_token",
                   return_value=None),
         ):
             result = agent._try_activate_fallback()
@@ -5053,11 +5053,11 @@ class TestFallbackSetsOAuthFlag:
         mock_client.api_key = "sk-ant-api03-regular-key"
 
         with (
-            patch("agent.auxiliary_client.resolve_provider_client",
+            patch("zermes.agent.auxiliary_client.resolve_provider_client",
                   return_value=(mock_client, None)),
-            patch("agent.anthropic_adapter.build_anthropic_client",
+            patch("zermes.agent.anthropic_adapter.build_anthropic_client",
                   return_value=MagicMock()),
-            patch("agent.anthropic_adapter.resolve_anthropic_token",
+            patch("zermes.agent.anthropic_adapter.resolve_anthropic_token",
                   return_value=None),
         ):
             result = agent._try_activate_fallback()
@@ -5071,7 +5071,7 @@ class TestMemoryNudgeCounterPersistence:
 
     def test_counters_initialized_in_init(self):
         """Counters must exist on the agent after __init__."""
-        with patch("run_agent.get_tool_definitions", return_value=[]):
+        with patch("zermes.run_agent.get_tool_definitions", return_value=[]):
             a = AIAgent(
                 model="test", api_key="test-key", base_url="http://localhost:1234/v1",
                 provider="openrouter", skip_context_files=True, skip_memory=True,
@@ -5145,7 +5145,7 @@ class TestMemoryContextSanitization:
         """Helper-level: a string with an embedded memory-context block is
         cleaned to just the surrounding text.  Used by build_memory_context_block
         (input-validation) and by plugins on their own backend boundary."""
-        from agent.memory_manager import sanitize_context
+        from zermes.agent.memory_manager import sanitize_context
         user_text = "how is the honcho working"
         injected = (
             user_text + "\n\n"

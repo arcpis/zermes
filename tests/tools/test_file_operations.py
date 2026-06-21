@@ -6,7 +6,7 @@ import subprocess
 from pathlib import Path
 from unittest.mock import MagicMock
 
-from tools.file_operations import (
+from zermes.tools.file_operations import (
     _is_write_denied,
     WRITE_DENIED_PATHS,
     WRITE_DENIED_PREFIXES,
@@ -413,7 +413,7 @@ class TestSearchFilesFallbackHiddenPaths:
         """Fallback find should include visible files when path is inside hidden root."""
         root = tmp_path / ".hermes" / "logs"
         root.mkdir(parents=True)
-        visible_file = root / "agent.log"
+        visible_file = root / "zermes.agent.log"
         hidden_dir_file = root / ".hidden" / "secret.log"
         nested_hidden_file = root / "nested" / ".secret.log"
         visible_nested_file = root / "nested" / "visible.log"
@@ -433,7 +433,7 @@ class TestSearchFilesFallbackHiddenPaths:
         """Fallback find should still exclude hidden descendant paths for normal roots."""
         root = tmp_path / "repo"
         root.mkdir()
-        visible_file = root / "agent.log"
+        visible_file = root / "zermes.agent.log"
         visible_nested_file = root / "nested" / "visible.log"
         hidden_dir_file = root / ".hidden" / "secret.log"
 

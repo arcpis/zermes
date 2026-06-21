@@ -4,16 +4,16 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from gateway.config import GatewayConfig
-from gateway.platforms.base import MessageEvent, MessageType
-from gateway.run import GatewayRunner
-from gateway.session import SessionStore
+from zermes.gateway.config import GatewayConfig
+from zermes.gateway.platforms.base import MessageEvent, MessageType
+from zermes.gateway.run import GatewayRunner
+from zermes.gateway.session import SessionStore
 
 
 @pytest.mark.asyncio
 async def test_gateway_retry_replaces_last_user_turn_in_transcript(tmp_path):
     config = GatewayConfig()
-    with patch("gateway.session.SessionStore._ensure_loaded"):
+    with patch("zermes.gateway.session.SessionStore._ensure_loaded"):
         store = SessionStore(sessions_dir=tmp_path, config=config)
     store._db = None
     store._loaded = True

@@ -22,7 +22,7 @@ def _args(**overrides):
 
 @pytest.fixture
 def main_mod(monkeypatch):
-    import hermes_cli.main as mod
+    import zermes.hermes_cli.main as mod
 
     monkeypatch.setattr(mod, "_has_any_provider_configured", lambda: True)
     return mod
@@ -218,24 +218,24 @@ def test_cmd_chat_tui_forwards_chat_flags(monkeypatch, main_mod):
 def test_main_top_level_tui_accepts_toolsets(monkeypatch, main_mod):
     captured = {}
 
-    import hermes_cli.config as config_mod
+    import zermes.hermes_cli.config as config_mod
 
     monkeypatch.setattr(sys, "argv", ["hermes", "--tui", "--toolsets", "web,terminal"])
     monkeypatch.setitem(
         sys.modules,
-        "hermes_cli.plugins",
+        "zermes.hermes_cli.plugins",
         types.SimpleNamespace(discover_plugins=lambda: None),
     )
     monkeypatch.setitem(
         sys.modules,
-        "tools.mcp_tool",
+        "zermes.tools.mcp_tool",
         types.SimpleNamespace(discover_mcp_tools=lambda: None),
     )
     monkeypatch.setattr(config_mod, "load_config", lambda: {})
     monkeypatch.setattr(config_mod, "get_container_exec_info", lambda: None)
     monkeypatch.setitem(
         sys.modules,
-        "agent.shell_hooks",
+        "zermes.agent.shell_hooks",
         types.SimpleNamespace(
             register_from_config=lambda _cfg, accept_hooks=False: None
         ),
@@ -254,33 +254,33 @@ def test_main_top_level_tui_accepts_toolsets(monkeypatch, main_mod):
 def test_main_top_level_oneshot_accepts_toolsets(monkeypatch, main_mod):
     captured = {}
 
-    import hermes_cli.config as config_mod
+    import zermes.hermes_cli.config as config_mod
 
     monkeypatch.setattr(
         sys, "argv", ["hermes", "-z", "hello", "--toolsets", "web,terminal"]
     )
     monkeypatch.setitem(
         sys.modules,
-        "hermes_cli.plugins",
+        "zermes.hermes_cli.plugins",
         types.SimpleNamespace(discover_plugins=lambda: None),
     )
     monkeypatch.setitem(
         sys.modules,
-        "tools.mcp_tool",
+        "zermes.tools.mcp_tool",
         types.SimpleNamespace(discover_mcp_tools=lambda: None),
     )
     monkeypatch.setattr(config_mod, "load_config", lambda: {})
     monkeypatch.setattr(config_mod, "get_container_exec_info", lambda: None)
     monkeypatch.setitem(
         sys.modules,
-        "agent.shell_hooks",
+        "zermes.agent.shell_hooks",
         types.SimpleNamespace(
             register_from_config=lambda _cfg, accept_hooks=False: None
         ),
     )
     monkeypatch.setitem(
         sys.modules,
-        "hermes_cli.oneshot",
+        "zermes.hermes_cli.oneshot",
         types.SimpleNamespace(
             run_oneshot=lambda prompt, **kwargs: captured.update(
                 {"prompt": prompt, **kwargs}
@@ -304,14 +304,14 @@ def test_main_top_level_oneshot_accepts_toolsets(monkeypatch, main_mod):
 def _stub_plugin_discovery(monkeypatch):
     monkeypatch.setitem(
         sys.modules,
-        "hermes_cli.plugins",
+        "zermes.hermes_cli.plugins",
         types.SimpleNamespace(discover_plugins=lambda: None),
     )
 
 
 def test_oneshot_rejects_invalid_only_toolsets(monkeypatch, capsys):
     _stub_plugin_discovery(monkeypatch)
-    from hermes_cli.oneshot import run_oneshot
+    from zermes.hermes_cli.oneshot import run_oneshot
 
     assert run_oneshot("hello", toolsets="nope") == 2
     err = capsys.readouterr().err
@@ -321,7 +321,7 @@ def test_oneshot_rejects_invalid_only_toolsets(monkeypatch, capsys):
 
 def test_oneshot_filters_invalid_toolsets_before_redirect(monkeypatch, capsys):
     _stub_plugin_discovery(monkeypatch)
-    from hermes_cli.oneshot import _validate_explicit_toolsets
+    from zermes.hermes_cli.oneshot import _validate_explicit_toolsets
 
     valid, error = _validate_explicit_toolsets("web,nope")
 
@@ -331,7 +331,7 @@ def test_oneshot_filters_invalid_toolsets_before_redirect(monkeypatch, capsys):
 
 
 def test_oneshot_all_toolsets_means_all_not_configured_cli():
-    from hermes_cli.oneshot import _validate_explicit_toolsets
+    from zermes.hermes_cli.oneshot import _validate_explicit_toolsets
 
     valid, error = _validate_explicit_toolsets("all")
 
@@ -341,7 +341,7 @@ def test_oneshot_all_toolsets_means_all_not_configured_cli():
 
 def test_oneshot_all_toolsets_warns_about_ignored_extra_entries(monkeypatch, capsys):
     _stub_plugin_discovery(monkeypatch)
-    from hermes_cli.oneshot import _validate_explicit_toolsets
+    from zermes.hermes_cli.oneshot import _validate_explicit_toolsets
 
     valid, error = _validate_explicit_toolsets("all,nope")
 
@@ -351,12 +351,12 @@ def test_oneshot_all_toolsets_warns_about_ignored_extra_entries(monkeypatch, cap
 
 
 def test_oneshot_accepts_plugin_toolset_after_discovery(monkeypatch):
-    import toolsets
+    import zermes.toolsets as toolsets
 
-    from hermes_cli.oneshot import _validate_explicit_toolsets
+    from zermes.hermes_cli.oneshot import _validate_explicit_toolsets
 
     discovered = {"ready": False}
-    original_validate = toolsets.validate_toolset
+    original_validate = zermes.toolsets.validate_toolset
 
     def fake_validate(name):
         return name == "plugin_demo" and discovered["ready"] or original_validate(name)
@@ -364,7 +364,7 @@ def test_oneshot_accepts_plugin_toolset_after_discovery(monkeypatch):
     monkeypatch.setattr(toolsets, "validate_toolset", fake_validate)
     monkeypatch.setitem(
         sys.modules,
-        "hermes_cli.plugins",
+        "zermes.hermes_cli.plugins",
         types.SimpleNamespace(
             discover_plugins=lambda: discovered.update({"ready": True})
         ),
@@ -378,9 +378,9 @@ def test_oneshot_accepts_plugin_toolset_after_discovery(monkeypatch):
 
 def test_oneshot_rejects_disabled_mcp_toolset(monkeypatch, capsys):
     _stub_plugin_discovery(monkeypatch)
-    import hermes_cli.config as config_mod
+    import zermes.hermes_cli.config as config_mod
 
-    from hermes_cli.oneshot import _validate_explicit_toolsets
+    from zermes.hermes_cli.oneshot import _validate_explicit_toolsets
 
     monkeypatch.setattr(
         config_mod,
@@ -391,7 +391,7 @@ def test_oneshot_rejects_disabled_mcp_toolset(monkeypatch, capsys):
     valid, error = _validate_explicit_toolsets("mcp-off")
 
     assert valid is None
-    assert error == "hermes -z: --toolsets did not contain any valid toolsets.\n"
+    assert error == "hermes -z: --toolsets did not contain any valid zermes.toolsets.\n"
     err = capsys.readouterr().err
     assert "ignoring disabled MCP servers" in err
     assert "mcp-off" in err
@@ -399,9 +399,9 @@ def test_oneshot_rejects_disabled_mcp_toolset(monkeypatch, capsys):
 
 def test_oneshot_distinguishes_disabled_mcp_from_unknown(monkeypatch, capsys):
     _stub_plugin_discovery(monkeypatch)
-    import hermes_cli.config as config_mod
+    import zermes.hermes_cli.config as config_mod
 
-    from hermes_cli.oneshot import _validate_explicit_toolsets
+    from zermes.hermes_cli.oneshot import _validate_explicit_toolsets
 
     monkeypatch.setattr(
         config_mod,
@@ -458,7 +458,7 @@ def test_launch_tui_exports_model_provider_and_toolsets(monkeypatch, main_mod):
 
 
 def test_print_tui_exit_summary_includes_resume_and_token_totals(monkeypatch, capsys):
-    import hermes_cli.main as main_mod
+    import zermes.hermes_cli.main as main_mod
 
     class _FakeDB:
         def get_session(self, session_id):
@@ -494,7 +494,7 @@ def test_print_tui_exit_summary_includes_resume_and_token_totals(monkeypatch, ca
 def test_print_tui_exit_summary_prefers_actual_active_session_file(
     monkeypatch, capsys, tmp_path
 ):
-    import hermes_cli.main as main_mod
+    import zermes.hermes_cli.main as main_mod
 
     seen = []
 

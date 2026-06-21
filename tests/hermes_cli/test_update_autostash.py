@@ -4,8 +4,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from hermes_cli import config as hermes_config
-from hermes_cli import main as hermes_main
+from zermes.hermes_cli import config as hermes_config
+from zermes.hermes_cli import main as hermes_main
 
 
 def test_stash_local_changes_if_needed_returns_none_when_tree_clean(monkeypatch, tmp_path):
@@ -257,7 +257,7 @@ def test_restore_stashed_changes_auto_resets_non_interactive(monkeypatch, tmp_pa
         if cmd[1:3] == ["stash", "apply"]:
             return SimpleNamespace(stdout="applied\n", stderr="", returncode=0)
         if cmd[1:3] == ["diff", "--name-only"]:
-            return SimpleNamespace(stdout="cli.py\n", stderr="", returncode=0)
+            return SimpleNamespace(stdout="zermes.cli.py\n", stderr="", returncode=0)
         if cmd[1:3] == ["reset", "--hard"]:
             return SimpleNamespace(stdout="", stderr="", returncode=0)
         raise AssertionError(f"unexpected command: {cmd}")

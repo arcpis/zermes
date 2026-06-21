@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/banner.png" alt="Zermes" width="100%">
+  <img src="resources/assets/banner.png" alt="Zermes" width="100%">
 </p>
 
 # Zermes

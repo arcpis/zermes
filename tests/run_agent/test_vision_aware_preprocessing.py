@@ -1,4 +1,4 @@
-"""Tests for the vision-aware image preprocessing in run_agent.py.
+"""Tests for the vision-aware image preprocessing in zermes.run_agent.py.
 
 Covers:
 
@@ -17,7 +17,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from run_agent import AIAgent
+from zermes.run_agent import AIAgent
 
 
 def _make_agent() -> AIAgent:
@@ -63,7 +63,7 @@ class TestPrepareAnthropicMessages:
 
     def test_non_vision_replaces_images_with_text(self):
         agent = _make_agent()
-        with patch.object(agent, "_model_supports_vision", return_value=False), \
+        with patch.object(agent, "_model_supports_vision", return_value=False),\
              patch.object(
                  agent,
                  "_describe_image_for_anthropic_fallback",
@@ -102,7 +102,7 @@ class TestPrepareMessagesForNonVision:
         agent = _make_agent()
         agent.provider = "openrouter"
         agent.model = "qwen/qwen3-235b-a22b"
-        with patch.object(agent, "_model_supports_vision", return_value=False), \
+        with patch.object(agent, "_model_supports_vision", return_value=False),\
              patch.object(
                  agent,
                  "_describe_image_for_anthropic_fallback",
@@ -122,7 +122,7 @@ class TestPrepareMessagesForNonVision:
             {"role": "assistant", "content": "ack"},
             IMG_PARTS_USER_MSG,
         ]
-        with patch.object(agent, "_model_supports_vision", return_value=False), \
+        with patch.object(agent, "_model_supports_vision", return_value=False),\
              patch.object(
                  agent,
                  "_describe_image_for_anthropic_fallback",
@@ -153,18 +153,18 @@ class TestModelSupportsVision:
         agent = _make_agent()
         fake_caps = MagicMock()
         fake_caps.supports_vision = True
-        with patch("agent.models_dev.get_model_capabilities", return_value=fake_caps):
+        with patch("zermes.agent.models_dev.get_model_capabilities", return_value=fake_caps):
             assert agent._model_supports_vision() is True
         fake_caps.supports_vision = False
-        with patch("agent.models_dev.get_model_capabilities", return_value=fake_caps):
+        with patch("zermes.agent.models_dev.get_model_capabilities", return_value=fake_caps):
             assert agent._model_supports_vision() is False
 
     def test_none_caps_returns_false(self):
         agent = _make_agent()
-        with patch("agent.models_dev.get_model_capabilities", return_value=None):
+        with patch("zermes.agent.models_dev.get_model_capabilities", return_value=None):
             assert agent._model_supports_vision() is False
 
     def test_exception_returns_false(self):
         agent = _make_agent()
-        with patch("agent.models_dev.get_model_capabilities", side_effect=RuntimeError("boom")):
+        with patch("zermes.agent.models_dev.get_model_capabilities", side_effect=RuntimeError("boom")):
             assert agent._model_supports_vision() is False

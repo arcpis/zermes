@@ -23,9 +23,9 @@ def backup_env(monkeypatch, tmp_path):
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
 
     # Reload so get_hermes_home picks up the env var fresh.
-    import hermes_constants
+    import zermes.hermes_constants as hermes_constants
     importlib.reload(hermes_constants)
-    from agent import curator_backup
+    from zermes.agent import curator_backup
     importlib.reload(curator_backup)
     return {"home": home, "skills": home / "skills", "cb": curator_backup}
 
@@ -271,7 +271,7 @@ def test_real_run_takes_pre_snapshot(backup_env, monkeypatch):
     _write_skill(skills, "alpha")
 
     # Reload curator module against the freshly-env'd hermes_constants
-    from agent import curator
+    from zermes.agent import curator
     importlib.reload(curator)
 
     # Stub out LLM review and auto transitions — we only care about the
@@ -301,7 +301,7 @@ def test_dry_run_skips_snapshot(backup_env, monkeypatch):
     skills = backup_env["skills"]
     _write_skill(skills, "alpha")
 
-    from agent import curator
+    from zermes.agent import curator
     importlib.reload(curator)
     monkeypatch.setattr(
         curator, "_run_llm_review",
@@ -323,7 +323,7 @@ def test_dry_run_skips_snapshot(backup_env, monkeypatch):
 
 def _write_cron_jobs(home: Path, jobs: list) -> Path:
     """Write a synthetic cron/jobs.json under HERMES_HOME. Returns the path.
-    Mirrors cron.jobs.save_jobs() wrapper shape: `{"jobs": [...], "updated_at": ...}`.
+    Mirrors zermes.cron.jobs.save_jobs() wrapper shape: `{"jobs": [...], "updated_at": ...}`.
     """
     cron_dir = home / "cron"
     cron_dir.mkdir(parents=True, exist_ok=True)
@@ -336,15 +336,15 @@ def _write_cron_jobs(home: Path, jobs: list) -> Path:
 
 
 def _reload_cron_jobs(home: Path):
-    """Reload cron.jobs so its module-level HERMES_DIR picks up the tmp HOME."""
-    import hermes_constants
+    """Reload zermes.cron.jobs so its module-level HERMES_DIR picks up the tmp HOME."""
+    import zermes.hermes_constants as hermes_constants
     importlib.reload(hermes_constants)
-    if "cron.jobs" in sys.modules:
-        import cron.jobs as _cj
+    if "zermes.cron.jobs" in sys.modules:
+        import zermes.cron.jobs as _cj
         importlib.reload(_cj)
     else:
-        import cron.jobs as _cj  # noqa: F401
-    import cron.jobs as cj
+        import zermes.cron.jobs as _cj  # noqa: F401
+    import zermes.cron.jobs as cj
     return cj
 
 

@@ -10,7 +10,7 @@ import os
 import pytest
 from unittest.mock import patch
 
-from agent.model_metadata import is_local_endpoint
+from zermes.agent.model_metadata import is_local_endpoint
 
 
 class TestLocalStreamReadTimeout:
@@ -91,7 +91,7 @@ class TestIsLocalEndpoint:
     @pytest.mark.parametrize("url", [
         "http://host.docker.internal:11434",
         "http://host.docker.internal:8080/v1",
-        "http://gateway.docker.internal:11434",
+        "http://zermes.gateway.docker.internal:11434",
         "http://host.containers.internal:11434",
         "http://host.lima.internal:11434",
     ])

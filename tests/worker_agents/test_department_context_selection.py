@@ -1,4 +1,4 @@
-from worker_agents.department_context_selection import (
+from zermes.worker_agents.department_context_selection import (
     DepartmentContextCandidate,
     DepartmentContextSelectionInput,
     select_department_context_assets,

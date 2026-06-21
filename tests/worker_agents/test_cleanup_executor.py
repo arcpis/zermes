@@ -2,18 +2,18 @@ from datetime import datetime, timezone
 
 import pytest
 
-from worker_agents.cleanup import (
+from zermes.worker_agents.cleanup import (
     CleanupExecutor,
     CleanupPlan,
     CleanupPlanItem,
     CleanupPlanner,
     cleanup_execution_result_to_dict,
 )
-from worker_agents.retention import RetentionAction, RetentionDataCategory
-from worker_agents.storage import WorkerAgentRuntimeDataStore
-from worker_agents.storage.task_store import WorkerTaskStore
-from worker_agents.task_records import WorkerTaskResult
-from worker_agents.task_state import WorkerTaskState, WorkerTaskStatus
+from zermes.worker_agents.retention import RetentionAction, RetentionDataCategory
+from zermes.worker_agents.storage import WorkerAgentRuntimeDataStore
+from zermes.worker_agents.storage.task_store import WorkerTaskStore
+from zermes.worker_agents.task_records import WorkerTaskResult
+from zermes.worker_agents.task_state import WorkerTaskState, WorkerTaskStatus
 
 
 NOW = datetime(2026, 5, 19, tzinfo=timezone.utc)

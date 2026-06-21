@@ -1,4 +1,4 @@
-"""Tests for hermes_cli.azure_detect — transport & model auto-detection."""
+"""Tests for zermes.hermes_cli.azure_detect — transport & model auto-detection."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from hermes_cli import azure_detect
+from zermes.hermes_cli import azure_detect
 
 
 # ----------------------------------------------------------------------
@@ -188,7 +188,7 @@ def test_probe_openai_models_tries_multiple_api_versions():
 def test_http_get_json_on_urlerror_returns_zero_none():
     """Network failure returns (0, None), never raises."""
     import urllib.error
-    with patch("hermes_cli.azure_detect.urllib_request.urlopen",
+    with patch("zermes.hermes_cli.azure_detect.urllib_request.urlopen",
                side_effect=urllib.error.URLError("dns fail")):
         status, body = azure_detect._http_get_json("https://bad.example/", "k")
     assert status == 0
@@ -199,7 +199,7 @@ def test_http_get_json_on_http_error_returns_code_none():
     """HTTP 4xx/5xx returns (code, None)."""
     import urllib.error
     err = urllib.error.HTTPError("https://x/", 403, "Forbidden", {}, None)
-    with patch("hermes_cli.azure_detect.urllib_request.urlopen", side_effect=err):
+    with patch("zermes.hermes_cli.azure_detect.urllib_request.urlopen", side_effect=err):
         status, body = azure_detect._http_get_json("https://x/", "k")
     assert status == 403
     assert body is None
@@ -212,8 +212,8 @@ def test_http_get_json_on_http_error_returns_code_none():
 def test_lookup_context_length_returns_known():
     """When model_metadata returns a non-fallback value, we pass it through."""
     fake = MagicMock(return_value=400000)
-    with patch("agent.model_metadata.get_model_context_length", fake), \
-         patch("agent.model_metadata.DEFAULT_FALLBACK_CONTEXT", 128000):
+    with patch("zermes.agent.model_metadata.get_model_context_length", fake), \
+         patch("zermes.agent.model_metadata.DEFAULT_FALLBACK_CONTEXT", 128000):
         n = azure_detect.lookup_context_length(
             "gpt-5.4", "https://x.openai.azure.com/openai/v1", "k",
         )
@@ -222,8 +222,8 @@ def test_lookup_context_length_returns_known():
 
 def test_lookup_context_length_returns_none_on_fallback():
     """When resolver falls through to DEFAULT_FALLBACK_CONTEXT, we return None."""
-    with patch("agent.model_metadata.get_model_context_length", return_value=128000), \
-         patch("agent.model_metadata.DEFAULT_FALLBACK_CONTEXT", 128000):
+    with patch("zermes.agent.model_metadata.get_model_context_length", return_value=128000), \
+         patch("zermes.agent.model_metadata.DEFAULT_FALLBACK_CONTEXT", 128000):
         n = azure_detect.lookup_context_length(
             "totally-unknown-model", "https://x.openai.azure.com/openai/v1", "k",
         )
@@ -232,6 +232,6 @@ def test_lookup_context_length_returns_none_on_fallback():
 
 def test_lookup_context_length_swallows_exceptions():
     """Resolver raising must not crash the wizard."""
-    with patch("agent.model_metadata.get_model_context_length",
+    with patch("zermes.agent.model_metadata.get_model_context_length",
                side_effect=RuntimeError("boom")):
         assert azure_detect.lookup_context_length("m", "https://x/", "k") is None

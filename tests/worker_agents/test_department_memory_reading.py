@@ -1,4 +1,4 @@
-from worker_agents.department_memory import (
+from zermes.worker_agents.department_memory import (
     DepartmentMemoryKind,
     DepartmentMemoryProposal,
     DepartmentMemoryProposalStore,

@@ -7,7 +7,7 @@ rotation is pointless — prefer fallback immediately.
 """
 from unittest.mock import MagicMock
 
-from run_agent import _pool_may_recover_from_rate_limit
+from zermes.run_agent import _pool_may_recover_from_rate_limit
 
 
 def _pool(entries: int = 2):

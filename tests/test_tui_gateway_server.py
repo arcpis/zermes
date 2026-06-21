@@ -7,7 +7,7 @@ import types
 from pathlib import Path
 from unittest.mock import patch
 
-from tui_gateway import server
+from zermes.tui_gateway import server
 
 
 class _ChunkyStdout:
@@ -87,7 +87,7 @@ def test_voice_toggle_returns_configured_record_key(monkeypatch):
     )
     monkeypatch.setitem(
         sys.modules,
-        "tools.voice_mode",
+        "zermes.tools.voice_mode",
         types.SimpleNamespace(
             check_voice_requirements=lambda: {"available": True, "details": ""}
         ),
@@ -121,7 +121,7 @@ def test_voice_toggle_handles_non_dict_voice_cfg(monkeypatch):
     """
     monkeypatch.setitem(
         sys.modules,
-        "tools.voice_mode",
+        "zermes.tools.voice_mode",
         types.SimpleNamespace(
             check_voice_requirements=lambda: {"available": True, "details": ""}
         ),
@@ -179,7 +179,7 @@ def test_voice_record_start_handles_non_dict_voice_cfg(monkeypatch):
 
     monkeypatch.setitem(
         sys.modules,
-        "hermes_cli.voice",
+        "zermes.hermes_cli.voice",
         types.SimpleNamespace(
             start_continuous=fake_start_continuous, stop_continuous=lambda: None
         ),
@@ -244,7 +244,7 @@ def test_voice_record_stop_forces_transcription(monkeypatch):
 
     monkeypatch.setitem(
         sys.modules,
-        "hermes_cli.voice",
+        "zermes.hermes_cli.voice",
         types.SimpleNamespace(
             start_continuous=lambda **_kwargs: None,
             stop_continuous=fake_stop_continuous,
@@ -266,7 +266,7 @@ def test_voice_record_stop_forces_transcription(monkeypatch):
 def test_voice_record_stop_updates_event_session_id(monkeypatch):
     monkeypatch.setitem(
         sys.modules,
-        "hermes_cli.voice",
+        "zermes.hermes_cli.voice",
         types.SimpleNamespace(
             start_continuous=lambda **_kwargs: True,
             stop_continuous=lambda **_kwargs: None,
@@ -289,7 +289,7 @@ def test_voice_record_stop_updates_event_session_id(monkeypatch):
 def test_voice_record_start_reports_busy_when_stop_is_in_progress(monkeypatch):
     monkeypatch.setitem(
         sys.modules,
-        "hermes_cli.voice",
+        "zermes.hermes_cli.voice",
         types.SimpleNamespace(
             start_continuous=lambda **_kwargs: False,
             stop_continuous=lambda **_kwargs: None,
@@ -325,7 +325,7 @@ def test_voice_toggle_tts_branch_also_carries_record_key(monkeypatch):
     )
     monkeypatch.setitem(
         sys.modules,
-        "tools.voice_mode",
+        "zermes.tools.voice_mode",
         types.SimpleNamespace(
             check_voice_requirements=lambda: {"available": True, "details": ""}
         ),
@@ -351,7 +351,7 @@ def test_load_enabled_toolsets_filters_invalid_tui_env(monkeypatch, capsys):
     monkeypatch.setenv("HERMES_TUI_TOOLSETS", "web, nope")
     monkeypatch.setitem(
         sys.modules,
-        "hermes_cli.plugins",
+        "zermes.hermes_cli.plugins",
         types.SimpleNamespace(discover_plugins=lambda: None),
     )
 
@@ -362,10 +362,10 @@ def test_load_enabled_toolsets_filters_invalid_tui_env(monkeypatch, capsys):
 def test_load_enabled_toolsets_accepts_plugin_env_after_discovery(monkeypatch):
     monkeypatch.setenv("HERMES_TUI_TOOLSETS", "plugin_demo")
 
-    import toolsets
+    import zermes.toolsets as toolsets
 
     discovered = {"ready": False}
-    original_validate = toolsets.validate_toolset
+    original_validate = zermes.toolsets.validate_toolset
 
     def fake_validate(name):
         return name == "plugin_demo" and discovered["ready"] or original_validate(name)
@@ -373,7 +373,7 @@ def test_load_enabled_toolsets_accepts_plugin_env_after_discovery(monkeypatch):
     monkeypatch.setattr(toolsets, "validate_toolset", fake_validate)
     monkeypatch.setitem(
         sys.modules,
-        "hermes_cli.plugins",
+        "zermes.hermes_cli.plugins",
         types.SimpleNamespace(
             discover_plugins=lambda: discovered.update({"ready": True})
         ),
@@ -386,11 +386,11 @@ def test_load_enabled_toolsets_rejects_disabled_mcp_env(monkeypatch, capsys):
     monkeypatch.setenv("HERMES_TUI_TOOLSETS", "mcp-off")
     monkeypatch.setitem(
         sys.modules,
-        "hermes_cli.plugins",
+        "zermes.hermes_cli.plugins",
         types.SimpleNamespace(discover_plugins=lambda: None),
     )
 
-    import hermes_cli.config as config_mod
+    import zermes.hermes_cli.config as config_mod
 
     monkeypatch.setattr(
         config_mod,
@@ -403,7 +403,7 @@ def test_load_enabled_toolsets_rejects_disabled_mcp_env(monkeypatch, capsys):
 
     # Sorted: ["kanban", "memory"]. `kanban` is auto-recovered by
     # _get_platform_tools because it's a non-configurable platform toolset
-    # whose tools live in hermes-cli's universe (see toolsets.py).
+    # whose tools live in hermes-cli's universe (see zermes.toolsets.py).
     assert server._load_enabled_toolsets() == ["kanban", "memory"]
     err = capsys.readouterr().err
     assert "ignoring disabled MCP servers" in err
@@ -415,11 +415,11 @@ def test_load_enabled_toolsets_falls_back_when_tui_env_invalid(monkeypatch, caps
     monkeypatch.setenv("HERMES_TUI_TOOLSETS", "nope")
     monkeypatch.setitem(
         sys.modules,
-        "hermes_cli.plugins",
+        "zermes.hermes_cli.plugins",
         types.SimpleNamespace(discover_plugins=lambda: None),
     )
 
-    import hermes_cli.config as config_mod
+    import zermes.hermes_cli.config as config_mod
 
     monkeypatch.setattr(
         config_mod, "load_config", lambda: {"platform_toolsets": {"cli": ["memory"]}}
@@ -433,11 +433,11 @@ def test_load_enabled_toolsets_warns_when_config_fallback_fails(monkeypatch, cap
     monkeypatch.setenv("HERMES_TUI_TOOLSETS", "nope")
     monkeypatch.setitem(
         sys.modules,
-        "hermes_cli.plugins",
+        "zermes.hermes_cli.plugins",
         types.SimpleNamespace(discover_plugins=lambda: None),
     )
 
-    import hermes_cli.config as config_mod
+    import zermes.hermes_cli.config as config_mod
 
     monkeypatch.setattr(
         config_mod, "load_config", lambda: (_ for _ in ()).throw(RuntimeError("boom"))
@@ -450,7 +450,7 @@ def test_load_enabled_toolsets_warns_when_config_fallback_fails(monkeypatch, cap
 def test_load_enabled_toolsets_honors_builtin_env_if_config_fails(monkeypatch):
     monkeypatch.setenv("HERMES_TUI_TOOLSETS", "web")
 
-    import hermes_cli.config as config_mod
+    import zermes.hermes_cli.config as config_mod
 
     monkeypatch.setattr(
         config_mod, "load_config", lambda: (_ for _ in ()).throw(RuntimeError("boom"))
@@ -478,11 +478,11 @@ def test_load_enabled_toolsets_reports_disabled_mcp_separately(monkeypatch, caps
     monkeypatch.setenv("HERMES_TUI_TOOLSETS", "web,mcp-off,nope")
     monkeypatch.setitem(
         sys.modules,
-        "hermes_cli.plugins",
+        "zermes.hermes_cli.plugins",
         types.SimpleNamespace(discover_plugins=lambda: None),
     )
 
-    import hermes_cli.config as config_mod
+    import zermes.hermes_cli.config as config_mod
 
     monkeypatch.setattr(
         config_mod,
@@ -595,7 +595,7 @@ def test_session_resume_uses_parent_lineage_for_display(monkeypatch):
 
 
 def test_status_callback_emits_kind_and_text():
-    with patch("tui_gateway.server._emit") as emit:
+    with patch("zermes.tui_gateway.server._emit") as emit:
         cb = server._agent_cbs("sid")["status_callback"]
         cb("context_pressure", "85% to compaction")
 
@@ -607,7 +607,7 @@ def test_status_callback_emits_kind_and_text():
 
 
 def test_status_callback_accepts_single_message_argument():
-    with patch("tui_gateway.server._emit") as emit:
+    with patch("zermes.tui_gateway.server._emit") as emit:
         cb = server._agent_cbs("sid")["status_callback"]
         cb("thinking...")
 
@@ -648,7 +648,7 @@ def test_startup_runtime_does_not_treat_inference_provider_as_explicit(monkeypat
     monkeypatch.delenv("HERMES_TUI_PROVIDER", raising=False)
     monkeypatch.setenv("HERMES_INFERENCE_PROVIDER", "nous")
     monkeypatch.setattr(
-        "hermes_cli.models.detect_static_provider_for_model",
+        "zermes.hermes_cli.models.detect_static_provider_for_model",
         lambda model, provider: None,
     )
 
@@ -667,7 +667,7 @@ def test_startup_runtime_detects_provider_for_model_env(monkeypatch):
         return "anthropic", "anthropic/claude-sonnet-4.6"
 
     monkeypatch.setattr(
-        "hermes_cli.models.detect_static_provider_for_model", fake_detect
+        "zermes.hermes_cli.models.detect_static_provider_for_model", fake_detect
     )
 
     assert server._resolve_startup_runtime() == (
@@ -682,7 +682,7 @@ def test_startup_runtime_resolves_short_alias_without_network(monkeypatch):
     monkeypatch.delenv("HERMES_INFERENCE_PROVIDER", raising=False)
     monkeypatch.setattr(server, "_load_cfg", lambda: {"model": {"provider": "auto"}})
     monkeypatch.setattr(
-        "hermes_cli.models.fetch_openrouter_models",
+        "zermes.hermes_cli.models.fetch_openrouter_models",
         lambda *_args, **_kwargs: (_ for _ in ()).throw(
             AssertionError("network lookup should not run")
         ),
@@ -700,7 +700,7 @@ def test_startup_runtime_does_not_call_network_detector(monkeypatch):
     monkeypatch.delenv("HERMES_INFERENCE_PROVIDER", raising=False)
     monkeypatch.setattr(server, "_load_cfg", lambda: {"model": {"provider": "auto"}})
     monkeypatch.setattr(
-        "hermes_cli.models.detect_provider_for_model",
+        "zermes.hermes_cli.models.detect_provider_for_model",
         lambda *_args, **_kwargs: (_ for _ in ()).throw(
             AssertionError("network detector called")
         ),
@@ -774,7 +774,7 @@ def test_init_session_fires_reset_hook(monkeypatch):
         lambda event, session_id: hooks.append((event, session_id)),
     )
 
-    import tools.approval as _approval
+    import zermes.tools.approval as _approval
 
     monkeypatch.setattr(_approval, "register_gateway_notify", lambda key, cb: None)
     monkeypatch.setattr(_approval, "load_permanent_allowlist", lambda: None)
@@ -1111,7 +1111,7 @@ def test_session_create_drops_pending_title_on_valueerror(monkeypatch):
 
 
 def test_config_set_yolo_toggles_session_scope():
-    from tools.approval import clear_session, is_session_yolo_enabled
+    from zermes.tools.approval import clear_session, is_session_yolo_enabled
 
     server._sessions["sid"] = _session()
     try:
@@ -1155,7 +1155,7 @@ def test_config_set_fast_updates_live_agent_and_config(monkeypatch):
     monkeypatch.setattr(server, "_session_info", lambda _agent: {"model": "x"})
     monkeypatch.setattr(server, "_emit", lambda *args: emits.append(args))
     monkeypatch.setattr(
-        "hermes_cli.models.resolve_fast_mode_overrides",
+        "zermes.hermes_cli.models.resolve_fast_mode_overrides",
         lambda _model_id: {"service_tier": "priority"},
     )
 
@@ -1173,7 +1173,7 @@ def test_config_set_fast_updates_live_agent_and_config(monkeypatch):
             "foo": "bar",
             "service_tier": "priority",
         }
-        assert ("agent.service_tier", "fast") in writes
+        assert ("zermes.agent.service_tier", "fast") in writes
         assert ("session.info", "sid", {"model": "x"}) in emits
 
         resp_normal = server.handle_request(
@@ -1186,7 +1186,7 @@ def test_config_set_fast_updates_live_agent_and_config(monkeypatch):
         assert resp_normal["result"]["value"] == "normal"
         assert agent.service_tier is None
         assert agent.request_overrides == {"foo": "bar"}
-        assert ("agent.service_tier", "normal") in writes
+        assert ("zermes.agent.service_tier", "normal") in writes
     finally:
         server._sessions.pop("sid", None)
 
@@ -1230,7 +1230,7 @@ def test_config_set_fast_rejects_unsupported_model(monkeypatch):
         server, "_write_config_key", lambda path, value: writes.append((path, value))
     )
     monkeypatch.setattr(
-        "hermes_cli.models.resolve_fast_mode_overrides",
+        "zermes.hermes_cli.models.resolve_fast_mode_overrides",
         lambda _model_id: None,
     )
 
@@ -1505,7 +1505,7 @@ def test_enable_gateway_prompts_sets_gateway_env(monkeypatch):
 
 
 def test_setup_status_reports_provider_config(monkeypatch):
-    monkeypatch.setattr("hermes_cli.main._has_any_provider_configured", lambda: False)
+    monkeypatch.setattr("zermes.hermes_cli.main._has_any_provider_configured", lambda: False)
 
     resp = server.handle_request({"id": "1", "method": "setup.status", "params": {}})
 
@@ -1662,10 +1662,10 @@ def test_config_set_model_global_persists(monkeypatch):
         return result
 
     server._sessions["sid"] = _session(agent=_Agent())
-    monkeypatch.setattr("hermes_cli.model_switch.switch_model", _switch_model)
+    monkeypatch.setattr("zermes.hermes_cli.model_switch.switch_model", _switch_model)
     monkeypatch.setattr(server, "_restart_slash_worker", lambda session: None)
     monkeypatch.setattr(server, "_emit", lambda *args, **kwargs: None)
-    monkeypatch.setattr("hermes_cli.config.save_config", lambda cfg: saved.update(cfg))
+    monkeypatch.setattr("zermes.hermes_cli.config.save_config", lambda cfg: saved.update(cfg))
 
     resp = server.handle_request(
         {
@@ -1719,7 +1719,7 @@ def test_config_set_model_syncs_inference_provider_env(monkeypatch):
     server._sessions["sid"] = _session(agent=_Agent())
     monkeypatch.setenv("HERMES_INFERENCE_PROVIDER", "openrouter")
     monkeypatch.setattr(
-        "hermes_cli.model_switch.switch_model", lambda **_kwargs: result
+        "zermes.hermes_cli.model_switch.switch_model", lambda **_kwargs: result
     )
     monkeypatch.setattr(server, "_restart_slash_worker", lambda session: None)
     monkeypatch.setattr(server, "_emit", lambda *args, **kwargs: None)
@@ -1770,7 +1770,7 @@ def test_config_set_model_syncs_tui_provider_unconditionally(monkeypatch):
     monkeypatch.delenv("HERMES_TUI_PROVIDER", raising=False)
     monkeypatch.delenv("HERMES_INFERENCE_PROVIDER", raising=False)
     monkeypatch.setattr(
-        "hermes_cli.model_switch.switch_model", lambda **_kwargs: result
+        "zermes.hermes_cli.model_switch.switch_model", lambda **_kwargs: result
     )
     monkeypatch.setattr(server, "_restart_slash_worker", lambda session: None)
     monkeypatch.setattr(server, "_emit", lambda *args, **kwargs: None)
@@ -1822,7 +1822,7 @@ def test_config_set_model_syncs_tui_provider_env(monkeypatch):
             warning_message="",
         )
 
-    monkeypatch.setattr("hermes_cli.model_switch.switch_model", fake_switch_model)
+    monkeypatch.setattr("zermes.hermes_cli.model_switch.switch_model", fake_switch_model)
 
     try:
         resp = server.handle_request(
@@ -1920,7 +1920,7 @@ def test_session_compress_uses_compress_helper(monkeypatch):
     )
     monkeypatch.setattr(server, "_session_info", lambda _agent: {"model": "x"})
 
-    with patch("tui_gateway.server._emit") as emit:
+    with patch("zermes.tui_gateway.server._emit") as emit:
         resp = server.handle_request(
             {"id": "1", "method": "session.compress", "params": {"session_id": "sid"}}
         )
@@ -1957,7 +1957,7 @@ def test_session_compress_syncs_session_key_after_rotation(monkeypatch):
     )
 
     try:
-        with patch("tui_gateway.server._emit"):
+        with patch("zermes.tui_gateway.server._emit"):
             server.handle_request(
                 {
                     "id": "1",
@@ -1974,7 +1974,7 @@ def test_session_compress_syncs_session_key_after_rotation(monkeypatch):
 
 
 def test_prompt_submit_sets_approval_session_key(monkeypatch):
-    from tools.approval import get_current_session_key
+    from zermes.tools.approval import get_current_session_key
 
     captured = {}
 
@@ -2037,7 +2037,7 @@ def test_prompt_submit_expands_context_refs(monkeypatch):
         def start(self):
             self._target()
 
-    fake_ctx = types.ModuleType("agent.context_references")
+    fake_ctx = types.ModuleType("zermes.agent.context_references")
     fake_ctx.preprocess_context_references = (
         lambda message, **kwargs: types.SimpleNamespace(
             blocked=False,
@@ -2047,7 +2047,7 @@ def test_prompt_submit_expands_context_refs(monkeypatch):
             injected_tokens=0,
         )
     )
-    fake_meta = types.ModuleType("agent.model_metadata")
+    fake_meta = types.ModuleType("zermes.agent.model_metadata")
     fake_meta.get_model_context_length = lambda *args, **kwargs: 100000
 
     server._sessions["sid"] = _session(agent=_Agent())
@@ -2055,8 +2055,8 @@ def test_prompt_submit_expands_context_refs(monkeypatch):
     monkeypatch.setattr(server, "_emit", lambda *args, **kwargs: None)
     monkeypatch.setattr(server, "make_stream_renderer", lambda cols: None)
     monkeypatch.setattr(server, "render_message", lambda raw, cols: None)
-    monkeypatch.setitem(sys.modules, "agent.context_references", fake_ctx)
-    monkeypatch.setitem(sys.modules, "agent.model_metadata", fake_meta)
+    monkeypatch.setitem(sys.modules, "zermes.agent.context_references", fake_ctx)
+    monkeypatch.setitem(sys.modules, "zermes.agent.model_metadata", fake_meta)
 
     server.handle_request(
         {
@@ -2234,7 +2234,7 @@ def test_session_status_reads_live_gateway_agent(monkeypatch):
 
 
 def test_skills_reload_runs_in_gateway_process(monkeypatch):
-    import agent.skill_commands as skill_commands
+    import zermes.agent.skill_commands as skill_commands
 
     called = {}
     monkeypatch.setattr(
@@ -2314,9 +2314,9 @@ def test_command_dispatch_exec_nonzero_surfaces_error(monkeypatch):
 
 
 def test_plugins_list_surfaces_loader_error(monkeypatch):
-    with patch("hermes_cli.plugins.get_plugin_manager", side_effect=Exception("boom")):
+    with patch("zermes.hermes_cli.plugins.get_plugin_manager", side_effect=Exception("boom")):
         resp = server.handle_request(
-            {"id": "1", "method": "plugins.list", "params": {}}
+            {"id": "1", "method": "zermes.plugins.list", "params": {}}
         )
 
     assert "error" in resp
@@ -2325,7 +2325,7 @@ def test_plugins_list_surfaces_loader_error(monkeypatch):
 
 def test_complete_slash_surfaces_completer_error(monkeypatch):
     with patch(
-        "hermes_cli.commands.SlashCommandCompleter",
+        "zermes.hermes_cli.commands.SlashCommandCompleter",
         side_effect=Exception("no completer"),
     ):
         resp = server.handle_request(
@@ -2442,7 +2442,7 @@ def test_rollback_restore_resolves_number_and_file_path():
 
 
 def test_session_steer_calls_agent_steer_when_agent_supports_it():
-    """The TUI RPC method must call agent.steer(text) and return a
+    """The TUI RPC method must call zermes.agent.steer(text) and return a
     queued status without touching interrupt state.
     """
     calls = {}
@@ -2516,9 +2516,9 @@ def test_session_info_includes_mcp_servers(monkeypatch):
         {"name": "filesystem", "transport": "stdio", "tools": 4, "connected": True},
         {"name": "broken", "transport": "stdio", "tools": 0, "connected": False},
     ]
-    fake_mod = types.ModuleType("tools.mcp_tool")
+    fake_mod = types.ModuleType("zermes.tools.mcp_tool")
     fake_mod.get_mcp_status = lambda: fake_status
-    monkeypatch.setitem(sys.modules, "tools.mcp_tool", fake_mod)
+    monkeypatch.setitem(sys.modules, "zermes.tools.mcp_tool", fake_mod)
 
     info = server._session_info(types.SimpleNamespace(tools=[], model=""))
 
@@ -2850,9 +2850,9 @@ def test_respond_unpacks_sid_tuple_correctly():
 
 # ---------------------------------------------------------------------------
 # /model switch and other agent-mutating commands must reject while the
-# session is running.  agent.switch_model() mutates self.model, self.provider,
+# session is running.  zermes.agent.switch_model() mutates self.model, self.provider,
 # self.base_url, self.client etc. in place — the worker thread running
-# agent.run_conversation is reading those on every iteration.  Same class of
+# zermes.agent.run_conversation is reading those on every iteration.  Same class of
 # bug as the session.undo / session.compress mid-run silent-drop; same fix
 # pattern: reject with 4009 while running.
 # ---------------------------------------------------------------------------
@@ -2886,7 +2886,7 @@ def test_config_set_model_rejects_while_running(monkeypatch):
         assert "session busy" in resp["error"]["message"]
         assert not seen["called"], (
             "_apply_model_switch was called mid-turn — would race with "
-            "the worker thread reading agent.model / agent.client"
+            "the worker thread reading zermes.agent.model / zermes.agent.client"
         )
     finally:
         server._sessions.pop("sid", None)
@@ -3077,7 +3077,7 @@ def test_session_create_close_race_does_not_orphan_worker(monkeypatch):
     monkeypatch.setattr(server, "_emit", lambda *a, **kw: None)
 
     # Shim register/unregister to observe leaks
-    import tools.approval as _approval
+    import zermes.tools.approval as _approval
 
     monkeypatch.setattr(_approval, "register_gateway_notify", lambda key, cb: None)
     monkeypatch.setattr(
@@ -3177,7 +3177,7 @@ def test_session_create_no_race_keeps_worker_alive(monkeypatch):
     monkeypatch.setattr(server, "_wire_callbacks", lambda _sid: None)
     monkeypatch.setattr(server, "_emit", lambda *a, **kw: None)
 
-    import tools.approval as _approval
+    import zermes.tools.approval as _approval
 
     monkeypatch.setattr(_approval, "register_gateway_notify", lambda key, cb: None)
     monkeypatch.setattr(
@@ -3257,7 +3257,7 @@ def test_session_create_continues_when_state_db_is_unavailable(monkeypatch):
     monkeypatch.setattr(server, "_wire_callbacks", lambda _sid: None)
     monkeypatch.setattr(server, "_emit", lambda *a, **kw: emits.append(a))
 
-    import tools.approval as _approval
+    import zermes.tools.approval as _approval
 
     monkeypatch.setattr(_approval, "register_gateway_notify", lambda key, cb: None)
     monkeypatch.setattr(_approval, "load_permanent_allowlist", lambda: None)
@@ -3469,13 +3469,13 @@ def test_model_options_does_not_overwrite_curated_models(monkeypatch):
     )
 
     with patch(
-        "hermes_cli.model_switch.list_authenticated_providers",
+        "zermes.hermes_cli.model_switch.list_authenticated_providers",
         return_value=curated_providers,
     ) as listing:
         # If provider_model_ids gets called at all, the handler is still
         # overwriting curated with live — that's the regression we're
         # guarding against.
-        with patch("hermes_cli.models.provider_model_ids") as live_fetch:
+        with patch("zermes.hermes_cli.models.provider_model_ids") as live_fetch:
             resp = server._methods["model.options"](99, {"session_id": ""})
 
     assert "result" in resp, resp
@@ -3502,7 +3502,7 @@ def test_model_options_propagates_list_exception(monkeypatch):
         lambda: {"providers": {}, "custom_providers": []},
     )
     with patch(
-        "hermes_cli.model_switch.list_authenticated_providers",
+        "zermes.hermes_cli.model_switch.list_authenticated_providers",
         side_effect=RuntimeError("catalog blew up"),
     ):
         resp = server._methods["model.options"](77, {"session_id": ""})
@@ -3548,7 +3548,7 @@ def test_prompt_submit_auto_titles_session_on_complete(monkeypatch):
     monkeypatch.setattr(server, "render_message", lambda raw, cols: None)
     monkeypatch.setattr(server, "_get_db", lambda: None)
 
-    with patch("agent.title_generator.maybe_auto_title") as mock_title:
+    with patch("zermes.agent.title_generator.maybe_auto_title") as mock_title:
         server.handle_request(
             {
                 "id": "1",
@@ -3584,7 +3584,7 @@ def test_prompt_submit_skips_auto_title_when_interrupted(monkeypatch):
     monkeypatch.setattr(server, "render_message", lambda raw, cols: None)
     monkeypatch.setattr(server, "_get_db", lambda: None)
 
-    with patch("agent.title_generator.maybe_auto_title") as mock_title:
+    with patch("zermes.agent.title_generator.maybe_auto_title") as mock_title:
         server.handle_request(
             {
                 "id": "1",
@@ -3615,7 +3615,7 @@ def test_prompt_submit_skips_auto_title_when_response_empty(monkeypatch):
     monkeypatch.setattr(server, "render_message", lambda raw, cols: None)
     monkeypatch.setattr(server, "_get_db", lambda: None)
 
-    with patch("agent.title_generator.maybe_auto_title") as mock_title:
+    with patch("zermes.agent.title_generator.maybe_auto_title") as mock_title:
         server.handle_request(
             {
                 "id": "1",
@@ -3857,7 +3857,7 @@ def test_browser_manage_status_falls_back_to_config_cdp_url(monkeypatch):
     fake_cfg = types.SimpleNamespace(
         read_raw_config=lambda: {"browser": {"cdp_url": "http://lan:9222"}}
     )
-    with patch.dict(sys.modules, {"hermes_cli.config": fake_cfg}):
+    with patch.dict(sys.modules, {"zermes.hermes_cli.config": fake_cfg}):
         resp = server.handle_request(
             {"id": "1", "method": "browser.manage", "params": {"action": "status"}}
         )
@@ -3876,7 +3876,7 @@ def test_browser_manage_status_does_not_call_get_cdp_override(monkeypatch):
             "_get_cdp_override must not run on /browser status (network I/O)"
         )
     )
-    with patch.dict(sys.modules, {"tools.browser_tool": fake}):
+    with patch.dict(sys.modules, {"zermes.tools.browser_tool": fake}):
         resp = server.handle_request(
             {"id": "1", "method": "browser.manage", "params": {"action": "status"}}
         )
@@ -3899,7 +3899,7 @@ def test_browser_manage_connect_sets_env_and_cleans_twice(monkeypatch):
         cleanup_all_browsers=_cleanup_all,
         _get_cdp_override=lambda: os.environ.get("BROWSER_CDP_URL", ""),
     )
-    with patch.dict(sys.modules, {"tools.browser_tool": fake}):
+    with patch.dict(sys.modules, {"zermes.tools.browser_tool": fake}):
         _stub_urlopen(monkeypatch, ok=True)
         resp = server.handle_request(
             {
@@ -3923,7 +3923,7 @@ def test_browser_manage_connect_defaults_to_loopback(monkeypatch):
         cleanup_all_browsers=lambda: None,
         _get_cdp_override=lambda: os.environ.get("BROWSER_CDP_URL", ""),
     )
-    with patch.dict(sys.modules, {"tools.browser_tool": fake}):
+    with patch.dict(sys.modules, {"zermes.tools.browser_tool": fake}):
         urls = _stub_urlopen_capture(monkeypatch, ok=True)
         resp = server.handle_request(
             {"id": "1", "method": "browser.manage", "params": {"action": "connect"}}
@@ -3947,14 +3947,14 @@ def test_browser_manage_connect_default_local_reports_launch_hint(monkeypatch):
         cleanup_all_browsers=lambda: None,
         _get_cdp_override=lambda: os.environ.get("BROWSER_CDP_URL", ""),
     )
-    with patch.dict(sys.modules, {"tools.browser_tool": fake}):
+    with patch.dict(sys.modules, {"zermes.tools.browser_tool": fake}):
         _stub_urlopen(monkeypatch, ok=False)
         with (
             patch(
-                "hermes_cli.browser_connect.try_launch_chrome_debug", return_value=False
+                "zermes.hermes_cli.browser_connect.try_launch_chrome_debug", return_value=False
             ),
             patch(
-                "hermes_cli.browser_connect.get_chrome_debug_candidates",
+                "zermes.hermes_cli.browser_connect.get_chrome_debug_candidates",
                 return_value=[],
             ),
         ):
@@ -4003,14 +4003,14 @@ def test_browser_manage_connect_no_session_skips_progress_events(monkeypatch):
         cleanup_all_browsers=lambda: None,
         _get_cdp_override=lambda: os.environ.get("BROWSER_CDP_URL", ""),
     )
-    with patch.dict(sys.modules, {"tools.browser_tool": fake}):
+    with patch.dict(sys.modules, {"zermes.tools.browser_tool": fake}):
         _stub_urlopen(monkeypatch, ok=False)
         with (
             patch(
-                "hermes_cli.browser_connect.try_launch_chrome_debug", return_value=False
+                "zermes.hermes_cli.browser_connect.try_launch_chrome_debug", return_value=False
             ),
             patch(
-                "hermes_cli.browser_connect.get_chrome_debug_candidates",
+                "zermes.hermes_cli.browser_connect.get_chrome_debug_candidates",
                 return_value=[],
             ),
         ):
@@ -4036,7 +4036,7 @@ def test_browser_manage_connect_handles_null_url(monkeypatch):
         cleanup_all_browsers=lambda: None,
         _get_cdp_override=lambda: os.environ.get("BROWSER_CDP_URL", ""),
     )
-    with patch.dict(sys.modules, {"tools.browser_tool": fake}):
+    with patch.dict(sys.modules, {"zermes.tools.browser_tool": fake}):
         _stub_urlopen(monkeypatch, ok=True)
         resp = server.handle_request(
             {
@@ -4093,9 +4093,9 @@ def test_browser_manage_connect_default_local_retries_after_launch(monkeypatch):
     import urllib.request
 
     monkeypatch.setattr(urllib.request, "urlopen", _opener)
-    with patch.dict(sys.modules, {"tools.browser_tool": fake}):
+    with patch.dict(sys.modules, {"zermes.tools.browser_tool": fake}):
         with patch(
-            "hermes_cli.browser_connect.try_launch_chrome_debug", return_value=True
+            "zermes.hermes_cli.browser_connect.try_launch_chrome_debug", return_value=True
         ):
             resp = server.handle_request(
                 {"id": "1", "method": "browser.manage", "params": {"action": "connect"}}
@@ -4120,7 +4120,7 @@ def test_browser_manage_connect_rejects_unreachable_endpoint(monkeypatch):
         ),
         _get_cdp_override=lambda: os.environ.get("BROWSER_CDP_URL", ""),
     )
-    with patch.dict(sys.modules, {"tools.browser_tool": fake}):
+    with patch.dict(sys.modules, {"zermes.tools.browser_tool": fake}):
         _stub_urlopen(monkeypatch, ok=False)
         resp = server.handle_request(
             {
@@ -4145,7 +4145,7 @@ def test_browser_manage_connect_normalizes_bare_host_port(monkeypatch):
         cleanup_all_browsers=lambda: None,
         _get_cdp_override=lambda: os.environ.get("BROWSER_CDP_URL", ""),
     )
-    with patch.dict(sys.modules, {"tools.browser_tool": fake}):
+    with patch.dict(sys.modules, {"zermes.tools.browser_tool": fake}):
         _stub_urlopen(monkeypatch, ok=True)
         resp = server.handle_request(
             {
@@ -4171,7 +4171,7 @@ def test_browser_manage_connect_strips_discovery_path(monkeypatch):
         cleanup_all_browsers=lambda: None,
         _get_cdp_override=lambda: os.environ.get("BROWSER_CDP_URL", ""),
     )
-    with patch.dict(sys.modules, {"tools.browser_tool": fake}):
+    with patch.dict(sys.modules, {"zermes.tools.browser_tool": fake}):
         _stub_urlopen(monkeypatch, ok=True)
         resp = server.handle_request(
             {
@@ -4203,7 +4203,7 @@ def test_browser_manage_connect_preserves_devtools_browser_endpoint(monkeypatch)
         def __exit__(self, *a):
             return False
 
-    with patch.dict(sys.modules, {"tools.browser_tool": fake}):
+    with patch.dict(sys.modules, {"zermes.tools.browser_tool": fake}):
         # If urlopen is reached for a concrete ws endpoint, the test
         # would still pass because _stub_urlopen returned ok=True before;
         # patch it to assert-fail so we prove the HTTP probe is skipped.
@@ -4242,7 +4242,7 @@ def test_browser_manage_connect_local_devtools_ws_preserves_path(monkeypatch):
         def __exit__(self, *a):
             return False
 
-    with patch.dict(sys.modules, {"tools.browser_tool": fake}):
+    with patch.dict(sys.modules, {"zermes.tools.browser_tool": fake}):
         with patch("socket.create_connection", return_value=_OkSocket()):
             resp = server.handle_request(
                 {
@@ -4311,7 +4311,7 @@ def test_browser_manage_connect_concrete_ws_skips_http_probe(monkeypatch):
         seen_targets.append(addr)
         return _OkSocket()
 
-    with patch.dict(sys.modules, {"tools.browser_tool": fake}):
+    with patch.dict(sys.modules, {"zermes.tools.browser_tool": fake}):
         # urlopen would 404/ECONNREFUSED on a real hosted CDP endpoint;
         # asserting it's never called proves the probe was skipped.
         with patch(
@@ -4342,7 +4342,7 @@ def test_browser_manage_connect_concrete_ws_tcp_unreachable(monkeypatch):
     )
     concrete = "ws://offline.example/devtools/browser/missing"
 
-    with patch.dict(sys.modules, {"tools.browser_tool": fake}):
+    with patch.dict(sys.modules, {"zermes.tools.browser_tool": fake}):
         with patch("socket.create_connection", side_effect=OSError("ECONNREFUSED")):
             resp = server.handle_request(
                 {
@@ -4365,7 +4365,7 @@ def test_browser_manage_disconnect_drops_env_and_cleans(monkeypatch):
         ),
         _get_cdp_override=lambda: os.environ.get("BROWSER_CDP_URL", ""),
     )
-    with patch.dict(sys.modules, {"tools.browser_tool": fake}):
+    with patch.dict(sys.modules, {"zermes.tools.browser_tool": fake}):
         resp = server.handle_request(
             {"id": "1", "method": "browser.manage", "params": {"action": "disconnect"}}
         )
@@ -4495,7 +4495,7 @@ def test_reload_env_rpc_calls_hermes_cli_reload_env(monkeypatch):
         return 7
 
     fake = types.SimpleNamespace(reload_env=_fake_reload)
-    with patch.dict(sys.modules, {"hermes_cli.config": fake}):
+    with patch.dict(sys.modules, {"zermes.hermes_cli.config": fake}):
         resp = server.handle_request({"id": "1", "method": "reload.env", "params": {}})
 
     assert resp["result"] == {"updated": 7}
@@ -4507,7 +4507,7 @@ def test_reload_env_rpc_surfaces_errors(monkeypatch):
         raise RuntimeError("env path locked")
 
     fake = types.SimpleNamespace(reload_env=_broken)
-    with patch.dict(sys.modules, {"hermes_cli.config": fake}):
+    with patch.dict(sys.modules, {"zermes.hermes_cli.config": fake}):
         resp = server.handle_request({"id": "1", "method": "reload.env", "params": {}})
 
     assert "error" in resp
@@ -4523,7 +4523,7 @@ def _setup_make_agent_mocks(monkeypatch, cfg):
         server, "_resolve_startup_runtime", lambda: ("test-model", None)
     )
     monkeypatch.setattr(
-        "hermes_cli.runtime_provider.resolve_runtime_provider",
+        "zermes.hermes_cli.runtime_provider.resolve_runtime_provider",
         lambda requested=None, target_model=None: {
             "provider": None,
             "base_url": None,
@@ -4545,7 +4545,7 @@ def _setup_make_agent_mocks(monkeypatch, cfg):
 def test_make_agent_reads_nested_max_turns(monkeypatch):
     _setup_make_agent_mocks(monkeypatch, {"agent": {"max_turns": 200}})
 
-    with patch("run_agent.AIAgent") as mock_agent:
+    with patch("zermes.run_agent.AIAgent") as mock_agent:
         server._make_agent("sid1", "key1")
 
     assert mock_agent.call_args.kwargs["max_iterations"] == 200
@@ -4556,7 +4556,7 @@ def test_make_agent_nested_max_turns_takes_priority(monkeypatch):
         monkeypatch, {"agent": {"max_turns": 500}, "max_turns": 100}
     )
 
-    with patch("run_agent.AIAgent") as mock_agent:
+    with patch("zermes.run_agent.AIAgent") as mock_agent:
         server._make_agent("sid1", "key1")
 
     assert mock_agent.call_args.kwargs["max_iterations"] == 500
@@ -4565,7 +4565,7 @@ def test_make_agent_nested_max_turns_takes_priority(monkeypatch):
 def test_make_agent_defaults_to_90(monkeypatch):
     _setup_make_agent_mocks(monkeypatch, {})
 
-    with patch("run_agent.AIAgent") as mock_agent:
+    with patch("zermes.run_agent.AIAgent") as mock_agent:
         server._make_agent("sid1", "key1")
 
     assert mock_agent.call_args.kwargs["max_iterations"] == 90
@@ -4574,7 +4574,7 @@ def test_make_agent_defaults_to_90(monkeypatch):
 def test_make_agent_handles_null_agent_config(monkeypatch):
     _setup_make_agent_mocks(monkeypatch, {"agent": None, "max_turns": 80})
 
-    with patch("run_agent.AIAgent") as mock_agent:
+    with patch("zermes.run_agent.AIAgent") as mock_agent:
         server._make_agent("sid1", "key1")
 
     assert mock_agent.call_args.kwargs["max_iterations"] == 80

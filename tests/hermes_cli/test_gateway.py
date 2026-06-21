@@ -1,4 +1,4 @@
-"""Tests for hermes_cli.gateway."""
+"""Tests for zermes.hermes_cli.gateway."""
 
 import sys
 from types import ModuleType, SimpleNamespace
@@ -6,13 +6,13 @@ from unittest.mock import patch, call
 
 import pytest
 
-import hermes_cli.gateway as gateway
+import zermes.hermes_cli.gateway as gateway
 
 
 def _install_fake_gateway_run(monkeypatch, start_gateway):
-    module = ModuleType("gateway.run")
+    module = ModuleType("zermes.gateway.run")
     module.start_gateway = start_gateway
-    monkeypatch.setitem(sys.modules, "gateway.run", module)
+    monkeypatch.setitem(sys.modules, "zermes.gateway.run", module)
 
 
 def test_run_gateway_exits_cleanly_on_keyboard_interrupt(monkeypatch, capsys):
@@ -26,9 +26,9 @@ def test_run_gateway_exits_cleanly_on_keyboard_interrupt(monkeypatch, capsys):
         raise KeyboardInterrupt
 
     _install_fake_gateway_run(monkeypatch, fake_start_gateway)
-    monkeypatch.setattr(gateway.asyncio, "run", fake_asyncio_run)
+    monkeypatch.setattr(zermes.gateway.asyncio, "run", fake_asyncio_run)
 
-    gateway.run_gateway()
+    zermes.gateway.run_gateway()
 
     out = capsys.readouterr().out
     assert calls == [(False, 0)]
@@ -44,10 +44,10 @@ def test_run_gateway_exits_nonzero_when_start_gateway_reports_failure(monkeypatc
         return object()
 
     _install_fake_gateway_run(monkeypatch, fake_start_gateway)
-    monkeypatch.setattr(gateway.asyncio, "run", lambda coro: False)
+    monkeypatch.setattr(zermes.gateway.asyncio, "run", lambda coro: False)
 
     with pytest.raises(SystemExit) as exc_info:
-        gateway.run_gateway(verbose=1, quiet=True, replace=True)
+        zermes.gateway.run_gateway(verbose=1, quiet=True, replace=True)
 
     assert exc_info.value.code == 1
     assert calls == [(True, None)]
@@ -59,12 +59,12 @@ def test_run_gateway_refuses_root_in_official_docker(monkeypatch, tmp_path, caps
     (project_root / "docker" / "entrypoint.sh").write_text("#!/bin/sh\n")
 
     monkeypatch.setattr(gateway, "PROJECT_ROOT", project_root)
-    monkeypatch.setattr(gateway.os, "geteuid", lambda: 0)
+    monkeypatch.setattr(zermes.gateway.os, "geteuid", lambda: 0)
     monkeypatch.delenv("HERMES_ALLOW_ROOT_GATEWAY", raising=False)
     monkeypatch.setattr(gateway, "_is_official_docker_checkout", lambda: True)
 
     with pytest.raises(SystemExit) as exc_info:
-        gateway.run_gateway()
+        zermes.gateway.run_gateway()
 
     assert exc_info.value.code == 1
     out = capsys.readouterr().out
@@ -80,12 +80,12 @@ def test_run_gateway_root_guard_has_escape_hatch(monkeypatch):
         return object()
 
     _install_fake_gateway_run(monkeypatch, fake_start_gateway)
-    monkeypatch.setattr(gateway.asyncio, "run", lambda coro: True)
-    monkeypatch.setattr(gateway.os, "geteuid", lambda: 0)
+    monkeypatch.setattr(zermes.gateway.asyncio, "run", lambda coro: True)
+    monkeypatch.setattr(zermes.gateway.os, "geteuid", lambda: 0)
     monkeypatch.setattr(gateway, "_is_official_docker_checkout", lambda: True)
     monkeypatch.setenv("HERMES_ALLOW_ROOT_GATEWAY", "1")
 
-    gateway.run_gateway(verbose=2, replace=True)
+    zermes.gateway.run_gateway(verbose=2, replace=True)
 
     assert calls == [(True, 2)]
 
@@ -96,31 +96,31 @@ class TestSystemdLingerStatus:
         monkeypatch.setattr(gateway, "is_termux", lambda: False)
         monkeypatch.setenv("USER", "alice")
         monkeypatch.setattr(
-            gateway.subprocess,
+            zermes.gateway.subprocess,
             "run",
             lambda *args, **kwargs: SimpleNamespace(returncode=0, stdout="yes\n", stderr=""),
         )
         monkeypatch.setattr("shutil.which", lambda name: "/usr/bin/loginctl")
 
-        assert gateway.get_systemd_linger_status() == (True, "")
+        assert zermes.gateway.get_systemd_linger_status() == (True, "")
 
     def test_reports_disabled(self, monkeypatch):
         monkeypatch.setattr(gateway, "is_linux", lambda: True)
         monkeypatch.setattr(gateway, "is_termux", lambda: False)
         monkeypatch.setenv("USER", "alice")
         monkeypatch.setattr(
-            gateway.subprocess,
+            zermes.gateway.subprocess,
             "run",
             lambda *args, **kwargs: SimpleNamespace(returncode=0, stdout="no\n", stderr=""),
         )
         monkeypatch.setattr("shutil.which", lambda name: "/usr/bin/loginctl")
 
-        assert gateway.get_systemd_linger_status() == (False, "")
+        assert zermes.gateway.get_systemd_linger_status() == (False, "")
 
     def test_reports_termux_as_not_supported(self, monkeypatch):
         monkeypatch.setattr(gateway, "is_termux", lambda: True)
 
-        assert gateway.get_systemd_linger_status() == (None, "not supported in Termux")
+        assert zermes.gateway.get_systemd_linger_status() == (None, "not supported in Termux")
 
 
 class TestContainerSystemdSupport:
@@ -132,7 +132,7 @@ class TestContainerSystemdSupport:
         monkeypatch.setattr("shutil.which", lambda name: "/usr/bin/systemctl")
         monkeypatch.setattr(gateway, "_systemd_operational", lambda system=False: not system)
 
-        assert gateway.supports_systemd_services() is True
+        assert zermes.gateway.supports_systemd_services() is True
 
     def test_supports_systemd_services_in_container_with_system_manager(self, monkeypatch):
         monkeypatch.setattr(gateway, "is_linux", lambda: True)
@@ -142,7 +142,7 @@ class TestContainerSystemdSupport:
         monkeypatch.setattr("shutil.which", lambda name: "/usr/bin/systemctl")
         monkeypatch.setattr(gateway, "_systemd_operational", lambda system=False: system)
 
-        assert gateway.supports_systemd_services() is True
+        assert zermes.gateway.supports_systemd_services() is True
 
     def test_supports_systemd_services_in_container_without_systemd(self, monkeypatch):
         monkeypatch.setattr(gateway, "is_linux", lambda: True)
@@ -152,7 +152,7 @@ class TestContainerSystemdSupport:
         monkeypatch.setattr("shutil.which", lambda name: "/usr/bin/systemctl")
         monkeypatch.setattr(gateway, "_systemd_operational", lambda system=False: False)
 
-        assert gateway.supports_systemd_services() is False
+        assert zermes.gateway.supports_systemd_services() is False
 
 
 def test_gateway_install_in_container_with_operational_systemd_uses_systemd(monkeypatch):
@@ -174,7 +174,7 @@ def test_gateway_install_in_container_with_operational_systemd_uses_systemd(monk
         system=False,
         run_as_user=None,
     )
-    gateway.gateway_command(args)
+    zermes.gateway.gateway_command(args)
 
     assert calls == [(False, False, None)]
 
@@ -188,20 +188,20 @@ def test_gateway_start_in_container_with_operational_systemd_uses_systemd(monkey
     monkeypatch.setattr(gateway, "systemd_start", lambda system=False: calls.append(system))
 
     args = SimpleNamespace(gateway_command="start", system=False, all=False)
-    gateway.gateway_command(args)
+    zermes.gateway.gateway_command(args)
 
     assert calls == [False]
 
 
 def test_systemd_status_warns_when_linger_disabled(monkeypatch, tmp_path, capsys):
-    unit_path = tmp_path / "hermes-gateway.service"
+    unit_path = tmp_path / "hermes-zermes.gateway.service"
     unit_path.write_text("[Unit]\n")
 
     monkeypatch.setattr(gateway, "get_systemd_unit_path", lambda system=False: unit_path)
     monkeypatch.setattr(gateway, "get_systemd_linger_status", lambda: (False, ""))
 
     def fake_run(cmd, capture_output=False, text=False, check=False, **kwargs):
-        if cmd[:4] == ["systemctl", "--user", "status", gateway.get_service_name()]:
+        if cmd[:4] == ["systemctl", "--user", "status", zermes.gateway.get_service_name()]:
             return SimpleNamespace(returncode=0, stdout="", stderr="")
         if cmd[:3] == ["systemctl", "--user", "is-active"]:
             return SimpleNamespace(returncode=0, stdout="active\n", stderr="")
@@ -213,9 +213,9 @@ def test_systemd_status_warns_when_linger_disabled(monkeypatch, tmp_path, capsys
             )
         raise AssertionError(f"Unexpected command: {cmd}")
 
-    monkeypatch.setattr(gateway.subprocess, "run", fake_run)
+    monkeypatch.setattr(zermes.gateway.subprocess, "run", fake_run)
 
-    gateway.systemd_status(deep=False)
+    zermes.gateway.systemd_status(deep=False)
 
     out = capsys.readouterr().out
     assert "gateway service is running" in out
@@ -224,7 +224,7 @@ def test_systemd_status_warns_when_linger_disabled(monkeypatch, tmp_path, capsys
 
 
 def test_systemd_install_checks_linger_status(monkeypatch, tmp_path, capsys):
-    unit_path = tmp_path / "systemd" / "user" / "hermes-gateway.service"
+    unit_path = tmp_path / "systemd" / "user" / "hermes-zermes.gateway.service"
 
     monkeypatch.setattr(gateway, "get_systemd_unit_path", lambda system=False: unit_path)
 
@@ -235,23 +235,23 @@ def test_systemd_install_checks_linger_status(monkeypatch, tmp_path, capsys):
         calls.append((cmd, check))
         return SimpleNamespace(returncode=0, stdout="", stderr="")
 
-    monkeypatch.setattr(gateway.subprocess, "run", fake_run)
+    monkeypatch.setattr(zermes.gateway.subprocess, "run", fake_run)
     monkeypatch.setattr(gateway, "_ensure_linger_enabled", lambda: helper_calls.append(True))
 
-    gateway.systemd_install(force=False)
+    zermes.gateway.systemd_install(force=False)
 
     out = capsys.readouterr().out
     assert unit_path.exists()
     assert [cmd for cmd, _ in calls] == [
         ["systemctl", "--user", "daemon-reload"],
-        ["systemctl", "--user", "enable", gateway.get_service_name()],
+        ["systemctl", "--user", "enable", zermes.gateway.get_service_name()],
     ]
     assert helper_calls == [True]
     assert "User service installed and enabled" in out
 
 
 def test_systemd_install_system_scope_skips_linger_and_uses_systemctl(monkeypatch, tmp_path, capsys):
-    unit_path = tmp_path / "etc" / "systemd" / "system" / "hermes-gateway.service"
+    unit_path = tmp_path / "etc" / "systemd" / "system" / "hermes-zermes.gateway.service"
 
     monkeypatch.setattr(gateway, "get_systemd_unit_path", lambda system=False: unit_path)
     monkeypatch.setattr(
@@ -268,17 +268,17 @@ def test_systemd_install_system_scope_skips_linger_and_uses_systemctl(monkeypatc
         calls.append((cmd, check))
         return SimpleNamespace(returncode=0, stdout="", stderr="")
 
-    monkeypatch.setattr(gateway.subprocess, "run", fake_run)
+    monkeypatch.setattr(zermes.gateway.subprocess, "run", fake_run)
     monkeypatch.setattr(gateway, "_ensure_linger_enabled", lambda: helper_calls.append(True))
 
-    gateway.systemd_install(force=False, system=True, run_as_user="alice")
+    zermes.gateway.systemd_install(force=False, system=True, run_as_user="alice")
 
     out = capsys.readouterr().out
     assert unit_path.exists()
     assert unit_path.read_text(encoding="utf-8") == "scope=True user=alice\n"
     assert [cmd for cmd, _ in calls] == [
         ["systemctl", "daemon-reload"],
-        ["systemctl", "enable", gateway.get_service_name()],
+        ["systemctl", "enable", zermes.gateway.get_service_name()],
     ]
     assert helper_calls == []
     assert "Configured to run as: alice" not in out  # generated test unit has no User= line
@@ -286,8 +286,8 @@ def test_systemd_install_system_scope_skips_linger_and_uses_systemctl(monkeypatc
 
 
 def test_conflicting_systemd_units_warning(monkeypatch, tmp_path, capsys):
-    user_unit = tmp_path / "user" / "hermes-gateway.service"
-    system_unit = tmp_path / "system" / "hermes-gateway.service"
+    user_unit = tmp_path / "user" / "hermes-zermes.gateway.service"
+    system_unit = tmp_path / "system" / "hermes-zermes.gateway.service"
     user_unit.parent.mkdir(parents=True)
     system_unit.parent.mkdir(parents=True)
     user_unit.write_text("[Unit]\n", encoding="utf-8")
@@ -299,7 +299,7 @@ def test_conflicting_systemd_units_warning(monkeypatch, tmp_path, capsys):
         lambda system=False: system_unit if system else user_unit,
     )
 
-    gateway.print_systemd_scope_conflict_warning()
+    zermes.gateway.print_systemd_scope_conflict_warning()
 
     out = capsys.readouterr().out
     assert "Both user and system gateway services are installed" in out
@@ -309,11 +309,11 @@ def test_conflicting_systemd_units_warning(monkeypatch, tmp_path, capsys):
 
 def test_install_linux_gateway_from_setup_system_choice_without_root_prints_followup(monkeypatch, capsys):
     monkeypatch.setattr(gateway, "prompt_linux_gateway_install_scope", lambda: "system")
-    monkeypatch.setattr(gateway.os, "geteuid", lambda: 1000)
+    monkeypatch.setattr(zermes.gateway.os, "geteuid", lambda: 1000)
     monkeypatch.setattr(gateway, "_default_system_service_user", lambda: "alice")
     monkeypatch.setattr(gateway, "systemd_install", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("should not install")))
 
-    scope, did_install = gateway.install_linux_gateway_from_setup(force=False)
+    scope, did_install = zermes.gateway.install_linux_gateway_from_setup(force=False)
 
     out = capsys.readouterr().out
     assert (scope, did_install) == ("system", False)
@@ -323,7 +323,7 @@ def test_install_linux_gateway_from_setup_system_choice_without_root_prints_foll
 
 def test_install_linux_gateway_from_setup_system_choice_as_root_installs(monkeypatch):
     monkeypatch.setattr(gateway, "prompt_linux_gateway_install_scope", lambda: "system")
-    monkeypatch.setattr(gateway.os, "geteuid", lambda: 0)
+    monkeypatch.setattr(zermes.gateway.os, "geteuid", lambda: 0)
     monkeypatch.setattr(gateway, "_default_system_service_user", lambda: "alice")
 
     calls = []
@@ -333,7 +333,7 @@ def test_install_linux_gateway_from_setup_system_choice_as_root_installs(monkeyp
         lambda force=False, system=False, run_as_user=None: calls.append((force, system, run_as_user)),
     )
 
-    scope, did_install = gateway.install_linux_gateway_from_setup(force=True)
+    scope, did_install = zermes.gateway.install_linux_gateway_from_setup(force=True)
 
     assert (scope, did_install) == ("system", True)
     assert calls == [(True, True, "alice")]
@@ -342,7 +342,7 @@ def test_install_linux_gateway_from_setup_system_choice_as_root_installs(monkeyp
 def test_find_gateway_pids_falls_back_to_pid_file_when_process_scan_fails(monkeypatch):
     monkeypatch.setattr(gateway, "_get_service_pids", lambda: set())
     monkeypatch.setattr(gateway, "is_windows", lambda: False)
-    monkeypatch.setattr("gateway.status.get_running_pid", lambda: 321)
+    monkeypatch.setattr("zermes.gateway.status.get_running_pid", lambda: 321)
 
     def fake_run(cmd, **kwargs):
         if cmd[:4] == ["ps", "-A", "eww", "-o"]:
@@ -353,9 +353,9 @@ def test_find_gateway_pids_falls_back_to_pid_file_when_process_scan_fails(monkey
             return SimpleNamespace(returncode=1, stdout="", stderr="")
         raise AssertionError(f"Unexpected command: {cmd}")
 
-    monkeypatch.setattr(gateway.subprocess, "run", fake_run)
+    monkeypatch.setattr(zermes.gateway.subprocess, "run", fake_run)
 
-    assert gateway.find_gateway_pids() == [321]
+    assert zermes.gateway.find_gateway_pids() == [321]
 
 
 # ---------------------------------------------------------------------------
@@ -368,9 +368,9 @@ class TestWaitForGatewayExit:
 
     def test_returns_immediately_when_no_pid(self, monkeypatch):
         """If get_running_pid returns None, exit instantly."""
-        monkeypatch.setattr("gateway.status.get_running_pid", lambda: None)
+        monkeypatch.setattr("zermes.gateway.status.get_running_pid", lambda: None)
         # Should return without sleeping at all.
-        gateway._wait_for_gateway_exit(timeout=1.0, force_after=0.5)
+        zermes.gateway._wait_for_gateway_exit(timeout=1.0, force_after=0.5)
 
     def test_returns_when_process_exits_gracefully(self, monkeypatch):
         """Process exits after a couple of polls — no SIGKILL needed."""
@@ -381,10 +381,10 @@ class TestWaitForGatewayExit:
             poll_count += 1
             return 12345 if poll_count <= 2 else None
 
-        monkeypatch.setattr("gateway.status.get_running_pid", mock_get_running_pid)
+        monkeypatch.setattr("zermes.gateway.status.get_running_pid", mock_get_running_pid)
         monkeypatch.setattr("time.sleep", lambda _: None)
 
-        gateway._wait_for_gateway_exit(timeout=10.0, force_after=999.0)
+        zermes.gateway._wait_for_gateway_exit(timeout=10.0, force_after=999.0)
         # Should have polled until None was returned.
         assert poll_count == 3
 
@@ -410,10 +410,10 @@ class TestWaitForGatewayExit:
 
         monkeypatch.setattr("time.monotonic", fake_monotonic)
         monkeypatch.setattr("time.sleep", lambda _: None)
-        monkeypatch.setattr("gateway.status.get_running_pid", mock_get_running_pid)
+        monkeypatch.setattr("zermes.gateway.status.get_running_pid", mock_get_running_pid)
         monkeypatch.setattr(gateway, "terminate_pid", mock_terminate)
 
-        gateway._wait_for_gateway_exit(timeout=10.0, force_after=5.0)
+        zermes.gateway._wait_for_gateway_exit(timeout=10.0, force_after=5.0)
         assert (42, True) in kills
 
     def test_handles_process_already_gone_on_kill(self, monkeypatch):
@@ -430,11 +430,11 @@ class TestWaitForGatewayExit:
 
         monkeypatch.setattr("time.monotonic", fake_monotonic)
         monkeypatch.setattr("time.sleep", lambda _: None)
-        monkeypatch.setattr("gateway.status.get_running_pid", lambda: 99)
+        monkeypatch.setattr("zermes.gateway.status.get_running_pid", lambda: 99)
         monkeypatch.setattr(gateway, "terminate_pid", mock_terminate)
 
         # Should not raise — ProcessLookupError means it's already gone.
-        gateway._wait_for_gateway_exit(timeout=10.0, force_after=2.0)
+        zermes.gateway._wait_for_gateway_exit(timeout=10.0, force_after=2.0)
 
     def test_kill_gateway_processes_force_uses_helper(self, monkeypatch):
         calls = []
@@ -442,7 +442,7 @@ class TestWaitForGatewayExit:
         monkeypatch.setattr(gateway, "find_gateway_pids", lambda exclude_pids=None, all_profiles=False: [11, 22])
         monkeypatch.setattr(gateway, "terminate_pid", lambda pid, force=False: calls.append((pid, force)))
 
-        killed = gateway.kill_gateway_processes(force=True)
+        killed = zermes.gateway.kill_gateway_processes(force=True)
 
         assert killed == 2
         assert calls == [(11, True), (22, True)]
@@ -452,26 +452,26 @@ class TestStopProfileGateway:
     def test_stop_profile_gateway_keeps_pid_file_when_process_still_running(self, monkeypatch):
         calls = {"kill": 0, "alive_probes": 0, "remove": 0}
 
-        monkeypatch.setattr("gateway.status.get_running_pid", lambda: 12345)
+        monkeypatch.setattr("zermes.gateway.status.get_running_pid", lambda: 12345)
         # Post-#21561: the stop loop sends one SIGTERM via ``os.kill`` then
-        # polls liveness via ``gateway.status._pid_exists`` (safe on
+        # polls liveness via ``zermes.gateway.status._pid_exists`` (safe on
         # Windows — bpo-14484). Instrument both seams separately.
         monkeypatch.setattr(
-            gateway.os,
+            zermes.gateway.os,
             "kill",
             lambda pid, sig: calls.__setitem__("kill", calls["kill"] + 1),
         )
         monkeypatch.setattr(
-            "gateway.status._pid_exists",
+            "zermes.gateway.status._pid_exists",
             lambda pid: calls.__setitem__("alive_probes", calls["alive_probes"] + 1) or True,
         )
         monkeypatch.setattr("time.sleep", lambda _: None)
         monkeypatch.setattr(
-            "gateway.status.remove_pid_file",
+            "zermes.gateway.status.remove_pid_file",
             lambda: calls.__setitem__("remove", calls["remove"] + 1),
         )
 
-        assert gateway.stop_profile_gateway() is True
+        assert zermes.gateway.stop_profile_gateway() is True
         assert calls["kill"] == 1          # one SIGTERM
         assert calls["alive_probes"] == 20 # 20 liveness polls over the 2s window
         assert calls["remove"] == 0

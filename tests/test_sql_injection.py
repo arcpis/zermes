@@ -2,7 +2,7 @@
 
 import re
 
-from agent.insights import InsightsEngine
+from zermes.agent.insights import InsightsEngine
 
 
 def test_session_cols_no_injection_chars():

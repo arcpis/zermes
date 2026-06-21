@@ -1,16 +1,16 @@
 import pytest
 
-from worker_agents.department_context_bundle import (
+from zermes.worker_agents.department_context_bundle import (
     DepartmentAssetContextBundle,
     DepartmentContextSelectionReason,
     DepartmentMemoryContextView,
     DepartmentToolPolicyContextSnapshot,
 )
-from worker_agents.department_context_rendering import (
+from zermes.worker_agents.department_context_rendering import (
     DepartmentContextRenderingError,
     render_department_context_bundle,
 )
-from worker_agents.runtime_boundary import (
+from zermes.worker_agents.runtime_boundary import (
     AgentRuntimeBoundaryError,
     AgentRuntimeLifecycle,
     AgentRuntimePersona,

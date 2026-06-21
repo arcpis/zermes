@@ -8,8 +8,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from plugins.teams_pipeline.cli import register_cli, teams_pipeline_command
-from plugins.teams_pipeline.store import TeamsPipelineStore
+from zermes.plugins.teams_pipeline.cli import register_cli, teams_pipeline_command
+from zermes.plugins.teams_pipeline.store import TeamsPipelineStore
 
 
 @pytest.fixture(autouse=True)
@@ -121,7 +121,7 @@ def test_subscriptions_lists_graph_subscriptions(monkeypatch, capsys):
                 }
             ]
 
-    monkeypatch.setattr("plugins.teams_pipeline.cli.build_graph_client", lambda: FakeClient())
+    monkeypatch.setattr("zermes.plugins.teams_pipeline.cli.build_graph_client", lambda: FakeClient())
     teams_pipeline_command(_make_args(teams_pipeline_action="subscriptions"))
     out = capsys.readouterr().out
     assert "sub-1" in out
@@ -143,7 +143,7 @@ def test_subscribe_defaults_to_created_for_transcript_resources(monkeypatch, cap
                 "expirationDateTime": json_body["expirationDateTime"],
             }
 
-    monkeypatch.setattr("plugins.teams_pipeline.cli.build_graph_client", lambda: FakeClient())
+    monkeypatch.setattr("zermes.plugins.teams_pipeline.cli.build_graph_client", lambda: FakeClient())
     teams_pipeline_command(
         _make_args(
             teams_pipeline_action="subscribe",
@@ -168,7 +168,7 @@ def test_token_health_force_refresh(monkeypatch, capsys):
             return "token-123"
 
     monkeypatch.setattr(
-        "plugins.teams_pipeline.cli.MicrosoftGraphTokenProvider",
+        "zermes.plugins.teams_pipeline.cli.MicrosoftGraphTokenProvider",
         SimpleNamespace(from_env=lambda: FakeProvider()),
     )
     teams_pipeline_command(_make_args(teams_pipeline_action="token-health", force_refresh=True))
@@ -179,7 +179,7 @@ def test_token_health_force_refresh(monkeypatch, capsys):
 
 
 def test_validate_accepts_msgraph_credentials_for_graph_delivery(monkeypatch, capsys, tmp_path):
-    from gateway.config import Platform, PlatformConfig
+    from zermes.gateway.config import Platform, PlatformConfig
 
     monkeypatch.setenv("MSGRAPH_TENANT_ID", "tenant")
     monkeypatch.setenv("MSGRAPH_CLIENT_ID", "client")
@@ -199,7 +199,7 @@ def test_validate_accepts_msgraph_credentials_for_graph_delivery(monkeypatch, ca
         }
     )
     monkeypatch.setattr(
-        "plugins.teams_pipeline.cli.load_gateway_config",
+        "zermes.plugins.teams_pipeline.cli.load_gateway_config",
         lambda: gateway_config,
     )
 

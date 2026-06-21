@@ -9,7 +9,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from tools.rl_training_tool import RunState, _stop_training_run
+from zermes.tools.rl_training_tool import RunState, _stop_training_run
 
 
 def _make_run_state(**overrides) -> RunState:

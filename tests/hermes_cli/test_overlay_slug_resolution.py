@@ -13,7 +13,7 @@ from unittest.mock import patch
 
 import pytest
 
-from hermes_cli.model_switch import list_authenticated_providers
+from zermes.hermes_cli.model_switch import list_authenticated_providers
 
 
 # -- Copilot slug resolution (env var path) ----------------------------------
@@ -48,7 +48,7 @@ def test_copilot_no_duplicate_entries():
 
 def test_kimi_for_coding_alias():
     """resolve_provider('kimi-for-coding') should return 'kimi-coding'."""
-    from hermes_cli.auth import resolve_provider
+    from zermes.hermes_cli.auth import resolve_provider
 
     result = resolve_provider("kimi-for-coding")
     assert result == "kimi-coding"
@@ -86,10 +86,10 @@ def test_kilo_overlay_uses_hermes_slug():
 
 def test_mapped_provider_credential_pool_visibility(monkeypatch):
     """Mapped providers should appear when credentials live only in auth-store credential_pool."""
-    monkeypatch.setattr("agent.models_dev.fetch_models_dev", lambda: {"google-ai-studio": {"env": ["GEMINI_API_KEY"]}})
-    monkeypatch.setattr("agent.models_dev.PROVIDER_TO_MODELS_DEV", {"gemini": "google-ai-studio"})
+    monkeypatch.setattr("zermes.agent.models_dev.fetch_models_dev", lambda: {"google-ai-studio": {"env": ["GEMINI_API_KEY"]}})
+    monkeypatch.setattr("zermes.agent.models_dev.PROVIDER_TO_MODELS_DEV", {"gemini": "google-ai-studio"})
     monkeypatch.setattr(
-        "hermes_cli.auth._load_auth_store",
+        "zermes.hermes_cli.auth._load_auth_store",
         lambda: {"providers": {}, "credential_pool": {"gemini": {"token": "fake"}}},
     )
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)

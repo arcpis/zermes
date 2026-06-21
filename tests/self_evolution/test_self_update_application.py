@@ -3,16 +3,16 @@
 import json
 import subprocess
 
-from code_modification.executor import ExecutionState, write_state
-from code_modification.governance import build_task_record_layout
-from code_modification.self_update import (
+from zermes.code_modification.executor import ExecutionState, write_state
+from zermes.code_modification.governance import build_task_record_layout
+from zermes.code_modification.self_update import (
     plan_self_update_application,
     prepare_self_update,
     record_self_update_build,
     record_self_update_health_check,
     activate_self_update,
 )
-from tools.code_modification_tool import self_update_application
+from zermes.tools.code_modification_tool import self_update_application
 
 
 def test_self_update_application_records_restart_pending_flow(tmp_path):

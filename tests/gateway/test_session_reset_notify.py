@@ -12,13 +12,13 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from gateway.config import (
+from zermes.gateway.config import (
     GatewayConfig,
     Platform,
     PlatformConfig,
     SessionResetPolicy,
 )
-from gateway.session import SessionEntry, SessionSource, SessionStore
+from zermes.gateway.session import SessionEntry, SessionSource, SessionStore
 
 
 # ---------------------------------------------------------------------------

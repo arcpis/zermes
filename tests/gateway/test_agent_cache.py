@@ -19,7 +19,7 @@ import pytest
 
 def _make_runner():
     """Create a minimal GatewayRunner with just the cache infrastructure."""
-    from gateway.run import GatewayRunner
+    from zermes.gateway.run import GatewayRunner
 
     runner = GatewayRunner.__new__(GatewayRunner)
     runner._agent_cache = {}
@@ -31,7 +31,7 @@ class TestAgentConfigSignature:
     """Config signature produces stable, distinct keys."""
 
     def test_same_config_same_signature(self):
-        from gateway.run import GatewayRunner
+        from zermes.gateway.run import GatewayRunner
 
         runtime = {"api_key": "sk-test12345678", "base_url": "https://openrouter.ai/api/v1",
                     "provider": "openrouter", "api_mode": "chat_completions"}
@@ -40,7 +40,7 @@ class TestAgentConfigSignature:
         assert sig1 == sig2
 
     def test_model_change_different_signature(self):
-        from gateway.run import GatewayRunner
+        from zermes.gateway.run import GatewayRunner
 
         runtime = {"api_key": "sk-test12345678", "base_url": "https://openrouter.ai/api/v1",
                     "provider": "openrouter"}
@@ -50,7 +50,7 @@ class TestAgentConfigSignature:
 
     def test_same_token_prefix_different_full_token_changes_signature(self):
         """Tokens sharing a JWT-style prefix must not collide."""
-        from gateway.run import GatewayRunner
+        from zermes.gateway.run import GatewayRunner
 
         rt1 = {
             "api_key": "eyJhbGci.token-for-account-a",
@@ -71,7 +71,7 @@ class TestAgentConfigSignature:
         assert sig1 != sig2
 
     def test_provider_change_different_signature(self):
-        from gateway.run import GatewayRunner
+        from zermes.gateway.run import GatewayRunner
 
         rt1 = {"api_key": "sk-test12345678", "base_url": "https://openrouter.ai/api/v1", "provider": "openrouter"}
         rt2 = {"api_key": "sk-test12345678", "base_url": "https://api.anthropic.com", "provider": "anthropic"}
@@ -80,7 +80,7 @@ class TestAgentConfigSignature:
         assert sig1 != sig2
 
     def test_toolset_change_different_signature(self):
-        from gateway.run import GatewayRunner
+        from zermes.gateway.run import GatewayRunner
 
         runtime = {"api_key": "sk-test12345678", "base_url": "https://openrouter.ai/api/v1", "provider": "openrouter"}
         sig1 = GatewayRunner._agent_config_signature("claude-sonnet-4", runtime, ["hermes-telegram"], "")
@@ -89,7 +89,7 @@ class TestAgentConfigSignature:
 
     def test_reasoning_not_in_signature(self):
         """Reasoning config is set per-message, not part of the signature."""
-        from gateway.run import GatewayRunner
+        from zermes.gateway.run import GatewayRunner
 
         runtime = {"api_key": "sk-test12345678", "base_url": "https://openrouter.ai/api/v1", "provider": "openrouter"}
         # Same config — signature should be identical regardless of what
@@ -104,7 +104,7 @@ class TestAgentConfigSignature:
 
     def test_cache_keys_default_omitted_matches_empty(self):
         """Omitted cache_keys must produce the same signature as empty {}."""
-        from gateway.run import GatewayRunner
+        from zermes.gateway.run import GatewayRunner
 
         runtime = {"api_key": "k", "base_url": "u", "provider": "p"}
         sig_omitted = GatewayRunner._agent_config_signature("m", runtime, [], "")
@@ -114,7 +114,7 @@ class TestAgentConfigSignature:
 
     def test_context_length_change_busts_cache(self):
         """Editing model.context_length in config must produce a new signature."""
-        from gateway.run import GatewayRunner
+        from zermes.gateway.run import GatewayRunner
 
         runtime = {"api_key": "k", "base_url": "u", "provider": "p"}
         sig1 = GatewayRunner._agent_config_signature(
@@ -129,7 +129,7 @@ class TestAgentConfigSignature:
 
     def test_max_tokens_change_busts_cache(self):
         """Editing model.max_tokens in config must produce a new signature."""
-        from gateway.run import GatewayRunner
+        from zermes.gateway.run import GatewayRunner
 
         runtime = {"api_key": "k", "base_url": "u", "provider": "p"}
         sig1 = GatewayRunner._agent_config_signature(
@@ -143,7 +143,7 @@ class TestAgentConfigSignature:
         assert sig1 != sig2
 
     def test_compression_threshold_change_busts_cache(self):
-        from gateway.run import GatewayRunner
+        from zermes.gateway.run import GatewayRunner
 
         runtime = {"api_key": "k", "base_url": "u", "provider": "p"}
         sig1 = GatewayRunner._agent_config_signature(
@@ -157,7 +157,7 @@ class TestAgentConfigSignature:
         assert sig1 != sig2
 
     def test_compression_enabled_toggle_busts_cache(self):
-        from gateway.run import GatewayRunner
+        from zermes.gateway.run import GatewayRunner
 
         runtime = {"api_key": "k", "base_url": "u", "provider": "p"}
         sig_on = GatewayRunner._agent_config_signature(
@@ -172,7 +172,7 @@ class TestAgentConfigSignature:
 
     def test_cache_keys_key_order_does_not_matter(self):
         """Signature must be stable regardless of dict key insertion order."""
-        from gateway.run import GatewayRunner
+        from zermes.gateway.run import GatewayRunner
 
         runtime = {"api_key": "k", "base_url": "u", "provider": "p"}
         sig_a = GatewayRunner._agent_config_signature(
@@ -187,16 +187,16 @@ class TestAgentConfigSignature:
 
     def test_tool_registry_generation_change_busts_cache(self):
         """MCP reloads mutate the tool registry, so cached agents must rebuild."""
-        from gateway.run import GatewayRunner
+        from zermes.gateway.run import GatewayRunner
 
         runtime = {"api_key": "k", "base_url": "u", "provider": "p"}
         sig_before = GatewayRunner._agent_config_signature(
             "m", runtime, ["telegram"], "",
-            cache_keys={"tools.registry_generation": 10},
+            cache_keys={"zermes.tools.registry_generation": 10},
         )
         sig_after = GatewayRunner._agent_config_signature(
             "m", runtime, ["telegram"], "",
-            cache_keys={"tools.registry_generation": 11},
+            cache_keys={"zermes.tools.registry_generation": 11},
         )
 
         assert sig_before != sig_after
@@ -207,7 +207,7 @@ class TestExtractCacheBustingConfig:
     config values that must invalidate the cached agent on change."""
 
     def test_reads_model_context_length(self):
-        from gateway.run import GatewayRunner
+        from zermes.gateway.run import GatewayRunner
 
         out = GatewayRunner._extract_cache_busting_config(
             {
@@ -222,7 +222,7 @@ class TestExtractCacheBustingConfig:
         assert out["model.max_tokens"] == 4096
 
     def test_reads_compression_subkeys(self):
-        from gateway.run import GatewayRunner
+        from zermes.gateway.run import GatewayRunner
 
         out = GatewayRunner._extract_cache_busting_config(
             {
@@ -242,7 +242,7 @@ class TestExtractCacheBustingConfig:
 
     def test_missing_keys_yield_none(self):
         """Absent config keys must produce None values (still contribute to signature)."""
-        from gateway.run import GatewayRunner
+        from zermes.gateway.run import GatewayRunner
 
         out = GatewayRunner._extract_cache_busting_config({})
         # Every documented cache-busting key must be present, even if None
@@ -251,7 +251,7 @@ class TestExtractCacheBustingConfig:
             assert out[f"{section}.{key}"] is None
 
     def test_non_dict_section_treated_as_missing(self):
-        from gateway.run import GatewayRunner
+        from zermes.gateway.run import GatewayRunner
 
         # compression is a string — should not crash, all compression.* keys None
         out = GatewayRunner._extract_cache_busting_config(
@@ -262,27 +262,27 @@ class TestExtractCacheBustingConfig:
         assert out["model.context_length"] == 100_000
 
     def test_none_config_is_safe(self):
-        from gateway.run import GatewayRunner
+        from zermes.gateway.run import GatewayRunner
 
         out = GatewayRunner._extract_cache_busting_config(None)
         for section, key in GatewayRunner._CACHE_BUSTING_CONFIG_KEYS:
             assert out[f"{section}.{key}"] is None
-        assert "tools.registry_generation" in out
+        assert "zermes.tools.registry_generation" in out
 
     def test_extract_includes_live_tool_registry_generation(self, monkeypatch):
-        from gateway.run import GatewayRunner
-        from tools.registry import registry
+        from zermes.gateway.run import GatewayRunner
+        from zermes.tools.registry import registry
 
         monkeypatch.setattr(registry, "_generation", 12345)
 
         out = GatewayRunner._extract_cache_busting_config({})
 
-        assert out["tools.registry_generation"] == 12345
+        assert out["zermes.tools.registry_generation"] == 12345
 
     def test_full_round_trip_busts_cache_on_real_edit(self):
         """End-to-end: simulate a config edit on main and verify the
         extracted cache_keys change produces a new signature."""
-        from gateway.run import GatewayRunner
+        from zermes.gateway.run import GatewayRunner
 
         runtime = {"api_key": "k", "base_url": "u", "provider": "p"}
         cfg_before = {
@@ -313,7 +313,7 @@ class TestAgentCacheLifecycle:
 
     def test_cache_hit_returns_same_agent(self):
         """Second message with same config reuses the cached agent instance."""
-        from run_agent import AIAgent
+        from zermes.run_agent import AIAgent
 
         runner = _make_runner()
         session_key = "telegram:12345"
@@ -340,7 +340,7 @@ class TestAgentCacheLifecycle:
 
     def test_cache_miss_on_model_change(self):
         """Model change produces different signature → cache miss."""
-        from run_agent import AIAgent
+        from zermes.run_agent import AIAgent
 
         runner = _make_runner()
         session_key = "telegram:12345"
@@ -367,7 +367,7 @@ class TestAgentCacheLifecycle:
 
     def test_evict_on_session_reset(self):
         """_evict_cached_agent removes the entry."""
-        from run_agent import AIAgent
+        from zermes.run_agent import AIAgent
 
         runner = _make_runner()
         session_key = "telegram:12345"
@@ -401,7 +401,7 @@ class TestAgentCacheLifecycle:
 
     def test_reasoning_config_updates_in_place(self):
         """Reasoning config can be set on a cached agent without eviction."""
-        from run_agent import AIAgent
+        from zermes.run_agent import AIAgent
 
         agent = AIAgent(
             model="anthropic/claude-sonnet-4", api_key="test",
@@ -424,7 +424,7 @@ class TestAgentCacheLifecycle:
 
     def test_system_prompt_frozen_across_cache_reuse(self):
         """The cached agent's system prompt stays identical across turns."""
-        from run_agent import AIAgent
+        from zermes.run_agent import AIAgent
 
         agent = AIAgent(
             model="anthropic/claude-sonnet-4", api_key="test",
@@ -442,8 +442,8 @@ class TestAgentCacheLifecycle:
         assert prompt1 is prompt2  # same object, not rebuilt
 
     def test_callbacks_update_without_cache_eviction(self):
-        """Per-message callbacks can be set on cached agent."""
-        from run_agent import AIAgent
+        """Per-message callbacks can be set on cached zermes.agent."""
+        from zermes.run_agent import AIAgent
 
         agent = AIAgent(
             model="anthropic/claude-sonnet-4", api_key="test",
@@ -475,7 +475,7 @@ class TestAgentCacheBoundedGrowth:
     def _bounded_runner(self):
         """Runner with an OrderedDict cache (matches real gateway init)."""
         from collections import OrderedDict
-        from gateway.run import GatewayRunner
+        from zermes.gateway.run import GatewayRunner
 
         runner = GatewayRunner.__new__(GatewayRunner)
         runner._agent_cache = OrderedDict()
@@ -494,7 +494,7 @@ class TestAgentCacheBoundedGrowth:
 
     def test_cap_evicts_lru_when_exceeded(self, monkeypatch):
         """Inserting past _AGENT_CACHE_MAX_SIZE pops the oldest entry."""
-        from gateway import run as gw_run
+        from zermes.gateway import run as gw_run
 
         monkeypatch.setattr(gw_run, "_AGENT_CACHE_MAX_SIZE", 3)
         runner = self._bounded_runner()
@@ -514,7 +514,7 @@ class TestAgentCacheBoundedGrowth:
 
     def test_cap_respects_move_to_end(self, monkeypatch):
         """Entries refreshed via move_to_end are NOT evicted as 'oldest'."""
-        from gateway import run as gw_run
+        from zermes.gateway import run as gw_run
 
         monkeypatch.setattr(gw_run, "_AGENT_CACHE_MAX_SIZE", 3)
         runner = self._bounded_runner()
@@ -541,7 +541,7 @@ class TestAgentCacheBoundedGrowth:
         _cleanup_agent_resources — cache eviction must not tear down
         per-task state (terminal/browser/bg procs).
         """
-        from gateway import run as gw_run
+        from zermes.gateway import run as gw_run
 
         monkeypatch.setattr(gw_run, "_AGENT_CACHE_MAX_SIZE", 1)
         runner = self._bounded_runner()
@@ -573,7 +573,7 @@ class TestAgentCacheBoundedGrowth:
 
     def test_idle_ttl_sweep_evicts_stale_agents(self, monkeypatch):
         """_sweep_idle_cached_agents removes agents idle past the TTL."""
-        from gateway import run as gw_run
+        from zermes.gateway import run as gw_run
 
         monkeypatch.setattr(gw_run, "_AGENT_CACHE_IDLE_TTL_SECS", 0.05)
         runner = self._bounded_runner()
@@ -592,7 +592,7 @@ class TestAgentCacheBoundedGrowth:
 
     def test_idle_sweep_skips_agents_without_activity_ts(self, monkeypatch):
         """Agents missing _last_activity_ts are left alone (defensive)."""
-        from gateway import run as gw_run
+        from zermes.gateway import run as gw_run
 
         monkeypatch.setattr(gw_run, "_AGENT_CACHE_IDLE_TTL_SECS", 0.01)
         runner = self._bounded_runner()
@@ -606,7 +606,7 @@ class TestAgentCacheBoundedGrowth:
 
     def test_plain_dict_cache_is_tolerated(self):
         """Test fixtures using plain {} don't crash _enforce_agent_cache_cap."""
-        from gateway.run import GatewayRunner
+        from zermes.gateway.run import GatewayRunner
 
         runner = GatewayRunner.__new__(GatewayRunner)
         runner._agent_cache = {}  # plain dict, not OrderedDict
@@ -655,7 +655,7 @@ class TestAgentCacheActiveSafety:
 
     def _runner(self):
         from collections import OrderedDict
-        from gateway.run import GatewayRunner
+        from zermes.gateway.run import GatewayRunner
 
         runner = GatewayRunner.__new__(GatewayRunner)
         runner._agent_cache = OrderedDict()
@@ -679,7 +679,7 @@ class TestAgentCacheActiveSafety:
         one that happens to be mid-turn.  Better to let the cache stay
         transiently over cap and re-check on the next insert.
         """
-        from gateway import run as gw_run
+        from zermes.gateway import run as gw_run
 
         monkeypatch.setattr(gw_run, "_AGENT_CACHE_MAX_SIZE", 2)
         runner = self._runner()
@@ -713,7 +713,7 @@ class TestAgentCacheActiveSafety:
         oldest is active and the next is idle, we evict exactly one.
         Cache ends at CAP+1, which is still better than unbounded.
         """
-        from gateway import run as gw_run
+        from zermes.gateway import run as gw_run
 
         monkeypatch.setattr(gw_run, "_AGENT_CACHE_MAX_SIZE", 2)
         runner = self._runner()
@@ -747,7 +747,7 @@ class TestAgentCacheActiveSafety:
         Better to temporarily exceed the cap than to crash an in-flight
         turn by tearing down its clients.
         """
-        from gateway import run as gw_run
+        from zermes.gateway import run as gw_run
         import logging as _logging
 
         monkeypatch.setattr(gw_run, "_AGENT_CACHE_MAX_SIZE", 1)
@@ -766,7 +766,7 @@ class TestAgentCacheActiveSafety:
         runner._running_agents["s2"] = a2
         runner._running_agents["s3"] = a3
 
-        with caplog.at_level(_logging.WARNING, logger="gateway.run"):
+        with caplog.at_level(_logging.WARNING, logger="zermes.gateway.run"):
             with runner._agent_cache_lock:
                 runner._enforce_agent_cache_cap()
 
@@ -784,8 +784,8 @@ class TestAgentCacheActiveSafety:
         real AIAgent instance exists.  Cached agents from other sessions
         can still be evicted safely.
         """
-        from gateway import run as gw_run
-        from gateway.run import _AGENT_PENDING_SENTINEL
+        from zermes.gateway import run as gw_run
+        from zermes.gateway.run import _AGENT_PENDING_SENTINEL
 
         monkeypatch.setattr(gw_run, "_AGENT_CACHE_MAX_SIZE", 1)
         runner = self._runner()
@@ -806,7 +806,7 @@ class TestAgentCacheActiveSafety:
 
     def test_idle_sweep_skips_active_agent(self, monkeypatch):
         """Idle-TTL sweep must not tear down an active agent even if 'stale'."""
-        from gateway import run as gw_run
+        from zermes.gateway import run as gw_run
 
         monkeypatch.setattr(gw_run, "_AGENT_CACHE_IDLE_TTL_SECS", 0.01)
         runner = self._runner()
@@ -826,11 +826,11 @@ class TestAgentCacheActiveSafety:
         """Live test: evicting an active agent does NOT null its .client.
 
         This reproduces the original concern — if eviction fired while an
-        agent was mid-turn, `agent.close()` would set `self.client = None`
+        agent was mid-turn, `zermes.agent.close()` would set `self.client = None`
         and the next API call inside the loop would crash.  With the
         active-agent skip, the client stays intact.
         """
-        from gateway import run as gw_run
+        from zermes.gateway import run as gw_run
 
         monkeypatch.setattr(gw_run, "_AGENT_CACHE_MAX_SIZE", 1)
         runner = self._runner()
@@ -840,7 +840,7 @@ class TestAgentCacheActiveSafety:
         active._last_activity_ts = __import__("time").time()
         active.client = MagicMock()  # simulate an OpenAI client
         def _real_close():
-            active.client = None  # mirrors run_agent.py:3299
+            active.client = None  # mirrors zermes.run_agent.py:3299
         active.close = _real_close
         active.shutdown_memory_provider = MagicMock()
 
@@ -851,7 +851,7 @@ class TestAgentCacheActiveSafety:
         runner._running_agents["active-session"] = active
 
         # Real cleanup function, not mocked — we want to see whether close()
-        # runs on the active agent.  (It shouldn't.)
+        # runs on the active zermes.agent.  (It shouldn't.)
         with runner._agent_cache_lock:
             runner._enforce_agent_cache_cap()
 
@@ -871,7 +871,7 @@ class TestAgentCacheSpilloverLive:
 
     def _runner(self):
         from collections import OrderedDict
-        from gateway.run import GatewayRunner
+        from zermes.gateway.run import GatewayRunner
 
         runner = GatewayRunner.__new__(GatewayRunner)
         runner._agent_cache = OrderedDict()
@@ -881,7 +881,7 @@ class TestAgentCacheSpilloverLive:
 
     def _real_agent(self):
         """A genuine AIAgent; no API calls are made during these tests."""
-        from run_agent import AIAgent
+        from zermes.run_agent import AIAgent
         return AIAgent(
             model="anthropic/claude-sonnet-4", api_key="test",
             base_url="https://openrouter.ai/api/v1", provider="openrouter",
@@ -892,7 +892,7 @@ class TestAgentCacheSpilloverLive:
 
     def test_fill_to_cap_then_spillover(self, monkeypatch):
         """Fill to cap with real agents, insert one more, oldest evicted."""
-        from gateway import run as gw_run
+        from zermes.gateway import run as gw_run
 
         CAP = 8
         monkeypatch.setattr(gw_run, "_AGENT_CACHE_MAX_SIZE", CAP)
@@ -925,7 +925,7 @@ class TestAgentCacheSpilloverLive:
 
     def test_spillover_all_active_keeps_cache_over_cap(self, monkeypatch, caplog):
         """Every slot active: cache goes over cap, no one gets torn down."""
-        from gateway import run as gw_run
+        from zermes.gateway import run as gw_run
         import logging as _logging
 
         CAP = 4
@@ -938,7 +938,7 @@ class TestAgentCacheSpilloverLive:
             runner._running_agents[f"s{i}"] = a  # every session mid-turn
 
         newcomer = self._real_agent()
-        with caplog.at_level(_logging.WARNING, logger="gateway.run"):
+        with caplog.at_level(_logging.WARNING, logger="zermes.gateway.run"):
             with runner._agent_cache_lock:
                 runner._agent_cache["new"] = (newcomer, "sig")
                 runner._enforce_agent_cache_cap()
@@ -958,12 +958,12 @@ class TestAgentCacheSpilloverLive:
 
 
     def test_evicted_session_next_turn_gets_fresh_agent(self, monkeypatch):
-        """After eviction, the same session_key can insert a fresh agent.
+        """After eviction, the same session_key can insert a fresh zermes.agent.
 
         Simulates the real spillover flow: evicted session sends another
         message, which builds a new AIAgent and re-enters the cache.
         """
-        from gateway import run as gw_run
+        from zermes.gateway import run as gw_run
 
         CAP = 2
         monkeypatch.setattr(gw_run, "_AGENT_CACHE_MAX_SIZE", CAP)
@@ -1007,7 +1007,7 @@ class TestAgentCacheIdleResume:
     """End-to-end: idle-TTL-evicted session resumes cleanly with task state.
 
     Real-world scenario: user leaves a Telegram session open for 2+ hours.
-    Idle-TTL evicts their cached agent.  They come back and send a message.
+    Idle-TTL evicts their cached zermes.agent.  They come back and send a message.
     The new agent built for the same session_id must inherit:
       - Conversation history (from SessionStore — outside cache concern)
       - Terminal sandbox (same task_id → same _active_environments entry)
@@ -1018,7 +1018,7 @@ class TestAgentCacheIdleResume:
 
     def _runner(self):
         from collections import OrderedDict
-        from gateway.run import GatewayRunner
+        from zermes.gateway.run import GatewayRunner
 
         runner = GatewayRunner.__new__(GatewayRunner)
         runner._agent_cache = OrderedDict()
@@ -1028,7 +1028,7 @@ class TestAgentCacheIdleResume:
 
     def test_release_clients_does_not_touch_process_registry(self, monkeypatch):
         """release_clients must not call process_registry.kill_all for task_id."""
-        from run_agent import AIAgent
+        from zermes.run_agent import AIAgent
 
         agent = AIAgent(
             model="anthropic/claude-sonnet-4", api_key="test",
@@ -1039,7 +1039,7 @@ class TestAgentCacheIdleResume:
         )
 
         # Spy on process_registry.kill_all — it MUST NOT be called.
-        from tools import process_registry as _pr
+        from zermes.tools import process_registry as _pr
         kill_all_calls: list = []
         original_kill_all = _pr.process_registry.kill_all
         _pr.process_registry.kill_all = lambda **kw: kill_all_calls.append(kw)
@@ -1059,9 +1059,9 @@ class TestAgentCacheIdleResume:
 
     def test_release_clients_does_not_touch_terminal_or_browser(self, monkeypatch):
         """release_clients must not call cleanup_vm or cleanup_browser."""
-        from run_agent import AIAgent
-        from tools import terminal_tool as _tt
-        from tools import browser_tool as _bt
+        from zermes.run_agent import AIAgent
+        from zermes.tools import terminal_tool as _tt
+        from zermes.tools import browser_tool as _bt
 
         agent = AIAgent(
             model="anthropic/claude-sonnet-4", api_key="test",
@@ -1098,7 +1098,7 @@ class TestAgentCacheIdleResume:
 
     def test_release_clients_closes_llm_client(self):
         """release_clients IS expected to close the OpenAI/httpx client."""
-        from run_agent import AIAgent
+        from zermes.run_agent import AIAgent
 
         agent = AIAgent(
             model="anthropic/claude-sonnet-4", api_key="test",
@@ -1121,8 +1121,8 @@ class TestAgentCacheIdleResume:
         (full teardown — session is done), cache-eviction path uses
         release_clients() (soft — session may resume).
         """
-        from run_agent import AIAgent
-        import run_agent as _ra
+        from zermes.run_agent import AIAgent
+        import zermes.run_agent as _ra
 
         # Agent A: evicted from cache (soft) — terminal survives.
         # Agent B: session expired (hard) — terminal torn down.
@@ -1143,7 +1143,7 @@ class TestAgentCacheIdleResume:
 
         vm_calls: list = []
         # AIAgent.close() calls the ``cleanup_vm`` name bound into
-        # ``run_agent`` at import time, not ``tools.terminal_tool.cleanup_vm``
+        # ``run_agent`` at import time, not ``zermes.tools.terminal_tool.cleanup_vm``
         # directly — so patch the ``run_agent`` reference.
         original_vm = _ra.cleanup_vm
         _ra.cleanup_vm = lambda tid: vm_calls.append(tid)
@@ -1164,10 +1164,10 @@ class TestAgentCacheIdleResume:
     def test_idle_evicted_session_rebuild_inherits_task_id(self, monkeypatch):
         """After idle-TTL eviction, a fresh agent with the same session_id
         gets the same task_id — so tool state (terminal/browser/bg procs)
-        that persisted across eviction is reachable via the new agent.
+        that persisted across eviction is reachable via the new zermes.agent.
         """
-        from gateway import run as gw_run
-        from run_agent import AIAgent
+        from zermes.gateway import run as gw_run
+        from zermes.run_agent import AIAgent
 
         monkeypatch.setattr(gw_run, "_AGENT_CACHE_IDLE_TTL_SECS", 0.01)
         runner = self._runner()
@@ -1204,7 +1204,7 @@ class TestAgentCacheIdleResume:
             session_id=SESSION_ID,
         )
 
-        # Same session_id means same task_id routed to tools.  The new
+        # Same session_id means same task_id routed to zermes.tools.  The new
         # agent inherits any per-task state (terminal sandbox etc.) that
         # was preserved across eviction.
         assert new_agent.session_id == old.session_id == SESSION_ID
@@ -1241,12 +1241,12 @@ class TestCachedAgentInactivityReset:
     def test_fresh_turn_resets_idle_clock(self):
         """interrupt_depth=0: clock resets so a post-idle turn gets a
         fresh 30-min inactivity window (guard for #9051)."""
-        from gateway.run import GatewayRunner
+        from zermes.gateway.run import GatewayRunner
 
         agent = self._fake_agent(stale_seconds=1800.0)
         old_ts = agent._last_activity_ts
 
-        with patch("gateway.run.time") as mock_time:
+        with patch("zermes.gateway.run.time") as mock_time:
             mock_time.time.return_value = _FAKE_NOW
             GatewayRunner._init_cached_agent_for_turn(agent, interrupt_depth=0)
 
@@ -1259,11 +1259,11 @@ class TestCachedAgentInactivityReset:
 
     def test_fresh_turn_resets_desc(self):
         """interrupt_depth=0: description is updated to reflect the new turn."""
-        from gateway.run import GatewayRunner
+        from zermes.gateway.run import GatewayRunner
 
         agent = self._fake_agent()
 
-        with patch("gateway.run.time") as mock_time:
+        with patch("zermes.gateway.run.time") as mock_time:
             mock_time.time.return_value = _FAKE_NOW
             GatewayRunner._init_cached_agent_for_turn(agent, interrupt_depth=0)
 
@@ -1272,7 +1272,7 @@ class TestCachedAgentInactivityReset:
     def test_interrupt_turn_preserves_idle_clock(self):
         """interrupt_depth=1: clock preserved so accumulated stuck-turn
         idle time is not discarded by an interrupt-recursive re-entry (#15654)."""
-        from gateway.run import GatewayRunner
+        from zermes.gateway.run import GatewayRunner
 
         agent = self._fake_agent(stale_seconds=1200.0)
         old_ts = agent._last_activity_ts
@@ -1286,7 +1286,7 @@ class TestCachedAgentInactivityReset:
 
     def test_interrupt_turn_preserves_desc(self):
         """interrupt_depth=1: desc preserved — it is semantically paired with ts."""
-        from gateway.run import GatewayRunner
+        from zermes.gateway.run import GatewayRunner
 
         agent = self._fake_agent(stale_seconds=1200.0)
 
@@ -1299,7 +1299,7 @@ class TestCachedAgentInactivityReset:
 
     def test_deep_interrupt_recursion_preserves_idle_clock(self):
         """interrupt_depth=MAX-1: clock still preserved at any non-zero depth."""
-        from gateway.run import GatewayRunner
+        from zermes.gateway.run import GatewayRunner
 
         agent = self._fake_agent(stale_seconds=600.0)
         old_ts = agent._last_activity_ts
@@ -1310,12 +1310,12 @@ class TestCachedAgentInactivityReset:
 
     def test_api_call_count_reset_regardless_of_depth(self):
         """_api_call_count is always reset to 0 for the new turn, at any depth."""
-        from gateway.run import GatewayRunner
+        from zermes.gateway.run import GatewayRunner
 
         agent_fresh = self._fake_agent()
         agent_interrupted = self._fake_agent()
 
-        with patch("gateway.run.time") as mock_time:
+        with patch("zermes.gateway.run.time") as mock_time:
             mock_time.time.return_value = _FAKE_NOW
             GatewayRunner._init_cached_agent_for_turn(agent_fresh, interrupt_depth=0)
         GatewayRunner._init_cached_agent_for_turn(agent_interrupted, interrupt_depth=1)
@@ -1329,7 +1329,7 @@ class TestCachedAgentInactivityReset:
         The idle time seen by the watchdog must reflect the full stuck
         duration, not restart from zero on the recursive re-entry.
         """
-        from gateway.run import GatewayRunner
+        from zermes.gateway.run import GatewayRunner
 
         STUCK_FOR = 1750.0
         agent = self._fake_agent(stale_seconds=STUCK_FOR)

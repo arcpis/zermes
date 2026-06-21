@@ -1,9 +1,9 @@
-"""Tests for agent.retry_utils jittered backoff."""
+"""Tests for zermes.agent.retry_utils jittered backoff."""
 
 import threading
 
-import agent.retry_utils as retry_utils
-from agent.retry_utils import jittered_backoff
+import zermes.agent.retry_utils as retry_utils
+from zermes.agent.retry_utils import jittered_backoff
 
 
 def test_backoff_is_exponential():

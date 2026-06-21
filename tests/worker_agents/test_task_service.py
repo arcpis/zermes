@@ -1,11 +1,11 @@
 import pytest
 
-from worker_agents.profile import WorkerAgentProfile, WorkerBudgetPolicy
-from worker_agents.registry import WorkerLifecycleStatus
-from worker_agents.registry_service import WorkerRegistryService
-from worker_agents.storage import WorkerAgentProfileStore, WorkerAgentRuntimeDataStore
-from worker_agents.task_service import WorkerTaskService
-from worker_agents.task_state import WorkerTaskError, WorkerTaskStatus
+from zermes.worker_agents.profile import WorkerAgentProfile, WorkerBudgetPolicy
+from zermes.worker_agents.registry import WorkerLifecycleStatus
+from zermes.worker_agents.registry_service import WorkerRegistryService
+from zermes.worker_agents.storage import WorkerAgentProfileStore, WorkerAgentRuntimeDataStore
+from zermes.worker_agents.task_service import WorkerTaskService
+from zermes.worker_agents.task_state import WorkerTaskError, WorkerTaskStatus
 
 
 def _registry_service(tmp_path):

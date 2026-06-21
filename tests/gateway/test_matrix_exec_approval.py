@@ -3,14 +3,14 @@ import types
 import pytest
 from unittest.mock import AsyncMock, patch
 
-from gateway.config import PlatformConfig
+from zermes.gateway.config import PlatformConfig
 
 
 class TestMatrixExecApprovalReactions:
     @pytest.mark.asyncio
     async def test_send_exec_approval_registers_prompt_and_seeds_reactions(self, monkeypatch):
         monkeypatch.setenv("MATRIX_ALLOWED_USERS", "@liizfq:liizfq.top")
-        from gateway.platforms.matrix import MatrixAdapter
+        from zermes.gateway.platforms.matrix import MatrixAdapter
 
         adapter = MatrixAdapter(PlatformConfig(enabled=True, token="tok", extra={"homeserver": "https://matrix.example.org"}))
         adapter._client = types.SimpleNamespace()
@@ -34,7 +34,7 @@ class TestMatrixExecApprovalReactions:
     @pytest.mark.asyncio
     async def test_reaction_resolves_pending_approval(self, monkeypatch):
         monkeypatch.setenv("MATRIX_ALLOWED_USERS", "@liizfq:liizfq.top")
-        from gateway.platforms.matrix import MatrixAdapter, _MatrixApprovalPrompt
+        from zermes.gateway.platforms.matrix import MatrixAdapter, _MatrixApprovalPrompt
 
         adapter = MatrixAdapter(PlatformConfig(enabled=True, token="tok", extra={"homeserver": "https://matrix.example.org"}))
         # Resolve user_id so _is_self_sender doesn't defensively drop all traffic (#15763).
@@ -52,7 +52,7 @@ class TestMatrixExecApprovalReactions:
             content=content,
         )
 
-        with patch("tools.approval.resolve_gateway_approval", return_value=1) as mock_resolve:
+        with patch("zermes.tools.approval.resolve_gateway_approval", return_value=1) as mock_resolve:
             await adapter._on_reaction(event)
 
         mock_resolve.assert_called_once_with("sess-1", "once")

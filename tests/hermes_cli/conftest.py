@@ -15,5 +15,5 @@ def all_assignees_spawnable(monkeypatch):
     those tasks into ``skipped_nonspawnable`` instead of spawning, which
     would break tests that assert spawn behavior.
     """
-    from hermes_cli import profiles
+    from zermes.hermes_cli import profiles
     monkeypatch.setattr(profiles, "profile_exists", lambda name: True)

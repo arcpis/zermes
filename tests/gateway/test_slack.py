@@ -15,8 +15,8 @@ from unittest.mock import AsyncMock, MagicMock, patch, call
 
 import pytest
 
-from gateway.config import Platform, PlatformConfig
-from gateway.platforms.base import (
+from zermes.gateway.config import Platform, PlatformConfig
+from zermes.gateway.platforms.base import (
     MessageEvent,
     MessageType,
     SendResult,
@@ -60,10 +60,10 @@ def _ensure_slack_mock():
 _ensure_slack_mock()
 
 # Patch SLACK_AVAILABLE before importing the adapter
-import gateway.platforms.slack as _slack_mod
+import zermes.gateway.platforms.slack as _slack_mod
 _slack_mod.SLACK_AVAILABLE = True
 
-from gateway.platforms.slack import SlackAdapter  # noqa: E402
+from zermes.gateway.platforms.slack import SlackAdapter  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
@@ -88,7 +88,7 @@ def adapter():
 def _redirect_cache(tmp_path, monkeypatch):
     """Point document cache to tmp_path so tests don't touch ~/.hermes."""
     monkeypatch.setattr(
-        "gateway.platforms.base.DOCUMENT_CACHE_DIR", tmp_path / "doc_cache"
+        "zermes.gateway.platforms.base.DOCUMENT_CACHE_DIR", tmp_path / "doc_cache"
     )
 
 
@@ -183,7 +183,7 @@ class TestAppMentionHandler:
              patch.object(_slack_mod, "AsyncWebClient", return_value=mock_web_client), \
              patch.object(_slack_mod, "AsyncSocketModeHandler", return_value=MagicMock()), \
              patch.dict(os.environ, {"SLACK_APP_TOKEN": "xapp-fake"}), \
-             patch("gateway.status.acquire_scoped_lock", return_value=(True, None)), \
+             patch("zermes.gateway.status.acquire_scoped_lock", return_value=(True, None)), \
              patch("asyncio.create_task"):
             asyncio.run(adapter.connect())
 
@@ -223,8 +223,8 @@ class TestSlackConnectCleanup:
              patch.object(_slack_mod, "AsyncWebClient", return_value=mock_web_client), \
              patch.object(_slack_mod, "AsyncSocketModeHandler", return_value=MagicMock()), \
              patch.dict(os.environ, {"SLACK_APP_TOKEN": "xapp-fake"}), \
-             patch("gateway.status.acquire_scoped_lock", return_value=(True, None)), \
-             patch("gateway.status.release_scoped_lock") as mock_release:
+             patch("zermes.gateway.status.acquire_scoped_lock", return_value=(True, None)), \
+             patch("zermes.gateway.status.release_scoped_lock") as mock_release:
             result = await adapter.connect()
 
         assert result is False
@@ -271,8 +271,8 @@ class TestSlackConnectCleanup:
              patch.object(_slack_mod, "AsyncWebClient", return_value=mock_web_client), \
              patch.object(_slack_mod, "AsyncSocketModeHandler", return_value=second_handler), \
              patch.dict(os.environ, {"SLACK_APP_TOKEN": "xapp-fake"}), \
-             patch("gateway.status.acquire_scoped_lock", return_value=(True, None)), \
-             patch("gateway.status.release_scoped_lock"), \
+             patch("zermes.gateway.status.acquire_scoped_lock", return_value=(True, None)), \
+             patch("zermes.gateway.status.release_scoped_lock"), \
              patch("asyncio.create_task"):
             result = await adapter.connect()
 
@@ -378,7 +378,7 @@ class TestSlackProxyBehavior:
              patch.object(_slack_mod, "AsyncSocketModeHandler", FakeSocketModeHandler), \
              patch.object(_slack_mod, "_resolve_slack_proxy_url", return_value="http://proxy.example.com:3128"), \
              patch.dict(os.environ, {"SLACK_APP_TOKEN": "xapp-fake"}, clear=False), \
-             patch("gateway.status.acquire_scoped_lock", return_value=(True, None)), \
+             patch("zermes.gateway.status.acquire_scoped_lock", return_value=(True, None)), \
              patch("asyncio.create_task", return_value=MagicMock(name="socket-mode-task")):
             result = await adapter.connect()
 
@@ -461,7 +461,7 @@ class TestSlackProxyBehavior:
              patch.object(_slack_mod, "AsyncSocketModeHandler", FakeSocketModeHandler), \
              patch.object(_slack_mod, "_resolve_slack_proxy_url", return_value=None), \
              patch.dict(os.environ, {"SLACK_APP_TOKEN": "xapp-fake"}, clear=False), \
-             patch("gateway.status.acquire_scoped_lock", return_value=(True, None)), \
+             patch("zermes.gateway.status.acquire_scoped_lock", return_value=(True, None)), \
              patch("asyncio.create_task", return_value=MagicMock(name="socket-mode-task")):
             result = await adapter.connect()
 
@@ -986,7 +986,7 @@ class TestIncomingDocumentHandling:
 
     @pytest.mark.asyncio
     async def test_attachments_unfurl_text_is_appended_even_when_url_is_in_message(self, adapter):
-        """Shared URLs should still expose unfurl preview text to the agent."""
+        """Shared URLs should still expose unfurl preview text to the zermes.agent."""
         event = self._make_event(
             text="Look at this doc https://example.com/spec",
             attachments=[
@@ -1746,8 +1746,8 @@ class TestReactions:
         assert "1234567890.000001" in adapter._reacting_message_ids
 
         # Simulate the base class calling on_processing_start
-        from gateway.platforms.base import MessageEvent, MessageType, SessionSource
-        from gateway.config import Platform
+        from zermes.gateway.platforms.base import MessageEvent, MessageType, SessionSource
+        from zermes.gateway.config import Platform
         source = SessionSource(
             platform=Platform.SLACK,
             chat_id="C123",
@@ -1767,7 +1767,7 @@ class TestReactions:
         assert add_calls[0].kwargs["name"] == "eyes"
 
         # Simulate the base class calling on_processing_complete
-        from gateway.platforms.base import ProcessingOutcome
+        from zermes.gateway.platforms.base import ProcessingOutcome
         await adapter.on_processing_complete(msg_event, ProcessingOutcome.SUCCESS)
 
         add_calls = adapter._app.client.reactions_add.call_args_list
@@ -1786,8 +1786,8 @@ class TestReactions:
         adapter._app.client.reactions_add = AsyncMock()
         adapter._app.client.reactions_remove = AsyncMock()
 
-        from gateway.platforms.base import MessageEvent, MessageType, SessionSource, ProcessingOutcome
-        from gateway.config import Platform
+        from zermes.gateway.platforms.base import MessageEvent, MessageType, SessionSource, ProcessingOutcome
+        from zermes.gateway.config import Platform
         source = SessionSource(
             platform=Platform.SLACK,
             chat_id="C123",
@@ -1856,8 +1856,8 @@ class TestReactions:
         assert "1234567890.000004" not in adapter._reacting_message_ids
 
         # Hooks should also be no-ops when disabled
-        from gateway.platforms.base import MessageEvent, MessageType, SessionSource, ProcessingOutcome
-        from gateway.config import Platform
+        from zermes.gateway.platforms.base import MessageEvent, MessageType, SessionSource, ProcessingOutcome
+        from zermes.gateway.config import Platform
         source = SessionSource(
             platform=Platform.SLACK,
             chat_id="C123",
@@ -2551,7 +2551,7 @@ class TestSendImageSSRFGuards:
             return url == "https://public.example/image.png"
 
         with (
-            patch("tools.url_safety.is_safe_url", side_effect=fake_is_safe_url),
+            patch("zermes.tools.url_safety.is_safe_url", side_effect=fake_is_safe_url),
             patch("httpx.AsyncClient", side_effect=fake_async_client),
         ):
             result = await adapter.send_image(
@@ -2598,7 +2598,7 @@ class TestSendImageSSRFGuards:
             return url == "https://public.example/image.png"
 
         with (
-            patch("tools.url_safety.is_safe_url", side_effect=fake_is_safe_url),
+            patch("zermes.tools.url_safety.is_safe_url", side_effect=fake_is_safe_url),
             patch("httpx.AsyncClient", side_effect=fake_async_client),
         ):
             await adapter.send_image(
@@ -2739,7 +2739,7 @@ class TestProgressMessageThread:
 
 class TestSlackReplyToText:
     """Ensure MessageEvent.reply_to_text is populated on thread replies so
-    gateway.run can inject a ``[Replying to: "..."]`` prefix (parity with
+    zermes.gateway.run can inject a ``[Replying to: "..."]`` prefix (parity with
     Telegram/Discord/Feishu/WeCom)."""
 
     @pytest.mark.asyncio
@@ -2903,7 +2903,7 @@ class TestSlashEphemeralAck:
         mock_session.__aenter__ = AsyncMock(return_value=mock_session)
         mock_session.__aexit__ = AsyncMock(return_value=False)
 
-        with patch("gateway.platforms.slack.aiohttp.ClientSession", return_value=mock_session):
+        with patch("zermes.gateway.platforms.slack.aiohttp.ClientSession", return_value=mock_session):
             result = await adapter.send("C_SLASH", "Queued for the next turn.")
 
         assert result.success is True
@@ -2950,7 +2950,7 @@ class TestSlashEphemeralAck:
         mock_session.__aenter__ = AsyncMock(return_value=mock_session)
         mock_session.__aexit__ = AsyncMock(return_value=False)
 
-        with patch("gateway.platforms.slack.aiohttp.ClientSession", return_value=mock_session):
+        with patch("zermes.gateway.platforms.slack.aiohttp.ClientSession", return_value=mock_session):
             result = await adapter.send("C1", "Some response")
 
         # Still success — the user saw the initial ack already
@@ -2970,7 +2970,7 @@ class TestSlashEphemeralAck:
         mock_session.__aenter__ = AsyncMock(return_value=mock_session)
         mock_session.__aexit__ = AsyncMock(return_value=False)
 
-        with patch("gateway.platforms.slack.aiohttp.ClientSession", return_value=mock_session):
+        with patch("zermes.gateway.platforms.slack.aiohttp.ClientSession", return_value=mock_session):
             result = await adapter.send("C1", "Some response")
 
         assert result.success is True
@@ -3035,7 +3035,7 @@ class TestSlashEphemeralAck:
     async def test_concurrent_users_same_channel_isolates_contexts(self, adapter):
         """Two users slash on the same channel — each gets their own context."""
         import time
-        from gateway.platforms.slack import _slash_user_id
+        from zermes.gateway.platforms.slack import _slash_user_id
 
         # Simulate two users stashing contexts on the same channel.
         adapter._slash_command_contexts[("C_SHARED", "U_ALICE")] = {
@@ -3075,7 +3075,7 @@ class TestSlashEphemeralAck:
     async def test_no_contextvar_does_not_match_any_context(self, adapter):
         """send() without ContextVar (non-slash path) must not steal contexts."""
         import time
-        from gateway.platforms.slack import _slash_user_id
+        from zermes.gateway.platforms.slack import _slash_user_id
 
         adapter._slash_command_contexts[("C1", "U1")] = {
             "response_url": "https://hooks.slack.com/test",

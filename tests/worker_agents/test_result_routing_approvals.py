@@ -1,6 +1,6 @@
 import pytest
 
-from worker_agents.result_routing import (
+from zermes.worker_agents.result_routing import (
     ResultRouteItem,
     ResultRouteItemKind,
     ResultRouteVisibility,
@@ -14,7 +14,7 @@ from worker_agents.result_routing import (
     classify_runtime_result,
     route_approval_and_safety_requests,
 )
-from worker_agents.runtime_contract import (
+from zermes.worker_agents.runtime_contract import (
     RuntimeResult,
     RuntimeSafetyRequest,
     RuntimeState,

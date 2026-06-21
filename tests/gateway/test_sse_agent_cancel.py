@@ -2,7 +2,7 @@
 
 When a streaming /v1/chat/completions client disconnects mid-stream
 (network drop, browser tab close), the agent is interrupted via
-agent.interrupt() so it stops making LLM API calls, and the asyncio
+zermes.agent.interrupt() so it stops making LLM API calls, and the asyncio
 task wrapper is cancelled.
 """
 
@@ -20,8 +20,8 @@ import pytest
 
 def _make_adapter():
     """Build a minimal APIServerAdapter with mocked internals."""
-    from gateway.platforms.api_server import APIServerAdapter
-    from gateway.config import PlatformConfig
+    from zermes.gateway.platforms.api_server import APIServerAdapter
+    from zermes.gateway.config import PlatformConfig
 
     config = PlatformConfig(enabled=True, token="test-key")
     adapter = APIServerAdapter(config)
@@ -78,7 +78,7 @@ class TestSSEAgentCancelOnDisconnect:
             with patch.object(type(adapter), '_write_sse_chat_completion',
                               adapter._write_sse_chat_completion):
                 # Patch StreamResponse creation
-                with patch("gateway.platforms.api_server.web.StreamResponse",
+                with patch("zermes.gateway.platforms.api_server.web.StreamResponse",
                            return_value=mock_response):
                     await adapter._write_sse_chat_completion(
                         _make_request(), "cmpl-123", "gpt-4", 1234567890,
@@ -113,7 +113,7 @@ class TestSSEAgentCancelOnDisconnect:
             mock_response.write = AsyncMock()
             mock_response.prepare = AsyncMock()
 
-            with patch("gateway.platforms.api_server.web.StreamResponse",
+            with patch("zermes.gateway.platforms.api_server.web.StreamResponse",
                        return_value=mock_response):
                 await adapter._write_sse_chat_completion(
                     _make_request(), "cmpl-456", "gpt-4", 1234567890,
@@ -145,7 +145,7 @@ class TestSSEAgentCancelOnDisconnect:
             mock_response.write = AsyncMock(side_effect=BrokenPipeError("pipe broken"))
             mock_response.prepare = AsyncMock()
 
-            with patch("gateway.platforms.api_server.web.StreamResponse",
+            with patch("zermes.gateway.platforms.api_server.web.StreamResponse",
                        return_value=mock_response):
                 await adapter._write_sse_chat_completion(
                     _make_request(), "cmpl-789", "gpt-4", 1234567890,
@@ -184,7 +184,7 @@ class TestSSEAgentCancelOnDisconnect:
             mock_response.write = AsyncMock(side_effect=write_side_effect)
             mock_response.prepare = AsyncMock()
 
-            with patch("gateway.platforms.api_server.web.StreamResponse",
+            with patch("zermes.gateway.platforms.api_server.web.StreamResponse",
                        return_value=mock_response):
                 await adapter._write_sse_chat_completion(
                     _make_request(), "cmpl-done", "gpt-4", 1234567890,
@@ -198,7 +198,7 @@ class TestSSEAgentCancelOnDisconnect:
         asyncio.run(run())
 
     def test_agent_interrupt_called_on_disconnect(self):
-        """When the client disconnects, agent.interrupt() must be called
+        """When the client disconnects, zermes.agent.interrupt() must be called
         so the agent thread stops making LLM API calls."""
         adapter = _make_adapter()
 
@@ -233,14 +233,14 @@ class TestSSEAgentCancelOnDisconnect:
             mock_response.write = AsyncMock(side_effect=write_side_effect)
             mock_response.prepare = AsyncMock()
 
-            with patch("gateway.platforms.api_server.web.StreamResponse",
+            with patch("zermes.gateway.platforms.api_server.web.StreamResponse",
                        return_value=mock_response):
                 await adapter._write_sse_chat_completion(
                     _make_request(), "cmpl-int", "gpt-4", 1234567890,
                     stream_q, agent_task, agent_ref,
                 )
 
-            # agent.interrupt() must have been called
+            # zermes.agent.interrupt() must have been called
             mock_agent.interrupt.assert_called_once_with("SSE client disconnected")
             # Clean up
             agent_done.set()
@@ -267,7 +267,7 @@ class TestSSEAgentCancelOnDisconnect:
             mock_response.write = AsyncMock(side_effect=BrokenPipeError("gone"))
             mock_response.prepare = AsyncMock()
 
-            with patch("gateway.platforms.api_server.web.StreamResponse",
+            with patch("zermes.gateway.platforms.api_server.web.StreamResponse",
                        return_value=mock_response):
                 # No agent_ref passed — should still handle disconnect cleanly
                 await adapter._write_sse_chat_completion(

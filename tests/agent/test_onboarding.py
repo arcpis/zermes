@@ -5,7 +5,7 @@ from __future__ import annotations
 import yaml
 import pytest
 
-from agent.onboarding import (
+from zermes.agent.onboarding import (
     BUSY_INPUT_FLAG,
     OPENCLAW_RESIDUE_FLAG,
     TOOL_PROGRESS_FLAG,

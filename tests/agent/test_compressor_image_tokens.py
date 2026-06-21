@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pytest
 
-from agent.context_compressor import (
+from zermes.agent.context_compressor import (
     _CHARS_PER_TOKEN,
     _IMAGE_CHAR_EQUIVALENT,
     _IMAGE_TOKEN_ESTIMATE,
@@ -105,7 +105,7 @@ class TestTokenBudgetWithImages:
 
     def test_image_heavy_turns_count_toward_budget(self):
         """A tail with 5 image-bearing turns should blow past a 5K token budget."""
-        from agent.context_compressor import ContextCompressor
+        from zermes.agent.context_compressor import ContextCompressor
 
         # Minimal compressor fixture — just enough to call _find_tail_cut_by_tokens
         cc = object.__new__(ContextCompressor)

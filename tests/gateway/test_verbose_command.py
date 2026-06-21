@@ -6,10 +6,10 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 import yaml
 
-import gateway.run as gateway_run
-from gateway.config import Platform
-from gateway.platforms.base import MessageEvent
-from gateway.session import SessionSource
+import zermes.gateway.run as gateway_run
+from zermes.gateway.config import Platform
+from zermes.gateway.platforms.base import MessageEvent
+from zermes.gateway.session import SessionSource
 
 
 def _make_event(text="/verbose", platform=Platform.TELEGRAM, user_id="12345", chat_id="67890"):
@@ -43,7 +43,7 @@ def _make_runner():
 
 
 class TestVerboseCommand:
-    """Tests for _handle_verbose_command in the gateway."""
+    """Tests for _handle_verbose_command in the zermes.gateway."""
 
     @pytest.mark.asyncio
     async def test_disabled_by_default(self, tmp_path, monkeypatch):
@@ -198,5 +198,5 @@ class TestVerboseCommand:
 
     def test_verbose_is_in_gateway_known_commands(self):
         """The /verbose command is recognized by the gateway dispatch."""
-        from hermes_cli.commands import GATEWAY_KNOWN_COMMANDS
+        from zermes.hermes_cli.commands import GATEWAY_KNOWN_COMMANDS
         assert "verbose" in GATEWAY_KNOWN_COMMANDS

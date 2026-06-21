@@ -10,9 +10,9 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from gateway.config import GatewayConfig, Platform, PlatformConfig
-from gateway.platforms.base import MessageEvent
-from gateway.session import SessionSource
+from zermes.gateway.config import GatewayConfig, Platform, PlatformConfig
+from zermes.gateway.platforms.base import MessageEvent
+from zermes.gateway.session import SessionSource
 
 
 def _clear_auth_env(monkeypatch) -> None:
@@ -42,7 +42,7 @@ def _make_event(text: str = "hello", platform: Platform = Platform.WHATSAPP) -> 
 
 
 def _make_runner(platform: Platform):
-    from gateway.run import GatewayRunner
+    from zermes.gateway.run import GatewayRunner
 
     config = GatewayConfig(
         platforms={platform: PlatformConfig(enabled=True)},
@@ -70,7 +70,7 @@ async def test_hook_skip_short_circuits_dispatch(monkeypatch):
             return [{"action": "skip", "reason": "plugin-handled"}]
         return []
 
-    monkeypatch.setattr("hermes_cli.plugins.invoke_hook", _fake_hook)
+    monkeypatch.setattr("zermes.hermes_cli.plugins.invoke_hook", _fake_hook)
 
     runner, adapter = _make_runner(Platform.WHATSAPP)
 
@@ -98,7 +98,7 @@ async def test_hook_rewrite_replaces_event_text(monkeypatch):
         seen_text["value"] = event.text
         return "ok"
 
-    monkeypatch.setattr("hermes_cli.plugins.invoke_hook", _fake_hook)
+    monkeypatch.setattr("zermes.hermes_cli.plugins.invoke_hook", _fake_hook)
 
     runner, _adapter = _make_runner(Platform.WHATSAPP)
     runner._handle_message_with_agent = _capture  # noqa: SLF001
@@ -120,7 +120,7 @@ async def test_hook_allow_falls_through_to_auth(monkeypatch):
             return [{"action": "allow"}]
         return []
 
-    monkeypatch.setattr("hermes_cli.plugins.invoke_hook", _fake_hook)
+    monkeypatch.setattr("zermes.hermes_cli.plugins.invoke_hook", _fake_hook)
 
     runner, adapter = _make_runner(Platform.WHATSAPP)
     runner.pairing_store.generate_code.return_value = "12345"
@@ -134,14 +134,14 @@ async def test_hook_allow_falls_through_to_auth(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_hook_exception_does_not_break_dispatch(monkeypatch):
-    """A raising plugin hook does not break the gateway."""
+    """A raising plugin hook does not break the zermes.gateway."""
     _clear_auth_env(monkeypatch)
     monkeypatch.delenv("WHATSAPP_ALLOWED_USERS", raising=False)
 
     def _fake_hook(name, **kwargs):
         raise RuntimeError("plugin blew up")
 
-    monkeypatch.setattr("hermes_cli.plugins.invoke_hook", _fake_hook)
+    monkeypatch.setattr("zermes.hermes_cli.plugins.invoke_hook", _fake_hook)
 
     runner, _adapter = _make_runner(Platform.WHATSAPP)
     runner.pairing_store.generate_code.return_value = None
@@ -166,7 +166,7 @@ async def test_internal_events_bypass_hook(monkeypatch):
     async def _capture(event, source, _quick_key, _run_generation):
         return "ok"
 
-    monkeypatch.setattr("hermes_cli.plugins.invoke_hook", _fake_hook)
+    monkeypatch.setattr("zermes.hermes_cli.plugins.invoke_hook", _fake_hook)
 
     runner, _adapter = _make_runner(Platform.WHATSAPP)
     runner._handle_message_with_agent = _capture  # noqa: SLF001

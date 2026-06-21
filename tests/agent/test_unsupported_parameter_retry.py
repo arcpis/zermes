@@ -1,5 +1,5 @@
 """Regression tests for the generic unsupported-parameter detector in
-``agent.auxiliary_client``.
+``zermes.agent.auxiliary_client``.
 
 The original temperature-specific detector (PR #15621) was generalized so the
 same reactive-retry strategy covers any provider that rejects an arbitrary
@@ -20,7 +20,7 @@ from unittest.mock import patch, MagicMock, AsyncMock
 
 import pytest
 
-from agent.auxiliary_client import (
+from zermes.agent.auxiliary_client import (
     call_llm,
     async_call_llm,
     _is_unsupported_parameter_error,
@@ -97,11 +97,11 @@ class TestMaxTokensRetryHardening:
         client.chat.completions.create.side_effect = err
 
         with (
-            patch("agent.auxiliary_client._resolve_task_provider_model",
+            patch("zermes.agent.auxiliary_client._resolve_task_provider_model",
                   return_value=("openai-codex", "gpt-5.5", None, None, None)),
-            patch("agent.auxiliary_client._get_cached_client",
+            patch("zermes.agent.auxiliary_client._get_cached_client",
                   return_value=(client, "gpt-5.5")),
-            patch("agent.auxiliary_client._validate_llm_response",
+            patch("zermes.agent.auxiliary_client._validate_llm_response",
                   side_effect=lambda resp, _task: resp),
         ):
             with pytest.raises(RuntimeError):
@@ -124,11 +124,11 @@ class TestMaxTokensRetryHardening:
         client.chat.completions.create = AsyncMock(side_effect=err)
 
         with (
-            patch("agent.auxiliary_client._resolve_task_provider_model",
+            patch("zermes.agent.auxiliary_client._resolve_task_provider_model",
                   return_value=("openai-codex", "gpt-5.5", None, None, None)),
-            patch("agent.auxiliary_client._get_cached_client",
+            patch("zermes.agent.auxiliary_client._get_cached_client",
                   return_value=(client, "gpt-5.5")),
-            patch("agent.auxiliary_client._validate_llm_response",
+            patch("zermes.agent.auxiliary_client._validate_llm_response",
                   side_effect=lambda resp, _task: resp),
         ):
             with pytest.raises(RuntimeError):

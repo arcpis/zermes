@@ -16,7 +16,7 @@ running ``pwd -P``, so the configured cwd is always what gets recorded.
 from tempfile import TemporaryFile
 from unittest.mock import MagicMock
 
-from tools.environments.base import BaseEnvironment
+from zermes.tools.environments.base import BaseEnvironment
 
 
 class _TestableEnv(BaseEnvironment):

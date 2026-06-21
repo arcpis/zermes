@@ -7,9 +7,9 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from gateway.config import GatewayConfig, Platform, PlatformConfig
-from gateway.platforms.base import MessageEvent
-from gateway.session import SessionEntry, SessionSource, build_session_key
+from zermes.gateway.config import GatewayConfig, Platform, PlatformConfig
+from zermes.gateway.platforms.base import MessageEvent
+from zermes.gateway.session import SessionEntry, SessionSource, build_session_key
 
 
 def _make_source(platform: Platform = Platform.TELEGRAM) -> SessionSource:
@@ -31,7 +31,7 @@ def _make_event(text: str, *, platform: Platform = Platform.TELEGRAM) -> Message
 
 
 def _make_runner(session_entry: SessionEntry, *, platform: Platform = Platform.TELEGRAM):
-    from gateway.run import GatewayRunner
+    from zermes.gateway.run import GatewayRunner
 
     runner = object.__new__(GatewayRunner)
     runner.config = GatewayConfig(
@@ -127,7 +127,7 @@ async def test_status_command_includes_session_title_when_present():
 @pytest.mark.asyncio
 async def test_status_command_reads_token_totals_from_session_db():
     """Regression test for #17158: /status must source token totals from the
-    SQLite SessionDB (where run_agent.py persists them) and sum all component
+    SQLite SessionDB (where zermes.run_agent.py persists them) and sum all component
     counts, not from SessionEntry (which the agent never writes)."""
     session_entry = SessionEntry(
         session_key=build_session_key(_make_source()),
@@ -208,7 +208,7 @@ async def test_agents_command_reports_active_agents_and_processes(monkeypatch):
                 }
             ]
 
-    monkeypatch.setattr("tools.process_registry.process_registry", _FakeRegistry())
+    monkeypatch.setattr("zermes.tools.process_registry.process_registry", _FakeRegistry())
 
     result = await runner._handle_message(_make_event("/agents"))
 
@@ -236,7 +236,7 @@ async def test_tasks_alias_routes_to_agents_command(monkeypatch):
         def list_sessions(self):
             return []
 
-    monkeypatch.setattr("tools.process_registry.process_registry", _FakeRegistry())
+    monkeypatch.setattr("zermes.tools.process_registry.process_registry", _FakeRegistry())
 
     result = await runner._handle_message(_make_event("/tasks"))
 
@@ -245,7 +245,7 @@ async def test_tasks_alias_routes_to_agents_command(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_handle_message_persists_agent_token_counts(monkeypatch):
-    import gateway.run as gateway_run
+    import zermes.gateway.run as gateway_run
 
     session_entry = SessionEntry(
         session_key=build_session_key(_make_source()),
@@ -272,7 +272,7 @@ async def test_handle_message_persists_agent_token_counts(monkeypatch):
 
     monkeypatch.setattr(gateway_run, "_resolve_runtime_agent_kwargs", lambda: {"api_key": "***"})
     monkeypatch.setattr(
-        "agent.model_metadata.get_model_context_length",
+        "zermes.agent.model_metadata.get_model_context_length",
         lambda *_args, **_kwargs: 100000,
     )
 
@@ -287,7 +287,7 @@ async def test_handle_message_persists_agent_token_counts(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_first_run_slack_home_channel_onboarding_uses_parent_command(monkeypatch):
-    import gateway.run as gateway_run
+    import zermes.gateway.run as gateway_run
 
     session_entry = SessionEntry(
         session_key=build_session_key(_make_source(Platform.SLACK)),
@@ -316,7 +316,7 @@ async def test_first_run_slack_home_channel_onboarding_uses_parent_command(monke
     monkeypatch.delenv("SLACK_HOME_CHANNEL", raising=False)
     monkeypatch.setattr(gateway_run, "_resolve_runtime_agent_kwargs", lambda: {"api_key": "***"})
     monkeypatch.setattr(
-        "agent.model_metadata.get_model_context_length",
+        "zermes.agent.model_metadata.get_model_context_length",
         lambda *_args, **_kwargs: 100000,
     )
 
@@ -331,7 +331,7 @@ async def test_first_run_slack_home_channel_onboarding_uses_parent_command(monke
 
 @pytest.mark.asyncio
 async def test_first_run_non_slack_home_channel_onboarding_keeps_direct_command(monkeypatch):
-    import gateway.run as gateway_run
+    import zermes.gateway.run as gateway_run
 
     session_entry = SessionEntry(
         session_key=build_session_key(_make_source(Platform.TELEGRAM)),
@@ -360,7 +360,7 @@ async def test_first_run_non_slack_home_channel_onboarding_keeps_direct_command(
     monkeypatch.delenv("TELEGRAM_HOME_CHANNEL", raising=False)
     monkeypatch.setattr(gateway_run, "_resolve_runtime_agent_kwargs", lambda: {"api_key": "***"})
     monkeypatch.setattr(
-        "agent.model_metadata.get_model_context_length",
+        "zermes.agent.model_metadata.get_model_context_length",
         lambda *_args, **_kwargs: 100000,
     )
 
@@ -374,7 +374,7 @@ async def test_first_run_non_slack_home_channel_onboarding_keeps_direct_command(
 
 @pytest.mark.asyncio
 async def test_handle_message_discards_stale_result_after_session_invalidation(monkeypatch):
-    import gateway.run as gateway_run
+    import zermes.gateway.run as gateway_run
 
     session_entry = SessionEntry(
         session_key=build_session_key(_make_source()),
@@ -406,7 +406,7 @@ async def test_handle_message_discards_stale_result_after_session_invalidation(m
 
     monkeypatch.setattr(gateway_run, "_resolve_runtime_agent_kwargs", lambda: {"api_key": "***"})
     monkeypatch.setattr(
-        "agent.model_metadata.get_model_context_length",
+        "zermes.agent.model_metadata.get_model_context_length",
         lambda *_args, **_kwargs: 100000,
     )
 
@@ -420,7 +420,7 @@ async def test_handle_message_discards_stale_result_after_session_invalidation(m
 
 @pytest.mark.asyncio
 async def test_handle_message_stale_result_keeps_newer_generation_callback(monkeypatch):
-    import gateway.run as gateway_run
+    import zermes.gateway.run as gateway_run
 
     class _Adapter:
         def __init__(self):
@@ -476,7 +476,7 @@ async def test_handle_message_stale_result_keeps_newer_generation_callback(monke
 
     monkeypatch.setattr(gateway_run, "_resolve_runtime_agent_kwargs", lambda: {"api_key": "***"})
     monkeypatch.setattr(
-        "agent.model_metadata.get_model_context_length",
+        "zermes.agent.model_metadata.get_model_context_length",
         lambda *_args, **_kwargs: 100000,
     )
 
@@ -493,9 +493,9 @@ async def test_status_command_bypasses_active_session_guard():
     """When an agent is running, /status must be dispatched immediately via
     base.handle_message — not queued or treated as an interrupt (#5046)."""
     import asyncio
-    from gateway.platforms.base import BasePlatformAdapter, MessageEvent, MessageType
-    from gateway.session import build_session_key
-    from gateway.config import Platform, PlatformConfig, GatewayConfig
+    from zermes.gateway.platforms.base import BasePlatformAdapter, MessageEvent, MessageType
+    from zermes.gateway.session import build_session_key
+    from zermes.gateway.config import Platform, PlatformConfig, GatewayConfig
 
     source = _make_source()
     session_key = build_session_key(source)
@@ -582,7 +582,7 @@ async def test_post_delivery_callback_generation_snapshot_happens_after_bind():
     fire a fresher run's callbacks.
     """
     import asyncio
-    from gateway.platforms.base import BasePlatformAdapter
+    from zermes.gateway.platforms.base import BasePlatformAdapter
 
     source = _make_source()
     session_key = build_session_key(source)

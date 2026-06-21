@@ -2,8 +2,8 @@ import json
 
 import pytest
 
-from hermes_cli.worker_agents_product import write_management_state_for_tests
-from worker_agents.organization import MAIN_AGENT_ID
+from zermes.hermes_cli.worker_agents_product import write_management_state_for_tests
+from zermes.worker_agents.organization import MAIN_AGENT_ID
 
 
 def _state():
@@ -97,7 +97,7 @@ def client(monkeypatch, tmp_path):
     monkeypatch.setenv("ZERMES_HOME", str(tmp_path))
     write_management_state_for_tests(_state(), tmp_path)
 
-    from hermes_cli.web_server import app, _SESSION_HEADER_NAME, _SESSION_TOKEN
+    from zermes.hermes_cli.web_server import app, _SESSION_HEADER_NAME, _SESSION_TOKEN
 
     test_client = TestClient(app)
     test_client.headers[_SESSION_HEADER_NAME] = _SESSION_TOKEN

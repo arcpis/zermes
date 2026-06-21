@@ -1,13 +1,13 @@
-"""Tests that on_session_finalize and on_session_reset plugin hooks fire in the gateway."""
+"""Tests that on_session_finalize and on_session_reset plugin hooks fire in the zermes.gateway."""
 from datetime import datetime
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from gateway.config import GatewayConfig, Platform, PlatformConfig
-from gateway.platforms.base import MessageEvent
-from gateway.session import SessionEntry, SessionSource, build_session_key
+from zermes.gateway.config import GatewayConfig, Platform, PlatformConfig
+from zermes.gateway.platforms.base import MessageEvent
+from zermes.gateway.session import SessionEntry, SessionSource, build_session_key
 
 
 def _make_source() -> SessionSource:
@@ -25,7 +25,7 @@ def _make_event(text: str) -> MessageEvent:
 
 
 def _make_runner():
-    from gateway.run import GatewayRunner
+    from zermes.gateway.run import GatewayRunner
 
     runner = object.__new__(GatewayRunner)
     runner.config = GatewayConfig(
@@ -74,7 +74,7 @@ def _make_runner():
 
 
 @pytest.mark.asyncio
-@patch("hermes_cli.plugins.invoke_hook")
+@patch("zermes.hermes_cli.plugins.invoke_hook")
 async def test_reset_fires_finalize_hook(mock_invoke_hook):
     """/new must fire on_session_finalize with the OLD session id."""
     runner = _make_runner()
@@ -87,7 +87,7 @@ async def test_reset_fires_finalize_hook(mock_invoke_hook):
 
 
 @pytest.mark.asyncio
-@patch("hermes_cli.plugins.invoke_hook")
+@patch("zermes.hermes_cli.plugins.invoke_hook")
 async def test_reset_fires_reset_hook(mock_invoke_hook):
     """/new must fire on_session_reset with the NEW session id."""
     runner = _make_runner()
@@ -100,7 +100,7 @@ async def test_reset_fires_reset_hook(mock_invoke_hook):
 
 
 @pytest.mark.asyncio
-@patch("hermes_cli.plugins.invoke_hook")
+@patch("zermes.hermes_cli.plugins.invoke_hook")
 async def test_finalize_before_reset(mock_invoke_hook):
     """on_session_finalize must fire before on_session_reset."""
     runner = _make_runner()
@@ -114,10 +114,10 @@ async def test_finalize_before_reset(mock_invoke_hook):
 
 
 @pytest.mark.asyncio
-@patch("hermes_cli.plugins.invoke_hook")
+@patch("zermes.hermes_cli.plugins.invoke_hook")
 async def test_shutdown_fires_finalize_for_active_agents(mock_invoke_hook):
-    """Gateway stop() must fire on_session_finalize for each active agent."""
-    from gateway.run import GatewayRunner
+    """Gateway stop() must fire on_session_finalize for each active zermes.agent."""
+    from zermes.gateway.run import GatewayRunner
 
     runner = object.__new__(GatewayRunner)
     runner._running = True
@@ -144,8 +144,8 @@ async def test_shutdown_fires_finalize_for_active_agents(mock_invoke_hook):
     agent2.session_id = "sess-b"
     runner._running_agents = {"key-a": agent1, "key-b": agent2}
 
-    with patch("gateway.status.remove_pid_file"), \
-         patch("gateway.status.write_runtime_status"):
+    with patch("zermes.gateway.status.remove_pid_file"), \
+         patch("zermes.gateway.status.write_runtime_status"):
         await runner.stop()
 
     finalize_calls = [
@@ -157,7 +157,7 @@ async def test_shutdown_fires_finalize_for_active_agents(mock_invoke_hook):
 
 
 @pytest.mark.asyncio
-@patch("hermes_cli.plugins.invoke_hook", side_effect=Exception("boom"))
+@patch("zermes.hermes_cli.plugins.invoke_hook", side_effect=Exception("boom"))
 async def test_hook_error_does_not_break_reset(mock_invoke_hook):
     """Plugin hook errors must not prevent /new from completing."""
     runner = _make_runner()
@@ -169,7 +169,7 @@ async def test_hook_error_does_not_break_reset(mock_invoke_hook):
 
 
 @pytest.mark.asyncio
-@patch("hermes_cli.plugins.invoke_hook")
+@patch("zermes.hermes_cli.plugins.invoke_hook")
 async def test_idle_expiry_fires_finalize_hook(mock_invoke_hook):
     """Regression test for #14981.
 
@@ -182,7 +182,7 @@ async def test_idle_expiry_fires_finalize_hook(mock_invoke_hook):
     """
     from datetime import datetime, timedelta
 
-    from gateway.run import GatewayRunner
+    from zermes.gateway.run import GatewayRunner
 
     runner = object.__new__(GatewayRunner)
     runner._running = True
@@ -230,7 +230,7 @@ async def test_idle_expiry_fires_finalize_hook(mock_invoke_hook):
 
     mock_invoke_hook.side_effect = _hook_and_stop
 
-    with patch("gateway.run.asyncio.sleep", side_effect=_fast_sleep):
+    with patch("zermes.gateway.run.asyncio.sleep", side_effect=_fast_sleep):
         await runner._session_expiry_watcher(interval=0)
 
     # Look for the finalize call targeting the expired session.

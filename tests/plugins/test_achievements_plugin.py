@@ -60,7 +60,7 @@ def plugin_api(tmp_path, monkeypatch):
 
 
 class _FakeSessionDB:
-    """Stand-in for hermes_state.SessionDB that records scan calls."""
+    """Stand-in for zermes.hermes_state.SessionDB that records scan calls."""
 
     def __init__(self, session_count: int):
         self.session_count = session_count

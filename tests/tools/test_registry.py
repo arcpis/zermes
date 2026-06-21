@@ -5,7 +5,7 @@ import threading
 from pathlib import Path
 from unittest.mock import patch
 
-from tools.registry import ToolRegistry, discover_builtin_tools
+from zermes.tools.registry import ToolRegistry, discover_builtin_tools
 
 
 def _dummy_handler(args, **kwargs):
@@ -291,38 +291,38 @@ class TestCheckFnExceptionHandling:
 class TestBuiltinDiscovery:
     def test_matches_previous_manual_builtin_tool_set(self):
         expected = {
-            "tools.browser_cdp_tool",
-            "tools.browser_dialog_tool",
-            "tools.browser_tool",
-            "tools.clarify_tool",
-            "tools.code_execution_tool",
-            "tools.computer_use_tool",
-            "tools.cronjob_tools",
-            "tools.delegate_tool",
-            "tools.discord_tool",
-            "tools.feishu_doc_tool",
-            "tools.feishu_drive_tool",
-            "tools.file_tools",
-            "tools.homeassistant_tool",
-            "tools.image_generation_tool",
-            "tools.kanban_tools",
-            "tools.memory_tool",
-            "tools.mixture_of_agents_tool",
-            "tools.process_registry",
-            "tools.rl_training_tool",
-            "tools.send_message_tool",
-            "tools.session_search_tool",
-            "tools.skill_manager_tool",
-            "tools.skills_tool",
-            "tools.terminal_tool",
-            "tools.todo_tool",
-            "tools.tts_tool",
-            "tools.vision_tools",
-            "tools.web_tools",
-            "tools.yuanbao_tools",
+            "zermes.tools.browser_cdp_tool",
+            "zermes.tools.browser_dialog_tool",
+            "zermes.tools.browser_tool",
+            "zermes.tools.clarify_tool",
+            "zermes.tools.code_execution_tool",
+            "zermes.tools.computer_use_tool",
+            "zermes.tools.cronjob_tools",
+            "zermes.tools.delegate_tool",
+            "zermes.tools.discord_tool",
+            "zermes.tools.feishu_doc_tool",
+            "zermes.tools.feishu_drive_tool",
+            "zermes.tools.file_tools",
+            "zermes.tools.homeassistant_tool",
+            "zermes.tools.image_generation_tool",
+            "zermes.tools.kanban_tools",
+            "zermes.tools.memory_tool",
+            "zermes.tools.mixture_of_agents_tool",
+            "zermes.tools.process_registry",
+            "zermes.tools.rl_training_tool",
+            "zermes.tools.send_message_tool",
+            "zermes.tools.session_search_tool",
+            "zermes.tools.skill_manager_tool",
+            "zermes.tools.skills_tool",
+            "zermes.tools.terminal_tool",
+            "zermes.tools.todo_tool",
+            "zermes.tools.tts_tool",
+            "zermes.tools.vision_tools",
+            "zermes.tools.web_tools",
+            "zermes.tools.yuanbao_tools",
         }
 
-        with patch("tools.registry.importlib.import_module"):
+        with patch("zermes.tools.registry.importlib.import_module"):
             imported = discover_builtin_tools(Path(__file__).resolve().parents[2] / "tools")
 
         assert set(imported) == expected
@@ -333,35 +333,35 @@ class TestBuiltinDiscovery:
         (tools_dir / "__init__.py").write_text("", encoding="utf-8")
         (tools_dir / "registry.py").write_text("", encoding="utf-8")
         (tools_dir / "alpha.py").write_text(
-            "from tools.registry import registry\nregistry.register(name='alpha', toolset='x', schema={}, handler=lambda *_a, **_k: '{}')\n",
+            "from zermes.tools.registry import registry\nregistry.register(name='alpha', toolset='x', schema={}, handler=lambda *_a, **_k: '{}')\n",
             encoding="utf-8",
         )
         (tools_dir / "beta.py").write_text("VALUE = 1\n", encoding="utf-8")
 
-        with patch("tools.registry.importlib.import_module") as mock_import:
+        with patch("zermes.tools.registry.importlib.import_module") as mock_import:
             imported = discover_builtin_tools(tools_dir)
 
-        assert imported == ["tools.alpha"]
-        mock_import.assert_called_once_with("tools.alpha")
+        assert imported == ["zermes.tools.alpha"]
+        mock_import.assert_called_once_with("zermes.tools.alpha")
 
     def test_skips_mcp_tool_even_if_it_registers(self, tmp_path):
         tools_dir = tmp_path / "tools"
         tools_dir.mkdir()
         (tools_dir / "__init__.py").write_text("", encoding="utf-8")
         (tools_dir / "mcp_tool.py").write_text(
-            "from tools.registry import registry\nregistry.register(name='mcp_alpha', toolset='mcp-test', schema={}, handler=lambda *_a, **_k: '{}')\n",
+            "from zermes.tools.registry import registry\nregistry.register(name='mcp_alpha', toolset='mcp-test', schema={}, handler=lambda *_a, **_k: '{}')\n",
             encoding="utf-8",
         )
         (tools_dir / "alpha.py").write_text(
-            "from tools.registry import registry\nregistry.register(name='alpha', toolset='x', schema={}, handler=lambda *_a, **_k: '{}')\n",
+            "from zermes.tools.registry import registry\nregistry.register(name='alpha', toolset='x', schema={}, handler=lambda *_a, **_k: '{}')\n",
             encoding="utf-8",
         )
 
-        with patch("tools.registry.importlib.import_module") as mock_import:
+        with patch("zermes.tools.registry.importlib.import_module") as mock_import:
             imported = discover_builtin_tools(tools_dir)
 
-        assert imported == ["tools.alpha"]
-        mock_import.assert_called_once_with("tools.alpha")
+        assert imported == ["zermes.tools.alpha"]
+        mock_import.assert_called_once_with("zermes.tools.alpha")
 
 
 class TestEmojiMetadata:

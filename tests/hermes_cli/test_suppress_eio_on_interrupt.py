@@ -213,7 +213,7 @@ class TestSignalHandlerLoggingRace:
         agent.interrupt.assert_called_once_with("received signal 15")
 
     def test_agent_interrupt_failure_also_does_not_escape(self):
-        """Defense-in-depth: agent.interrupt() raising must not escape either."""
+        """Defense-in-depth: zermes.agent.interrupt() raising must not escape either."""
         logger = MagicMock()
         agent = MagicMock()
         agent.interrupt.side_effect = RuntimeError("agent already torn down")

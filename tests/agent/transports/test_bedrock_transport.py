@@ -4,13 +4,13 @@ import json
 import pytest
 from types import SimpleNamespace
 
-from agent.transports import get_transport
-from agent.transports.types import NormalizedResponse, ToolCall
+from zermes.agent.transports import get_transport
+from zermes.agent.transports.types import NormalizedResponse, ToolCall
 
 
 @pytest.fixture
 def transport():
-    import agent.transports.bedrock  # noqa: F401
+    import zermes.agent.transports.bedrock  # noqa: F401
     return get_transport("bedrock_converse")
 
 

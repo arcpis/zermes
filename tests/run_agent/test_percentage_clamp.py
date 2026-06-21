@@ -32,7 +32,7 @@ class TestMemoryToolPercentClamp:
 
 
 class TestCLIStatsPercentClamp:
-    """cli.py — /stats command percentage"""
+    """zermes.cli.py — /stats command percentage"""
 
     def test_over_context_clamped_at_100(self):
         """Tokens exceeding context_length should show max 100%."""
@@ -88,9 +88,9 @@ class TestSourceLinesAreClamped:
         )
 
     def test_cli_clamped(self):
-        src = self._read_file("cli.py")
+        src = self._read_file("zermes.cli.py")
         assert "min(100, (last_prompt" in src, (
-            "cli.py /stats pct is not clamped with min(100, ...)"
+            "zermes.cli.py /stats pct is not clamped with min(100, ...)"
         )
 
     def test_memory_tool_clamped(self):

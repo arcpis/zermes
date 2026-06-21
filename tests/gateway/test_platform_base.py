@@ -5,7 +5,7 @@ from unittest.mock import patch
 
 import pytest
 
-from gateway.platforms.base import (
+from zermes.gateway.platforms.base import (
     BasePlatformAdapter,
     GATEWAY_SECRET_CAPTURE_UNSUPPORTED_MESSAGE,
     MessageEvent,
@@ -369,36 +369,36 @@ class TestShouldSendMediaAsAudio:
     """Audio-routing policy shared by gateway + scheduler + send_message."""
 
     def test_unknown_extension_returns_false(self):
-        from gateway.platforms.base import should_send_media_as_audio
+        from zermes.gateway.platforms.base import should_send_media_as_audio
         assert should_send_media_as_audio(None, ".png") is False
         assert should_send_media_as_audio("telegram", ".pdf") is False
 
     def test_non_telegram_platforms_route_all_audio(self):
-        from gateway.platforms.base import should_send_media_as_audio
+        from zermes.gateway.platforms.base import should_send_media_as_audio
         for ext in (".mp3", ".m4a", ".wav", ".flac", ".ogg", ".opus"):
             assert should_send_media_as_audio("discord", ext) is True
             assert should_send_media_as_audio("slack", ext) is True
 
     def test_telegram_mp3_and_m4a_route_to_audio(self):
-        from gateway.platforms.base import should_send_media_as_audio
+        from zermes.gateway.platforms.base import should_send_media_as_audio
         assert should_send_media_as_audio("telegram", ".mp3") is True
         assert should_send_media_as_audio("telegram", ".m4a") is True
 
     def test_telegram_wav_and_flac_fall_through_to_document(self):
-        from gateway.platforms.base import should_send_media_as_audio
+        from zermes.gateway.platforms.base import should_send_media_as_audio
         assert should_send_media_as_audio("telegram", ".wav") is False
         assert should_send_media_as_audio("telegram", ".flac") is False
 
     def test_telegram_ogg_opus_only_when_voice_flagged(self):
-        from gateway.platforms.base import should_send_media_as_audio
+        from zermes.gateway.platforms.base import should_send_media_as_audio
         assert should_send_media_as_audio("telegram", ".ogg", is_voice=True) is True
         assert should_send_media_as_audio("telegram", ".opus", is_voice=True) is True
         assert should_send_media_as_audio("telegram", ".ogg") is False
         assert should_send_media_as_audio("telegram", ".opus") is False
 
     def test_accepts_platform_enum(self):
-        from gateway.config import Platform
-        from gateway.platforms.base import should_send_media_as_audio
+        from zermes.gateway.config import Platform
+        from zermes.gateway.platforms.base import should_send_media_as_audio
         assert should_send_media_as_audio(Platform.TELEGRAM, ".mp3") is True
         assert should_send_media_as_audio(Platform.TELEGRAM, ".flac") is False
         assert should_send_media_as_audio(Platform.DISCORD, ".flac") is True
@@ -426,7 +426,7 @@ class TestTruncateMessage:
             async def get_chat_info(self, *a):
                 return {}
 
-        from gateway.config import Platform, PlatformConfig
+        from zermes.gateway.config import Platform, PlatformConfig
 
         config = PlatformConfig(enabled=True, token="test")
         return StubAdapter(config=config, platform=Platform.TELEGRAM)
@@ -690,7 +690,7 @@ class TestProxyKwargsForAiohttp:
     """Verify proxy_kwargs_for_aiohttp routes all schemes through ProxyConnector."""
 
     def test_none_returns_empty(self):
-        from gateway.platforms.base import proxy_kwargs_for_aiohttp
+        from zermes.gateway.platforms.base import proxy_kwargs_for_aiohttp
 
         sess_kw, req_kw = proxy_kwargs_for_aiohttp(None)
         assert sess_kw == {}
@@ -699,7 +699,7 @@ class TestProxyKwargsForAiohttp:
     def test_http_proxy_uses_connector_when_aiohttp_socks_available(self):
         pytest.importorskip("aiohttp_socks")
         from unittest.mock import MagicMock
-        from gateway.platforms.base import proxy_kwargs_for_aiohttp
+        from zermes.gateway.platforms.base import proxy_kwargs_for_aiohttp
 
         sentinel = MagicMock(name="ProxyConnector")
         with patch("aiohttp_socks.ProxyConnector.from_url", return_value=sentinel):
@@ -713,7 +713,7 @@ class TestProxyKwargsForAiohttp:
     def test_socks_proxy_uses_connector(self):
         pytest.importorskip("aiohttp_socks")
         from unittest.mock import MagicMock
-        from gateway.platforms.base import proxy_kwargs_for_aiohttp
+        from zermes.gateway.platforms.base import proxy_kwargs_for_aiohttp
 
         sentinel = MagicMock(name="ProxyConnector")
         with patch("aiohttp_socks.ProxyConnector.from_url", return_value=sentinel):
@@ -722,7 +722,7 @@ class TestProxyKwargsForAiohttp:
         assert req_kw == {}
 
     def test_http_proxy_falls_back_without_aiohttp_socks(self):
-        from gateway.platforms.base import proxy_kwargs_for_aiohttp
+        from zermes.gateway.platforms.base import proxy_kwargs_for_aiohttp
 
         with patch.dict("sys.modules", {"aiohttp_socks": None}):
             sess_kw, req_kw = proxy_kwargs_for_aiohttp("http://proxy:8080")

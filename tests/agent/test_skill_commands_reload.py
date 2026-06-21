@@ -1,4 +1,4 @@
-"""Tests for ``agent.skill_commands.reload_skills``.
+"""Tests for ``zermes.agent.skill_commands.reload_skills``.
 
 Covers the helper that powers ``/reload-skills`` (CLI + gateway slash command).
 The helper rescans the skills directory and returns a diff of what changed.
@@ -51,8 +51,8 @@ def hermes_home(monkeypatch):
 
     # Import lazily (inside fixture) so the modules are already resident,
     # then redirect their captured paths at the new temp dir.
-    import tools.skills_tool as _st
-    import agent.skill_commands as _sc
+    import zermes.tools.skills_tool as _st
+    import zermes.agent.skill_commands as _sc
 
     monkeypatch.setattr(_st, "HERMES_HOME", home, raising=False)
     monkeypatch.setattr(_st, "SKILLS_DIR", home / "skills", raising=False)
@@ -65,10 +65,10 @@ def hermes_home(monkeypatch):
 
 
 class TestReloadSkillsHelper:
-    """``agent.skill_commands.reload_skills``."""
+    """``zermes.agent.skill_commands.reload_skills``."""
 
     def test_returns_expected_keys(self, hermes_home):
-        from agent.skill_commands import reload_skills
+        from zermes.agent.skill_commands import reload_skills
 
         result = reload_skills()
         assert set(result) == {"added", "removed", "unchanged", "total", "commands"}
@@ -77,7 +77,7 @@ class TestReloadSkillsHelper:
         assert result["removed"] == []
 
     def test_detects_newly_added_skill_with_description(self, hermes_home):
-        from agent.skill_commands import reload_skills, get_skill_commands
+        from zermes.agent.skill_commands import reload_skills, get_skill_commands
 
         # Prime the cache so subsequent diff is meaningful
         get_skill_commands()
@@ -91,7 +91,7 @@ class TestReloadSkillsHelper:
         assert result["commands"] == 1
 
     def test_detects_removed_skill_carries_description(self, hermes_home):
-        from agent.skill_commands import reload_skills
+        from zermes.agent.skill_commands import reload_skills
 
         skill_dir = _write_skill(hermes_home / "skills", "demo", "soon to be gone")
         # First reload: demo present
@@ -114,7 +114,7 @@ class TestReloadSkillsHelper:
         ``    - name: description`` without a length cap, and the reload
         note mirrors that format, so truncating here would make the diff
         render differently from the original catalog."""
-        from agent.skill_commands import reload_skills, get_skill_commands
+        from zermes.agent.skill_commands import reload_skills, get_skill_commands
 
         get_skill_commands()  # prime
         long_desc = "x" * 200
@@ -125,7 +125,7 @@ class TestReloadSkillsHelper:
         assert result["added"][0]["description"] == long_desc
 
     def test_unchanged_skills_appear_in_unchanged_list(self, hermes_home):
-        from agent.skill_commands import reload_skills, get_skill_commands
+        from zermes.agent.skill_commands import reload_skills, get_skill_commands
 
         _write_skill(hermes_home / "skills", "alpha")
         # Prime cache
@@ -144,8 +144,8 @@ class TestReloadSkillsHelper:
         mention them for the model to use them — so reloading them should
         preserve prefix caching.
         """
-        from agent.prompt_builder import _skills_prompt_snapshot_path
-        from agent.skill_commands import reload_skills
+        from zermes.agent.prompt_builder import _skills_prompt_snapshot_path
+        from zermes.agent.skill_commands import reload_skills
 
         snapshot = _skills_prompt_snapshot_path()
         snapshot.parent.mkdir(parents=True, exist_ok=True)

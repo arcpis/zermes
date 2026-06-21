@@ -1,7 +1,7 @@
 """Tests for tui_gateway background-review summary delivery.
 
 When the self-improvement background review fires and saves a skill or
-memory entry, it calls ``agent.background_review_callback(message)``. In
+memory entry, it calls ``zermes.agent.background_review_callback(message)``. In
 the CLI that routes through a prompt_toolkit-safe ``_cprint``; in the TUI
 there is no print surface, so without a callback wired up the review
 writes the change silently. ``_init_session`` attaches a callback that
@@ -25,14 +25,14 @@ def server():
             "hermes_constants": MagicMock(
                 get_hermes_home=MagicMock(return_value="/tmp/hermes_test_review_summary")
             ),
-            "hermes_cli.env_loader": MagicMock(),
-            "hermes_cli.banner": MagicMock(),
+            "zermes.hermes_cli.env_loader": MagicMock(),
+            "zermes.hermes_cli.banner": MagicMock(),
             "hermes_state": MagicMock(),
         },
     ):
         import importlib
 
-        mod = importlib.import_module("tui_gateway.server")
+        mod = importlib.import_module("zermes.tui_gateway.server")
         yield mod
         mod._sessions.clear()
         mod._pending.clear()
@@ -42,7 +42,7 @@ def server():
 
 
 def test_init_session_attaches_background_review_callback(server, monkeypatch):
-    """After _init_session, agent.background_review_callback is set to a
+    """After _init_session, zermes.agent.background_review_callback is set to a
     function that emits 'review.summary' for the session's sid."""
     # Neutralize side-effect calls inside _init_session so we're testing
     # just the callback wiring.

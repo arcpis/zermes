@@ -2,13 +2,13 @@ import json
 
 import pytest
 
-from worker_agents.message_router import (
+from zermes.worker_agents.message_router import (
     ChatParticipantRef,
     MessageRouter,
     WorkerMessageEnvelope,
 )
-from worker_agents.runtime_contract import RuntimeResult, RuntimeState, RuntimeType
-from worker_agents.runtime_reply_channel import (
+from zermes.worker_agents.runtime_contract import RuntimeResult, RuntimeState, RuntimeType
+from zermes.worker_agents.runtime_reply_channel import (
     build_runtime_request_from_chat_message,
     dispatch_chat_message_to_worker_runtime,
     target_worker_ids_for_chat_message,

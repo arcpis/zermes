@@ -18,6 +18,7 @@ __pycache__/web_tools.cpython-310.pyc
 logs/
 data/
 .pytest_cache/
+.ruff_cache/
 tmp/
 temp_vision_images/
 hermes-*/*
@@ -40,6 +41,7 @@ privvy*
 images/
 __pycache__/
 hermes_agent.egg-info/
+zermes_agent.egg-info/
 wandb/
 testlogs
 
@@ -70,3 +72,4 @@ mini-swe-agent/
 result
 website/static/api/skills-index.json
 models-dev-upstream/
+tinker-atropos/

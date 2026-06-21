@@ -1,4 +1,4 @@
-from worker_agents import (
+from zermes.worker_agents import (
     RESULT_ROUTING_SCHEMA_VERSION,
     ApprovalAndSafetyRoute,
     MessageRouterResultRoute,

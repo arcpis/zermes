@@ -20,7 +20,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from tools.environments.local import LocalEnvironment
+from zermes.tools.environments.local import LocalEnvironment
 
 
 @pytest.fixture(autouse=True)

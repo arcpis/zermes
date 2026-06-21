@@ -2,14 +2,14 @@
 
 import json
 
-from code_modification.thinking import (
+from zermes.code_modification.thinking import (
     THINKING_JOB_NAME,
     ThinkingConfig,
     find_thinking_job,
     load_thinking_config,
     run_self_evolution_thinking,
 )
-from tools.code_modification_tool import self_evolution_thinking
+from zermes.tools.code_modification_tool import self_evolution_thinking
 
 
 def test_default_thinking_config_is_disabled():
@@ -145,7 +145,7 @@ def test_enable_updates_single_cron_job_and_disable_pauses_it(tmp_path, monkeypa
 
 def _redirect_cron_storage(tmp_path, monkeypatch):
     """Point cron storage at the pytest temp directory after HERMES_HOME is set."""
-    import cron.jobs as jobs_module
+    import zermes.cron.jobs as jobs_module
 
     cron_dir = tmp_path / "cron"
     monkeypatch.setattr(jobs_module, "CRON_DIR", cron_dir)

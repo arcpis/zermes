@@ -1,4 +1,4 @@
-"""Tests for the Hermes plugin system (hermes_cli.plugins)."""
+"""Tests for the Hermes plugin system (zermes.hermes_cli.plugins)."""
 
 import logging
 import os
@@ -10,7 +10,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 import yaml
 
-from hermes_cli.plugins import (
+from zermes.hermes_cli.plugins import (
     ENTRY_POINTS_GROUP,
     VALID_HOOKS,
     LoadedPlugin,
@@ -36,7 +36,7 @@ def _make_plugin_dir(base: Path, name: str, *, register_body: str = "pass",
     """Create a minimal plugin directory with plugin.yaml + __init__.py.
 
     If *auto_enable* is True (default), also write the plugin's name into
-    ``<hermes_home>/config.yaml`` under ``plugins.enabled``. Plugins are
+    ``<hermes_home>/config.yaml`` under ``zermes.plugins.enabled``. Plugins are
     opt-in by default, so tests that expect the plugin to actually load
     need this. Pass ``auto_enable=False`` for tests that exercise the
     unenabled path.
@@ -57,7 +57,7 @@ def _make_plugin_dir(base: Path, name: str, *, register_body: str = "pass",
     )
 
     if auto_enable:
-        # Write/merge plugins.enabled in <HERMES_HOME>/config.yaml.
+        # Write/merge zermes.plugins.enabled in <HERMES_HOME>/config.yaml.
         # Config is always read from HERMES_HOME (not from the project
         # dir for project plugins), so that's where we opt in.
         import os
@@ -130,7 +130,7 @@ class TestPluginDiscovery:
         assert "proj_plugin" not in mgr._plugins
 
     def test_discover_is_idempotent(self, tmp_path, monkeypatch):
-        """Calling discover_and_load() twice does not duplicate plugins."""
+        """Calling discover_and_load() twice does not duplicate zermes.plugins."""
         plugins_dir = tmp_path / "hermes_test" / "plugins"
         _make_plugin_dir(plugins_dir, "once_plugin")
         monkeypatch.setenv("HERMES_HOME", str(tmp_path / "hermes_test"))
@@ -487,7 +487,7 @@ class TestPluginHooks:
         )
         monkeypatch.setenv("HERMES_HOME", str(tmp_path / "hermes_test"))
 
-        with caplog.at_level(logging.WARNING, logger="hermes_cli.plugins"):
+        with caplog.at_level(logging.WARNING, logger="zermes.hermes_cli.plugins"):
             mgr = PluginManager()
             mgr.discover_and_load()
 
@@ -499,7 +499,7 @@ class TestPreToolCallBlocking:
 
     def test_block_message_returned_for_valid_directive(self, monkeypatch):
         monkeypatch.setattr(
-            "hermes_cli.plugins.invoke_hook",
+            "zermes.hermes_cli.plugins.invoke_hook",
             lambda hook_name, **kwargs: [{"action": "block", "message": "blocked by plugin"}],
         )
         assert get_pre_tool_call_block_message("todo", {}, task_id="t1") == "blocked by plugin"
@@ -507,7 +507,7 @@ class TestPreToolCallBlocking:
     def test_invalid_returns_are_ignored(self, monkeypatch):
         """Various malformed hook returns should not trigger a block."""
         monkeypatch.setattr(
-            "hermes_cli.plugins.invoke_hook",
+            "zermes.hermes_cli.plugins.invoke_hook",
             lambda hook_name, **kwargs: [
                 "block",                                 # not a dict
                 123,                                     # not a dict
@@ -521,14 +521,14 @@ class TestPreToolCallBlocking:
 
     def test_none_when_no_hooks(self, monkeypatch):
         monkeypatch.setattr(
-            "hermes_cli.plugins.invoke_hook",
+            "zermes.hermes_cli.plugins.invoke_hook",
             lambda hook_name, **kwargs: [],
         )
         assert get_pre_tool_call_block_message("web_search", {"q": "test"}) is None
 
     def test_first_valid_block_wins(self, monkeypatch):
         monkeypatch.setattr(
-            "hermes_cli.plugins.invoke_hook",
+            "zermes.hermes_cli.plugins.invoke_hook",
             lambda hook_name, **kwargs: [
                 {"action": "allow"},
                 {"action": "block", "message": "first blocker"},
@@ -570,7 +570,7 @@ class TestPluginContext:
 
         assert "plugin_echo" in mgr._plugin_tool_names
 
-        from tools.registry import registry
+        from zermes.tools.registry import registry
         assert "plugin_echo" in registry._tools
 
 
@@ -582,7 +582,7 @@ class TestPluginToolVisibility:
 
     def test_plugin_tools_in_definitions(self, tmp_path, monkeypatch):
         """Plugin tools are included when their toolset is in enabled_toolsets."""
-        import hermes_cli.plugins as plugins_mod
+        import zermes.hermes_cli.plugins as plugins_mod
 
         plugins_dir = tmp_path / "hermes_test" / "plugins"
         plugin_dir = plugins_dir / "vis_plugin"
@@ -607,7 +607,7 @@ class TestPluginToolVisibility:
         mgr.discover_and_load()
         monkeypatch.setattr(plugins_mod, "_plugin_manager", mgr)
 
-        from model_tools import get_tool_definitions
+        from zermes.model_tools import get_tool_definitions
 
         # Plugin tools are included when their toolset is explicitly enabled
         tools = get_tool_definitions(enabled_toolsets=["terminal", "plugin_vis_plugin"], quiet_mode=True)
@@ -676,7 +676,7 @@ class TestPluginManagerList:
 class TestPreLlmCallTargetRouting:
     """Tests for pre_llm_call hook return format with target-aware routing.
 
-    The routing logic lives in run_agent.py, but the return format is collected
+    The routing logic lives in zermes.run_agent.py, but the return format is collected
     by invoke_hook(). These tests verify the return format works correctly and
     that downstream code can route based on the 'target' key.
     """
@@ -755,7 +755,7 @@ class TestPreLlmCallTargetRouting:
         assert "guardrail text" in contexts
 
     def test_routing_logic_all_to_user_message(self, tmp_path, monkeypatch):
-        """Simulate the routing logic from run_agent.py.
+        """Simulate the routing logic from zermes.run_agent.py.
 
         All plugin context — dicts and plain strings — ends up in a single
         user message context string. There is no system_prompt target.
@@ -783,7 +783,7 @@ class TestPreLlmCallTargetRouting:
             conversation_history=[], is_first_turn=True, model="test",
         )
 
-        # Replicate run_agent.py routing logic — everything goes to user msg
+        # Replicate zermes.run_agent.py routing logic — everything goes to user msg
         _ctx_parts = []
         for r in results:
             if isinstance(r, dict) and r.get("context"):
@@ -862,7 +862,7 @@ class TestPluginCommands:
         manifest = PluginManifest(name="test-plugin", source="user")
         ctx = PluginContext(manifest, mgr)
 
-        with caplog.at_level(logging.WARNING, logger="hermes_cli.plugins"):
+        with caplog.at_level(logging.WARNING, logger="zermes.hermes_cli.plugins"):
             ctx.register_command("", lambda a: a)
         assert len(mgr._plugin_commands) == 0
         assert "empty name" in caplog.text
@@ -873,7 +873,7 @@ class TestPluginCommands:
         manifest = PluginManifest(name="test-plugin", source="user")
         ctx = PluginContext(manifest, mgr)
 
-        with caplog.at_level(logging.WARNING, logger="hermes_cli.plugins"):
+        with caplog.at_level(logging.WARNING, logger="zermes.hermes_cli.plugins"):
             ctx.register_command("help", lambda a: a)
         assert "help" not in mgr._plugin_commands
         assert "conflicts" in caplog.text.lower()
@@ -896,14 +896,14 @@ class TestPluginCommands:
         handler = lambda args: f"result: {args}"
         ctx.register_command("mycmd", handler, description="test")
 
-        with patch("hermes_cli.plugins._plugin_manager", mgr):
+        with patch("zermes.hermes_cli.plugins._plugin_manager", mgr):
             result = get_plugin_command_handler("mycmd")
             assert result is handler
 
     def test_get_plugin_command_handler_not_found(self):
         """get_plugin_command_handler() returns None for unregistered commands."""
         mgr = PluginManager()
-        with patch("hermes_cli.plugins._plugin_manager", mgr):
+        with patch("zermes.hermes_cli.plugins._plugin_manager", mgr):
             assert get_plugin_command_handler("nonexistent") is None
 
     def test_get_plugin_commands_returns_dict(self):
@@ -914,7 +914,7 @@ class TestPluginCommands:
         ctx.register_command("cmd-a", lambda a: a, description="A")
         ctx.register_command("cmd-b", lambda a: a, description="B")
 
-        with patch("hermes_cli.plugins._plugin_manager", mgr):
+        with patch("zermes.hermes_cli.plugins._plugin_manager", mgr):
             cmds = get_plugin_commands()
             assert "cmd-a" in cmds
             assert "cmd-b" in cmds
@@ -930,7 +930,7 @@ class TestPluginCommands:
         )
         monkeypatch.setenv("HERMES_HOME", str(tmp_path / "hermes_test"))
 
-        import hermes_cli.plugins as plugins_mod
+        import zermes.hermes_cli.plugins as plugins_mod
 
         with patch.object(plugins_mod, "_plugin_manager", None):
             handler = get_plugin_command_handler("lazycmd")
@@ -947,7 +947,7 @@ class TestPluginCommands:
         )
         monkeypatch.setenv("HERMES_HOME", str(tmp_path / "hermes_test"))
 
-        import hermes_cli.plugins as plugins_mod
+        import zermes.hermes_cli.plugins as plugins_mod
 
         with patch.object(plugins_mod, "_plugin_manager", None):
             cmds = get_plugin_commands()
@@ -968,7 +968,7 @@ class TestPluginCommands:
             })
         )
         (plugin_dir / "__init__.py").write_text(
-            "from agent.context_engine import ContextEngine\n\n"
+            "from zermes.agent.context_engine import ContextEngine\n\n"
             "class StubEngine(ContextEngine):\n"
             "    @property\n"
             "    def name(self):\n"
@@ -988,7 +988,7 @@ class TestPluginCommands:
         )
         monkeypatch.setenv("HERMES_HOME", str(hermes_home))
 
-        import hermes_cli.plugins as plugins_mod
+        import zermes.hermes_cli.plugins as plugins_mod
 
         with patch.object(plugins_mod, "_plugin_manager", None):
             engine = plugins_mod.get_plugin_context_engine()
@@ -1080,7 +1080,7 @@ class TestPluginCommandResultResolution:
         async def _handler():
             return "threaded-ok"
 
-        monkeypatch.setattr("hermes_cli.plugins.asyncio.get_running_loop", lambda: _Loop())
+        monkeypatch.setattr("zermes.hermes_cli.plugins.asyncio.get_running_loop", lambda: _Loop())
         assert resolve_plugin_command_result(_handler()) == "threaded-ok"
 
     def test_running_loop_timeout_does_not_hang_forever(self, monkeypatch):
@@ -1094,8 +1094,8 @@ class TestPluginCommandResultResolution:
             await _asyncio.sleep(10)
             return "should-not-reach"
 
-        monkeypatch.setattr("hermes_cli.plugins.asyncio.get_running_loop", lambda: _Loop())
-        monkeypatch.setattr("hermes_cli.plugins._PLUGIN_COMMAND_AWAIT_TIMEOUT_SECS", 0.1)
+        monkeypatch.setattr("zermes.hermes_cli.plugins.asyncio.get_running_loop", lambda: _Loop())
+        monkeypatch.setattr("zermes.hermes_cli.plugins._PLUGIN_COMMAND_AWAIT_TIMEOUT_SECS", 0.1)
 
         import pytest
         with pytest.raises(TimeoutError):
@@ -1117,9 +1117,9 @@ class TestPluginDispatchTool:
         mock_registry = MagicMock()
         mock_registry.dispatch.return_value = '{"result": "ok"}'
 
-        with patch("hermes_cli.plugins.PluginContext.dispatch_tool.__module__", "hermes_cli.plugins"):
+        with patch("zermes.hermes_cli.plugins.PluginContext.dispatch_tool.__module__", "zermes.hermes_cli.plugins"):
             with patch.dict("sys.modules", {}):
-                with patch("tools.registry.registry", mock_registry):
+                with patch("zermes.tools.registry.registry", mock_registry):
                     result = ctx.dispatch_tool("web_search", {"query": "test"})
 
         assert result == '{"result": "ok"}'
@@ -1138,7 +1138,7 @@ class TestPluginDispatchTool:
         mock_registry = MagicMock()
         mock_registry.dispatch.return_value = '{"ok": true}'
 
-        with patch("tools.registry.registry", mock_registry):
+        with patch("zermes.tools.registry.registry", mock_registry):
             ctx.dispatch_tool("delegate_task", {"goal": "test"})
 
         mock_registry.dispatch.assert_called_once()
@@ -1155,7 +1155,7 @@ class TestPluginDispatchTool:
         mock_registry = MagicMock()
         mock_registry.dispatch.return_value = '{"ok": true}'
 
-        with patch("tools.registry.registry", mock_registry):
+        with patch("zermes.tools.registry.registry", mock_registry):
             ctx.dispatch_tool("delegate_task", {"goal": "test"})
 
         call_kwargs = mock_registry.dispatch.call_args
@@ -1174,14 +1174,14 @@ class TestPluginDispatchTool:
         mock_registry = MagicMock()
         mock_registry.dispatch.return_value = '{"ok": true}'
 
-        with patch("tools.registry.registry", mock_registry):
+        with patch("zermes.tools.registry.registry", mock_registry):
             ctx.dispatch_tool("delegate_task", {"goal": "test"})
 
         call_kwargs = mock_registry.dispatch.call_args
         assert "parent_agent" not in call_kwargs[1]
 
     def test_dispatch_tool_respects_explicit_parent_agent(self):
-        """Explicit parent_agent kwarg is not overwritten by _cli_ref.agent."""
+        """Explicit parent_agent kwarg is not overwritten by _cli_ref.zermes.agent."""
         mgr = PluginManager()
         manifest = PluginManifest(name="test-plugin", source="user")
         ctx = PluginContext(manifest, mgr)
@@ -1196,7 +1196,7 @@ class TestPluginDispatchTool:
         mock_registry = MagicMock()
         mock_registry.dispatch.return_value = '{"ok": true}'
 
-        with patch("tools.registry.registry", mock_registry):
+        with patch("zermes.tools.registry.registry", mock_registry):
             ctx.dispatch_tool("delegate_task", {"goal": "test"}, parent_agent=explicit_agent)
 
         call_kwargs = mock_registry.dispatch.call_args
@@ -1212,7 +1212,7 @@ class TestPluginDispatchTool:
         mock_registry = MagicMock()
         mock_registry.dispatch.return_value = '{"ok": true}'
 
-        with patch("tools.registry.registry", mock_registry):
+        with patch("zermes.tools.registry.registry", mock_registry):
             ctx.dispatch_tool("some_tool", {"x": 1}, task_id="test-123")
 
         call_kwargs = mock_registry.dispatch.call_args
@@ -1228,7 +1228,7 @@ class TestPluginDispatchTool:
         mock_registry = MagicMock()
         mock_registry.dispatch.return_value = '{"error": "Unknown tool: fake"}'
 
-        with patch("tools.registry.registry", mock_registry):
+        with patch("zermes.tools.registry.registry", mock_registry):
             result = ctx.dispatch_tool("fake", {})
 
         assert '"error"' in result

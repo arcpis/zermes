@@ -13,7 +13,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from tools.mcp_tool import _exc_str, _sanitize_error
+from zermes.tools.mcp_tool import _exc_str, _sanitize_error
 
 
 # ---------------------------------------------------------------------------

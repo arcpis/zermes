@@ -7,7 +7,7 @@ import sys
 
 import pytest
 
-from agent.prompt_builder import (
+from zermes.agent.prompt_builder import (
     _scan_context_content,
     _truncate_content,
     _parse_skill_file,
@@ -31,7 +31,7 @@ from agent.prompt_builder import (
     PLATFORM_HINTS,
     WSL_ENVIRONMENT_HINT,
 )
-from hermes_cli.nous_subscription import NousFeatureState, NousSubscriptionFeatures
+from zermes.hermes_cli.nous_subscription import NousFeatureState, NousSubscriptionFeatures
 
 
 # =========================================================================
@@ -48,7 +48,7 @@ class TestGuidanceConstants:
         assert ">80%" not in MEMORY_GUIDANCE
 
     def test_worker_task_state_prompt_lists_pending_tasks(self):
-        from tools.worker_task_state import add_pending_task
+        from zermes.tools.worker_task_state import add_pending_task
 
         add_pending_task(
             task_id="task-1",
@@ -255,7 +255,7 @@ class TestParseSkillFile:
             raise OSError("read exploded")
 
         monkeypatch.setattr(type(skill_file), "read_text", boom)
-        with caplog.at_level(logging.DEBUG, logger="agent.prompt_builder"):
+        with caplog.at_level(logging.DEBUG, logger="zermes.agent.prompt_builder"):
             is_compat, frontmatter, desc = _parse_skill_file(skill_file)
 
         assert is_compat is True
@@ -271,7 +271,7 @@ class TestParseSkillFile:
         )
         from unittest.mock import patch
 
-        with patch("agent.skill_utils.sys") as mock_sys:
+        with patch("zermes.agent.skill_utils.sys") as mock_sys:
             mock_sys.platform = "linux"
             is_compat, _, _ = _parse_skill_file(skill_file)
         assert is_compat is False
@@ -292,16 +292,16 @@ class TestPromptBuilderImports:
         original_import = builtins.__import__
 
         def guarded_import(name, globals=None, locals=None, fromlist=(), level=0):
-            if name == "tools.skills_tool" or (
+            if name == "zermes.tools.skills_tool" or (
                 name == "tools" and fromlist and "skills_tool" in fromlist
             ):
                 raise ModuleNotFoundError("simulated optional tool import failure")
             return original_import(name, globals, locals, fromlist, level)
 
-        monkeypatch.delitem(sys.modules, "agent.prompt_builder", raising=False)
+        monkeypatch.delitem(sys.modules, "zermes.agent.prompt_builder", raising=False)
         monkeypatch.setattr(builtins, "__import__", guarded_import)
 
-        module = importlib.import_module("agent.prompt_builder")
+        module = importlib.import_module("zermes.agent.prompt_builder")
 
         assert hasattr(module, "build_skills_system_prompt")
 
@@ -315,7 +315,7 @@ class TestBuildSkillsSystemPrompt:
     @pytest.fixture(autouse=True)
     def _clear_skills_cache(self):
         """Ensure the in-process skills prompt cache doesn't leak between tests."""
-        from agent.prompt_builder import clear_skills_system_prompt_cache
+        from zermes.agent.prompt_builder import clear_skills_system_prompt_cache
         clear_skills_system_prompt_cache(clear_snapshot=True)
         yield
         clear_skills_system_prompt_cache(clear_snapshot=True)
@@ -370,7 +370,7 @@ class TestBuildSkillsSystemPrompt:
 
         from unittest.mock import patch
 
-        with patch("agent.skill_utils.sys") as mock_sys:
+        with patch("zermes.agent.skill_utils.sys") as mock_sys:
             mock_sys.platform = "linux"
             result = build_skills_system_prompt()
 
@@ -389,7 +389,7 @@ class TestBuildSkillsSystemPrompt:
 
         from unittest.mock import patch
 
-        with patch("agent.skill_utils.sys") as mock_sys:
+        with patch("zermes.agent.skill_utils.sys") as mock_sys:
             mock_sys.platform = "darwin"
             result = build_skills_system_prompt()
 
@@ -417,7 +417,7 @@ class TestBuildSkillsSystemPrompt:
         from unittest.mock import patch
 
         with patch(
-            "agent.prompt_builder.get_disabled_skill_names",
+            "zermes.agent.prompt_builder.get_disabled_skill_names",
             return_value={"old-tool"},
         ):
             result = build_skills_system_prompt()
@@ -502,9 +502,9 @@ class TestBuildSkillsSystemPrompt:
 
 class TestBuildNousSubscriptionPrompt:
     def test_includes_active_subscription_features(self, monkeypatch):
-        monkeypatch.setattr("tools.tool_backend_helpers.managed_nous_tools_enabled", lambda: True)
+        monkeypatch.setattr("zermes.tools.tool_backend_helpers.managed_nous_tools_enabled", lambda: True)
         monkeypatch.setattr(
-            "hermes_cli.nous_subscription.get_nous_subscription_features",
+            "zermes.hermes_cli.nous_subscription.get_nous_subscription_features",
             lambda config=None: NousSubscriptionFeatures(
                 subscribed=True,
                 nous_auth_present=True,
@@ -526,9 +526,9 @@ class TestBuildNousSubscriptionPrompt:
         assert "do not ask the user for Firecrawl, FAL, OpenAI TTS, or Browser-Use API keys" in prompt
 
     def test_non_subscriber_prompt_includes_relevant_upgrade_guidance(self, monkeypatch):
-        monkeypatch.setattr("tools.tool_backend_helpers.managed_nous_tools_enabled", lambda: True)
+        monkeypatch.setattr("zermes.tools.tool_backend_helpers.managed_nous_tools_enabled", lambda: True)
         monkeypatch.setattr(
-            "hermes_cli.nous_subscription.get_nous_subscription_features",
+            "zermes.hermes_cli.nous_subscription.get_nous_subscription_features",
             lambda config=None: NousSubscriptionFeatures(
                 subscribed=False,
                 nous_auth_present=False,
@@ -549,7 +549,7 @@ class TestBuildNousSubscriptionPrompt:
         assert "Do not mention subscription unless" in prompt
 
     def test_feature_flag_off_returns_empty_prompt(self, monkeypatch):
-        monkeypatch.setattr("tools.tool_backend_helpers.managed_nous_tools_enabled", lambda: False)
+        monkeypatch.setattr("zermes.tools.tool_backend_helpers.managed_nous_tools_enabled", lambda: False)
 
         prompt = build_nous_subscription_prompt({"web_search"})
 
@@ -908,7 +908,7 @@ class TestEnvironmentHints:
         assert "WSL" in WSL_ENVIRONMENT_HINT
 
     def test_build_environment_hints_on_wsl(self, monkeypatch):
-        import agent.prompt_builder as _pb
+        import zermes.agent.prompt_builder as _pb
         monkeypatch.setattr(_pb, "is_wsl", lambda: True)
         monkeypatch.delenv("TERMINAL_ENV", raising=False)
         _pb._clear_backend_probe_cache()
@@ -919,7 +919,7 @@ class TestEnvironmentHints:
         assert "User home directory:" in result
 
     def test_build_environment_hints_on_linux_local(self, monkeypatch):
-        import agent.prompt_builder as _pb
+        import zermes.agent.prompt_builder as _pb
         import sys, platform
         monkeypatch.setattr(_pb, "is_wsl", lambda: False)
         monkeypatch.setattr(sys, "platform", "linux")
@@ -939,7 +939,7 @@ class TestEnvironmentHints:
         assert "WSL" not in result
 
     def test_build_environment_hints_on_windows_local(self, monkeypatch):
-        import agent.prompt_builder as _pb
+        import zermes.agent.prompt_builder as _pb
         import sys
         monkeypatch.setattr(_pb, "is_wsl", lambda: False)
         monkeypatch.setattr(sys, "platform", "win32")
@@ -956,7 +956,7 @@ class TestEnvironmentHints:
         assert "PowerShell" in result
 
     def test_build_environment_hints_on_macos_local(self, monkeypatch):
-        import agent.prompt_builder as _pb
+        import zermes.agent.prompt_builder as _pb
         import sys
         monkeypatch.setattr(_pb, "is_wsl", lambda: False)
         monkeypatch.setattr(sys, "platform", "darwin")
@@ -971,7 +971,7 @@ class TestEnvironmentHints:
 
     def test_build_environment_hints_suppresses_host_on_docker_backend(self, monkeypatch):
         """Docker/remote backends must hide host info — the agent can only touch the backend."""
-        import agent.prompt_builder as _pb
+        import zermes.agent.prompt_builder as _pb
         import sys
         monkeypatch.setattr(_pb, "is_wsl", lambda: False)
         monkeypatch.setattr(sys, "platform", "win32")
@@ -991,7 +991,7 @@ class TestEnvironmentHints:
 
     def test_build_environment_hints_uses_live_probe_when_available(self, monkeypatch):
         """When the probe succeeds, its output must appear in the hint block."""
-        import agent.prompt_builder as _pb
+        import zermes.agent.prompt_builder as _pb
         monkeypatch.setattr(_pb, "is_wsl", lambda: False)
         monkeypatch.setenv("TERMINAL_ENV", "modal")
         fake_probe_output = "  OS: Linux 6.8.0\n  User: root\n  Home: /root\n  Working directory: /workspace"
@@ -1004,7 +1004,7 @@ class TestEnvironmentHints:
 
     def test_remote_backend_list_covers_known_sandboxes(self):
         """Regression guard: if someone adds a remote backend, they must list it here."""
-        import agent.prompt_builder as _pb
+        import zermes.agent.prompt_builder as _pb
         for backend in ("docker", "singularity", "modal", "daytona", "ssh", "vercel_sandbox"):
             assert backend in _pb._REMOTE_TERMINAL_BACKENDS, (
                 f"{backend!r} must be in _REMOTE_TERMINAL_BACKENDS so its host "
@@ -1071,7 +1071,7 @@ class TestSkillShouldShow:
 class TestBuildSkillsSystemPromptConditional:
     @pytest.fixture(autouse=True)
     def _clear_skills_cache(self):
-        from agent.prompt_builder import clear_skills_system_prompt_cache
+        from zermes.agent.prompt_builder import clear_skills_system_prompt_cache
         clear_skills_system_prompt_cache(clear_snapshot=True)
         yield
         clear_skills_system_prompt_cache(clear_snapshot=True)

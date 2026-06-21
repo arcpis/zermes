@@ -1,7 +1,7 @@
 """Regression tests for #17140.
 
 TTS provider tools must resolve API keys from ``~/.hermes/.env`` (via
-``hermes_cli.config.get_env_value``) and not only from ``os.environ`` —
+``zermes.hermes_cli.config.get_env_value``) and not only from ``os.environ`` —
 otherwise users who keep their keys in the dotenv file see "API key not set"
 errors even though the key is configured. Same class of bug as #15914 (auth)
 already addressed for ``agent/credential_pool`` and ``hermes_cli/auth``.
@@ -35,15 +35,15 @@ def isolate_env(monkeypatch):
 class TestDotenvFallbackPerProvider:
     """For each affected provider, when only ``~/.hermes/.env`` carries the
     key, the provider must find it. These per-provider tests model that
-    dotenv-backed lookup by mocking ``tools.tts_tool.get_env_value`` directly;
+    dotenv-backed lookup by mocking ``zermes.tools.tts_tool.get_env_value`` directly;
     the separate regression-guard tests cover the lower-level
-    ``hermes_cli.config.load_env`` integration. Before the fix, ``os.getenv``
+    ``zermes.hermes_cli.config.load_env`` integration. Before the fix, ``os.getenv``
     returned ``None`` and the provider raised
     ``ValueError("X_API_KEY not set")``.
     """
 
     def test_elevenlabs_reads_dotenv_key(self, tmp_path):
-        from tools import tts_tool
+        from zermes.tools import tts_tool
 
         with patch.object(tts_tool, "get_env_value", return_value="el-dotenv-key"), \
              patch.object(tts_tool, "_import_elevenlabs") as mock_import:
@@ -57,7 +57,7 @@ class TestDotenvFallbackPerProvider:
             mock_import.return_value.assert_called_once_with(api_key="el-dotenv-key")
 
     def test_xai_reads_dotenv_key(self, tmp_path):
-        from tools import tts_tool
+        from zermes.tools import tts_tool
 
         captured: dict = {}
 
@@ -76,7 +76,7 @@ class TestDotenvFallbackPerProvider:
         assert captured["headers"]["Authorization"] == "Bearer xai-dotenv-key"
 
     def test_minimax_reads_dotenv_key(self, tmp_path):
-        from tools import tts_tool
+        from zermes.tools import tts_tool
 
         captured: dict = {}
 
@@ -99,7 +99,7 @@ class TestDotenvFallbackPerProvider:
     def test_mistral_reads_dotenv_key(self, tmp_path):
         import base64
 
-        from tools import tts_tool
+        from zermes.tools import tts_tool
 
         seen_keys: list = []
 
@@ -120,7 +120,7 @@ class TestDotenvFallbackPerProvider:
         assert seen_keys == ["mistral-dotenv-key"]
 
     def test_gemini_reads_dotenv_key(self, tmp_path):
-        from tools import tts_tool
+        from zermes.tools import tts_tool
 
         captured: dict = {}
 
@@ -170,17 +170,17 @@ class TestRegressionGuard:
     """Goal-backward proof that the old behaviour ('only check ``os.environ``')
     breaks reading from a dotenv-only key, and the new behaviour fixes it.
     Implemented as an end-to-end probe that patches
-    ``hermes_cli.config.load_env`` to simulate ``~/.hermes/.env`` carrying the
+    ``zermes.hermes_cli.config.load_env`` to simulate ``~/.hermes/.env`` carrying the
     key while ``os.environ`` does not.
     """
 
     def test_import_after_config_env_patch_uses_restored_dotenv_loader(self, tmp_path, monkeypatch):
-        """Importing TTS while hermes_cli.config.get_env_value is patched must
+        """Importing TTS while zermes.hermes_cli.config.get_env_value is patched must
         not freeze that temporary helper into this module forever.
         """
         import importlib
-        import hermes_cli.config as config_mod
-        from tools import tts_tool
+        import zermes.hermes_cli.config as config_mod
+        from zermes.tools import tts_tool
 
         monkeypatch.delenv("MINIMAX_API_KEY", raising=False)
 
@@ -202,7 +202,7 @@ class TestRegressionGuard:
                 return response
 
             with patch(
-                "hermes_cli.config.load_env",
+                "zermes.hermes_cli.config.load_env",
                 return_value={"MINIMAX_API_KEY": "dotenv-secret"},
             ), patch("requests.post", side_effect=fake_post):
                 tts_tool._generate_minimax_tts(
@@ -214,7 +214,7 @@ class TestRegressionGuard:
             importlib.reload(tts_tool)
 
     def test_minimax_missing_when_only_in_dotenv_before_fix(self, tmp_path, monkeypatch):
-        from tools import tts_tool
+        from zermes.tools import tts_tool
 
         monkeypatch.delenv("MINIMAX_API_KEY", raising=False)
 
@@ -222,12 +222,12 @@ class TestRegressionGuard:
         # that get_env_value falls back to). The pre-fix ``os.getenv`` call
         # ignores this entirely and raises ValueError.
         with patch(
-            "hermes_cli.config.load_env",
+            "zermes.hermes_cli.config.load_env",
             return_value={"MINIMAX_API_KEY": "dotenv-secret"},
         ):
             # Sanity-check: get_env_value resolves through load_env when
             # os.environ is empty.
-            from hermes_cli.config import get_env_value as live_get
+            from zermes.hermes_cli.config import get_env_value as live_get
             assert live_get("MINIMAX_API_KEY") == "dotenv-secret"
 
             # And the production code path now consumes the resolved value
@@ -257,12 +257,12 @@ class TestRegressionGuard:
         would say "no provider available" for users who keep MINIMAX_API_KEY
         in ``~/.hermes/.env``, even though the dispatcher would later succeed.
         """
-        from tools import tts_tool
+        from zermes.tools import tts_tool
 
         monkeypatch.delenv("MINIMAX_API_KEY", raising=False)
 
         with patch(
-            "hermes_cli.config.load_env",
+            "zermes.hermes_cli.config.load_env",
             return_value={"MINIMAX_API_KEY": "dotenv-secret"},
         ), patch.object(tts_tool, "_import_edge_tts", side_effect=ImportError), \
              patch.object(tts_tool, "_import_elevenlabs", side_effect=ImportError), \

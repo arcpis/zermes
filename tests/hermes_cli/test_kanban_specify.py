@@ -14,9 +14,9 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from hermes_cli import kanban as kanban_cli
-from hermes_cli import kanban_db as kb
-from hermes_cli import kanban_specify as spec
+from zermes.hermes_cli import kanban as kanban_cli
+from zermes.hermes_cli import kanban_db as kb
+from zermes.hermes_cli import kanban_specify as spec
 
 
 @pytest.fixture
@@ -54,7 +54,7 @@ def _patch_aux_client(content: str, *, model: str = "test-model"):
     """
     client = _mock_client_returning(content)
     return patch(
-        "agent.auxiliary_client.get_text_auxiliary_client",
+        "zermes.agent.auxiliary_client.get_text_auxiliary_client",
         return_value=(client, model),
     ), client
 
@@ -159,7 +159,7 @@ def test_specify_task_no_aux_client_configured(kanban_home):
         tid = kb.create_task(conn, title="rough", triage=True)
 
     with patch(
-        "agent.auxiliary_client.get_text_auxiliary_client",
+        "zermes.agent.auxiliary_client.get_text_auxiliary_client",
         return_value=(None, ""),
     ):
         outcome = spec.specify_task(tid)
@@ -178,7 +178,7 @@ def test_specify_task_llm_api_error_keeps_task_in_triage(kanban_home):
     client = MagicMock()
     client.chat.completions.create = MagicMock(side_effect=RuntimeError("429 rate limited"))
     with patch(
-        "agent.auxiliary_client.get_text_auxiliary_client",
+        "zermes.agent.auxiliary_client.get_text_auxiliary_client",
         return_value=(client, "test-model"),
     ):
         outcome = spec.specify_task(tid)
@@ -288,7 +288,7 @@ def test_cli_specify_all_returns_1_when_every_task_fails(kanban_home, capsys):
         kb.create_task(conn, title="b", triage=True)
 
     with patch(
-        "agent.auxiliary_client.get_text_auxiliary_client",
+        "zermes.agent.auxiliary_client.get_text_auxiliary_client",
         return_value=(None, ""),  # no aux client → every task fails
     ):
         rc = _run_cli("specify", "--all")

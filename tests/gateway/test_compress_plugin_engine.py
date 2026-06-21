@@ -1,4 +1,4 @@
-"""Regression test: /compress works with context engine plugins.
+"""Regression test: /compress works with context engine zermes.plugins.
 
 Reported by @selfhostedsoul (Discord, Apr 2026) with the LCM plugin installed:
 
@@ -20,10 +20,10 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from agent.context_engine import ContextEngine
-from gateway.config import GatewayConfig, Platform, PlatformConfig
-from gateway.platforms.base import MessageEvent
-from gateway.session import SessionEntry, SessionSource, build_session_key
+from zermes.agent.context_engine import ContextEngine
+from zermes.gateway.config import GatewayConfig, Platform, PlatformConfig
+from zermes.gateway.platforms.base import MessageEvent
+from zermes.gateway.session import SessionEntry, SessionSource, build_session_key
 
 
 class _FakePluginEngine(ContextEngine):
@@ -81,7 +81,7 @@ def _make_history() -> list[dict[str, str]]:
 
 
 def _make_runner(history: list[dict[str, str]]):
-    from gateway.run import GatewayRunner
+    from zermes.gateway.run import GatewayRunner
 
     runner = object.__new__(GatewayRunner)
     runner.config = GatewayConfig(
@@ -128,10 +128,10 @@ async def test_compress_works_with_plugin_context_engine():
     agent_instance._compress_context.return_value = (compressed, "")
 
     with (
-        patch("gateway.run._resolve_runtime_agent_kwargs", return_value={"api_key": "***"}),
-        patch("gateway.run._resolve_gateway_model", return_value="test-model"),
-        patch("run_agent.AIAgent", return_value=agent_instance),
-        patch("agent.model_metadata.estimate_messages_tokens_rough", return_value=100),
+        patch("zermes.gateway.run._resolve_runtime_agent_kwargs", return_value={"api_key": "***"}),
+        patch("zermes.gateway.run._resolve_gateway_model", return_value="test-model"),
+        patch("zermes.run_agent.AIAgent", return_value=agent_instance),
+        patch("zermes.agent.model_metadata.estimate_messages_tokens_rough", return_value=100),
     ):
         result = await runner._handle_compress_command(_make_event("/compress"))
 
@@ -162,10 +162,10 @@ async def test_compress_respects_plugin_has_content_to_compress_false():
     agent_instance.session_id = "sess-1"
 
     with (
-        patch("gateway.run._resolve_runtime_agent_kwargs", return_value={"api_key": "***"}),
-        patch("gateway.run._resolve_gateway_model", return_value="test-model"),
-        patch("run_agent.AIAgent", return_value=agent_instance),
-        patch("agent.model_metadata.estimate_messages_tokens_rough", return_value=100),
+        patch("zermes.gateway.run._resolve_runtime_agent_kwargs", return_value={"api_key": "***"}),
+        patch("zermes.gateway.run._resolve_gateway_model", return_value="test-model"),
+        patch("zermes.run_agent.AIAgent", return_value=agent_instance),
+        patch("zermes.agent.model_metadata.estimate_messages_tokens_rough", return_value=100),
     ):
         result = await runner._handle_compress_command(_make_event("/compress"))
 

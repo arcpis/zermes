@@ -35,7 +35,7 @@ if str(_repo_root) not in sys.path:
     sys.path.insert(0, str(_repo_root))
 
 try:
-    from environments.agent_loop import AgentResult, HermesAgentLoop
+    from zermes.environments.agent_loop import AgentResult, HermesAgentLoop
 except ImportError:
     pytest.skip("atroposlib not installed", allow_module_level=True)
 
@@ -184,7 +184,7 @@ async def test_vllm_single_tool_call():
             {"role": "user", "content": "What's the weather in Tokyo? Use the get_weather tool."},
         ]
 
-        with patch("environments.agent_loop.handle_function_call", side_effect=_fake_tool_handler):
+        with patch("zermes.environments.agent_loop.handle_function_call", side_effect=_fake_tool_handler):
             result = await agent.run(messages)
 
     assert isinstance(result, AgentResult)
@@ -230,7 +230,7 @@ async def test_vllm_multi_tool_calls():
             )},
         ]
 
-        with patch("environments.agent_loop.handle_function_call", side_effect=_fake_tool_handler):
+        with patch("zermes.environments.agent_loop.handle_function_call", side_effect=_fake_tool_handler):
             result = await agent.run(messages)
 
     # Both tools should be called
@@ -264,7 +264,7 @@ async def test_vllm_managed_server_produces_nodes():
             {"role": "user", "content": "What's the weather in Berlin? Use get_weather."},
         ]
 
-        with patch("environments.agent_loop.handle_function_call", side_effect=_fake_tool_handler):
+        with patch("zermes.environments.agent_loop.handle_function_call", side_effect=_fake_tool_handler):
             result = await agent.run(messages)
 
         # Get the managed state — should have SequenceNodes
@@ -301,10 +301,10 @@ async def test_vllm_no_tools_direct_response():
         )
 
         messages = [
-            {"role": "user", "content": "What is 2 + 2? Answer directly, no tools."},
+            {"role": "user", "content": "What is 2 + 2? Answer directly, no zermes.tools."},
         ]
 
-        with patch("environments.agent_loop.handle_function_call", side_effect=_fake_tool_handler):
+        with patch("zermes.environments.agent_loop.handle_function_call", side_effect=_fake_tool_handler):
             result = await agent.run(messages)
 
     assert result.finished_naturally, "Should finish naturally"
@@ -338,7 +338,7 @@ async def test_vllm_thinking_content_extracted():
             {"role": "user", "content": "What is 123 * 456? Use the calculate tool."},
         ]
 
-        with patch("environments.agent_loop.handle_function_call", side_effect=_fake_tool_handler):
+        with patch("zermes.environments.agent_loop.handle_function_call", side_effect=_fake_tool_handler):
             result = await agent.run(messages)
 
     # Qwen3-Thinking should generate <think> blocks

@@ -1,7 +1,7 @@
 import pytest
 
-from worker_agents.runtime_contract import RuntimeResult, RuntimeState, RuntimeType
-from worker_agents.temporary_subagents import (
+from zermes.worker_agents.runtime_contract import RuntimeResult, RuntimeState, RuntimeType
+from zermes.worker_agents.temporary_subagents import (
     TemporarySubagentError,
     TemporarySubagentProfileOverlay,
     TemporarySubagentRequest,
@@ -18,7 +18,7 @@ def _overlay():
         role_name="Focused Explorer",
         task_instructions="Inspect only the supplied summaries.",
         output_contract="Return concise findings.",
-        tool_guidance=("Use read-only tools.",),
+        tool_guidance=("Use read-only zermes.tools.",),
         context_limits={"max_refs": 3},
     )
 

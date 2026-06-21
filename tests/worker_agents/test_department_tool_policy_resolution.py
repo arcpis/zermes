@@ -1,4 +1,4 @@
-from worker_agents.department_tool_policies import (
+from zermes.worker_agents.department_tool_policies import (
     DepartmentToolPolicyConflictReason,
     DepartmentToolPolicyRecord,
     DepartmentToolPolicyResolutionInput,

@@ -16,7 +16,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from gateway.config import Platform, PlatformConfig
+from zermes.gateway.config import Platform, PlatformConfig
 
 
 # ---------------------------------------------------------------------------
@@ -24,7 +24,7 @@ from gateway.config import Platform, PlatformConfig
 # ---------------------------------------------------------------------------
 
 def _make_telegram_adapter(*, allowed_chats=None, require_mention=None):
-    from gateway.platforms.telegram import TelegramAdapter
+    from zermes.gateway.platforms.telegram import TelegramAdapter
 
     extra = {}
     if allowed_chats is not None:
@@ -113,7 +113,7 @@ class TestTelegramAllowedChats:
 
     def test_config_bridge(self, monkeypatch, tmp_path):
         """slack-style config.yaml → env var bridge works."""
-        from gateway.config import load_gateway_config
+        from zermes.gateway.config import load_gateway_config
 
         hermes_home = tmp_path / ".hermes"
         hermes_home.mkdir()
@@ -134,7 +134,7 @@ class TestTelegramAllowedChats:
         assert _os.environ["TELEGRAM_ALLOWED_CHATS"] == "-100,-200"
 
     def test_config_bridge_env_takes_precedence(self, monkeypatch, tmp_path):
-        from gateway.config import load_gateway_config
+        from zermes.gateway.config import load_gateway_config
 
         hermes_home = tmp_path / ".hermes"
         hermes_home.mkdir()
@@ -158,8 +158,8 @@ class TestTelegramAllowedChats:
 
 def _make_dingtalk_adapter(*, allowed_chats=None, require_mention=None):
     # Import lazily — DingTalk SDK may not be installed.
-    pytest.importorskip("gateway.platforms.dingtalk", reason="DingTalk adapter not importable")
-    from gateway.platforms.dingtalk import DingTalkAdapter
+    pytest.importorskip("zermes.gateway.platforms.dingtalk", reason="DingTalk adapter not importable")
+    from zermes.gateway.platforms.dingtalk import DingTalkAdapter
 
     extra = {}
     if allowed_chats is not None:
@@ -206,7 +206,7 @@ class TestDingTalkAllowedChats:
         ) is True
 
     def test_config_bridge(self, monkeypatch, tmp_path):
-        from gateway.config import load_gateway_config
+        from zermes.gateway.config import load_gateway_config
 
         hermes_home = tmp_path / ".hermes"
         hermes_home.mkdir()
@@ -278,7 +278,7 @@ class TestMattermostAllowedChannels:
         ) is True
 
     def test_config_bridge(self, monkeypatch, tmp_path):
-        from gateway.config import load_gateway_config
+        from zermes.gateway.config import load_gateway_config
 
         hermes_home = tmp_path / ".hermes"
         hermes_home.mkdir()
@@ -343,7 +343,7 @@ class TestMatrixAllowedRooms:
         assert would_process("!blocked:srv", is_dm=True) is True
 
     def test_config_bridge(self, monkeypatch, tmp_path):
-        from gateway.config import load_gateway_config
+        from zermes.gateway.config import load_gateway_config
 
         hermes_home = tmp_path / ".hermes"
         hermes_home.mkdir()

@@ -1,7 +1,7 @@
 import pytest
 
-from worker_agents.runtime_contract import RuntimeExecutionBudget
-from worker_agents.runtime_resources import (
+from zermes.worker_agents.runtime_contract import RuntimeExecutionBudget
+from zermes.worker_agents.runtime_resources import (
     RuntimeBudgetPolicy,
     RuntimeBudgetSource,
     RuntimeBudgetViolationKind,

@@ -30,7 +30,7 @@ def _isolate_home(tmp_path, monkeypatch):
 # ---------------------------------------------------------------------------
 
 def test_protocol_encode_decode_roundtrip():
-    from plugins.google_meet.node import protocol
+    from zermes.plugins.google_meet.node import protocol
 
     msg = protocol.make_request("ping", "tok", {"x": 1}, req_id="abc")
     raw = protocol.encode(msg)
@@ -43,7 +43,7 @@ def test_protocol_encode_decode_roundtrip():
 
 
 def test_protocol_make_request_autogenerates_id():
-    from plugins.google_meet.node import protocol
+    from zermes.plugins.google_meet.node import protocol
 
     a = protocol.make_request("ping", "tok", {})
     b = protocol.make_request("ping", "tok", {})
@@ -52,7 +52,7 @@ def test_protocol_make_request_autogenerates_id():
 
 
 def test_protocol_make_request_rejects_bad_input():
-    from plugins.google_meet.node import protocol
+    from zermes.plugins.google_meet.node import protocol
 
     with pytest.raises(ValueError):
         protocol.make_request("", "tok", {})
@@ -63,7 +63,7 @@ def test_protocol_make_request_rejects_bad_input():
 
 
 def test_protocol_decode_raises_on_malformed():
-    from plugins.google_meet.node import protocol
+    from zermes.plugins.google_meet.node import protocol
 
     with pytest.raises(ValueError):
         protocol.decode("not json at all")
@@ -76,7 +76,7 @@ def test_protocol_decode_raises_on_malformed():
 
 
 def test_protocol_validate_request_happy_path():
-    from plugins.google_meet.node import protocol
+    from zermes.plugins.google_meet.node import protocol
 
     msg = protocol.make_request("status", "secret", {})
     ok, reason = protocol.validate_request(msg, "secret")
@@ -85,7 +85,7 @@ def test_protocol_validate_request_happy_path():
 
 
 def test_protocol_validate_request_rejects_bad_token():
-    from plugins.google_meet.node import protocol
+    from zermes.plugins.google_meet.node import protocol
 
     msg = protocol.make_request("status", "wrong", {})
     ok, reason = protocol.validate_request(msg, "right")
@@ -94,7 +94,7 @@ def test_protocol_validate_request_rejects_bad_token():
 
 
 def test_protocol_validate_request_rejects_unknown_type():
-    from plugins.google_meet.node import protocol
+    from zermes.plugins.google_meet.node import protocol
 
     raw = {"type": "nope", "id": "1", "token": "t", "payload": {}}
     ok, reason = protocol.validate_request(raw, "t")
@@ -103,7 +103,7 @@ def test_protocol_validate_request_rejects_unknown_type():
 
 
 def test_protocol_validate_request_rejects_missing_id():
-    from plugins.google_meet.node import protocol
+    from zermes.plugins.google_meet.node import protocol
 
     raw = {"type": "ping", "token": "t", "payload": {}}
     ok, reason = protocol.validate_request(raw, "t")
@@ -112,7 +112,7 @@ def test_protocol_validate_request_rejects_missing_id():
 
 
 def test_protocol_validate_request_rejects_non_dict_payload():
-    from plugins.google_meet.node import protocol
+    from zermes.plugins.google_meet.node import protocol
 
     raw = {"type": "ping", "id": "1", "token": "t", "payload": "oops"}
     ok, reason = protocol.validate_request(raw, "t")
@@ -120,7 +120,7 @@ def test_protocol_validate_request_rejects_non_dict_payload():
 
 
 def test_protocol_error_envelope_shape():
-    from plugins.google_meet.node import protocol
+    from zermes.plugins.google_meet.node import protocol
 
     err = protocol.make_error("abc", "nope")
     assert err == {"type": "error", "id": "abc", "error": "nope"}
@@ -131,7 +131,7 @@ def test_protocol_error_envelope_shape():
 # ---------------------------------------------------------------------------
 
 def test_registry_add_get_roundtrip_persists(tmp_path):
-    from plugins.google_meet.node.registry import NodeRegistry
+    from zermes.plugins.google_meet.node.registry import NodeRegistry
 
     p = tmp_path / "nodes.json"
     r = NodeRegistry(path=p)
@@ -148,14 +148,14 @@ def test_registry_add_get_roundtrip_persists(tmp_path):
 
 
 def test_registry_get_returns_none_when_missing(tmp_path):
-    from plugins.google_meet.node.registry import NodeRegistry
+    from zermes.plugins.google_meet.node.registry import NodeRegistry
 
     r = NodeRegistry(path=tmp_path / "n.json")
     assert r.get("ghost") is None
 
 
 def test_registry_remove(tmp_path):
-    from plugins.google_meet.node.registry import NodeRegistry
+    from zermes.plugins.google_meet.node.registry import NodeRegistry
 
     r = NodeRegistry(path=tmp_path / "n.json")
     r.add("a", "ws://a", "t")
@@ -165,7 +165,7 @@ def test_registry_remove(tmp_path):
 
 
 def test_registry_list_all_sorted(tmp_path):
-    from plugins.google_meet.node.registry import NodeRegistry
+    from zermes.plugins.google_meet.node.registry import NodeRegistry
 
     r = NodeRegistry(path=tmp_path / "n.json")
     r.add("zeta", "ws://z", "t1")
@@ -175,7 +175,7 @@ def test_registry_list_all_sorted(tmp_path):
 
 
 def test_registry_resolve_auto_picks_single(tmp_path):
-    from plugins.google_meet.node.registry import NodeRegistry
+    from zermes.plugins.google_meet.node.registry import NodeRegistry
 
     r = NodeRegistry(path=tmp_path / "n.json")
     r.add("mac", "ws://mac", "t")
@@ -185,7 +185,7 @@ def test_registry_resolve_auto_picks_single(tmp_path):
 
 
 def test_registry_resolve_ambiguous_returns_none(tmp_path):
-    from plugins.google_meet.node.registry import NodeRegistry
+    from zermes.plugins.google_meet.node.registry import NodeRegistry
 
     r = NodeRegistry(path=tmp_path / "n.json")
     r.add("a", "ws://a", "t")
@@ -194,14 +194,14 @@ def test_registry_resolve_ambiguous_returns_none(tmp_path):
 
 
 def test_registry_resolve_empty_returns_none(tmp_path):
-    from plugins.google_meet.node.registry import NodeRegistry
+    from zermes.plugins.google_meet.node.registry import NodeRegistry
 
     r = NodeRegistry(path=tmp_path / "n.json")
     assert r.resolve(None) is None
 
 
 def test_registry_resolve_by_name(tmp_path):
-    from plugins.google_meet.node.registry import NodeRegistry
+    from zermes.plugins.google_meet.node.registry import NodeRegistry
 
     r = NodeRegistry(path=tmp_path / "n.json")
     r.add("a", "ws://a", "t")
@@ -213,7 +213,7 @@ def test_registry_resolve_by_name(tmp_path):
 
 
 def test_registry_defaults_to_hermes_home(tmp_path, monkeypatch):
-    from plugins.google_meet.node.registry import NodeRegistry
+    from zermes.plugins.google_meet.node.registry import NodeRegistry
 
     # _isolate_home already set HERMES_HOME to tmp_path/.hermes; the
     # registry default path must live inside that tree.
@@ -228,7 +228,7 @@ def test_registry_defaults_to_hermes_home(tmp_path, monkeypatch):
 # ---------------------------------------------------------------------------
 
 def test_server_ensure_token_generates_and_persists(tmp_path):
-    from plugins.google_meet.node.server import NodeServer
+    from zermes.plugins.google_meet.node.server import NodeServer
 
     p = tmp_path / "tok.json"
     s1 = NodeServer(token_path=p)
@@ -246,7 +246,7 @@ def test_server_ensure_token_generates_and_persists(tmp_path):
 
 
 def test_server_get_token_is_idempotent(tmp_path):
-    from plugins.google_meet.node.server import NodeServer
+    from zermes.plugins.google_meet.node.server import NodeServer
 
     s = NodeServer(token_path=tmp_path / "t.json")
     assert s.get_token() == s.get_token()
@@ -257,8 +257,8 @@ def _run(coro):
 
 
 def test_server_handle_request_rejects_bad_token(tmp_path):
-    from plugins.google_meet.node.server import NodeServer
-    from plugins.google_meet.node import protocol
+    from zermes.plugins.google_meet.node.server import NodeServer
+    from zermes.plugins.google_meet.node import protocol
 
     s = NodeServer(token_path=tmp_path / "t.json")
     s.ensure_token()
@@ -269,8 +269,8 @@ def test_server_handle_request_rejects_bad_token(tmp_path):
 
 
 def test_server_handle_request_ping(tmp_path):
-    from plugins.google_meet.node.server import NodeServer
-    from plugins.google_meet.node import protocol
+    from zermes.plugins.google_meet.node.server import NodeServer
+    from zermes.plugins.google_meet.node import protocol
 
     s = NodeServer(token_path=tmp_path / "t.json", display_name="node-x")
     tok = s.ensure_token()
@@ -282,9 +282,9 @@ def test_server_handle_request_ping(tmp_path):
 
 
 def test_server_handle_request_status_dispatches_to_pm(tmp_path, monkeypatch):
-    from plugins.google_meet.node.server import NodeServer
-    from plugins.google_meet.node import protocol
-    from plugins.google_meet import process_manager as pm
+    from zermes.plugins.google_meet.node.server import NodeServer
+    from zermes.plugins.google_meet.node import protocol
+    from zermes.plugins.google_meet import process_manager as pm
 
     monkeypatch.setattr(pm, "status",
                         lambda: {"ok": True, "alive": True, "meetingId": "abc"})
@@ -299,9 +299,9 @@ def test_server_handle_request_status_dispatches_to_pm(tmp_path, monkeypatch):
 
 
 def test_server_handle_request_start_bot_dispatches(tmp_path, monkeypatch):
-    from plugins.google_meet.node.server import NodeServer
-    from plugins.google_meet.node import protocol
-    from plugins.google_meet import process_manager as pm
+    from zermes.plugins.google_meet.node.server import NodeServer
+    from zermes.plugins.google_meet.node import protocol
+    from zermes.plugins.google_meet import process_manager as pm
 
     captured = {}
 
@@ -327,8 +327,8 @@ def test_server_handle_request_start_bot_dispatches(tmp_path, monkeypatch):
 
 
 def test_server_handle_request_start_bot_missing_url(tmp_path):
-    from plugins.google_meet.node.server import NodeServer
-    from plugins.google_meet.node import protocol
+    from zermes.plugins.google_meet.node.server import NodeServer
+    from zermes.plugins.google_meet.node import protocol
 
     s = NodeServer(token_path=tmp_path / "t.json")
     tok = s.ensure_token()
@@ -339,9 +339,9 @@ def test_server_handle_request_start_bot_missing_url(tmp_path):
 
 
 def test_server_handle_request_stop_dispatches(tmp_path, monkeypatch):
-    from plugins.google_meet.node.server import NodeServer
-    from plugins.google_meet.node import protocol
-    from plugins.google_meet import process_manager as pm
+    from zermes.plugins.google_meet.node.server import NodeServer
+    from zermes.plugins.google_meet.node import protocol
+    from zermes.plugins.google_meet import process_manager as pm
 
     got = {}
 
@@ -360,9 +360,9 @@ def test_server_handle_request_stop_dispatches(tmp_path, monkeypatch):
 
 
 def test_server_handle_request_transcript(tmp_path, monkeypatch):
-    from plugins.google_meet.node.server import NodeServer
-    from plugins.google_meet.node import protocol
-    from plugins.google_meet import process_manager as pm
+    from zermes.plugins.google_meet.node.server import NodeServer
+    from zermes.plugins.google_meet.node import protocol
+    from zermes.plugins.google_meet import process_manager as pm
 
     got = {}
 
@@ -382,9 +382,9 @@ def test_server_handle_request_transcript(tmp_path, monkeypatch):
 
 
 def test_server_handle_request_say_enqueues_when_active(tmp_path, monkeypatch):
-    from plugins.google_meet.node.server import NodeServer
-    from plugins.google_meet.node import protocol
-    from plugins.google_meet import process_manager as pm
+    from zermes.plugins.google_meet.node.server import NodeServer
+    from zermes.plugins.google_meet.node import protocol
+    from zermes.plugins.google_meet import process_manager as pm
 
     out = tmp_path / "meet-out"
     out.mkdir()
@@ -404,9 +404,9 @@ def test_server_handle_request_say_enqueues_when_active(tmp_path, monkeypatch):
 
 
 def test_server_handle_request_say_without_active_still_ok(tmp_path, monkeypatch):
-    from plugins.google_meet.node.server import NodeServer
-    from plugins.google_meet.node import protocol
-    from plugins.google_meet import process_manager as pm
+    from zermes.plugins.google_meet.node.server import NodeServer
+    from zermes.plugins.google_meet.node import protocol
+    from zermes.plugins.google_meet import process_manager as pm
 
     monkeypatch.setattr(pm, "_read_active", lambda: None)
 
@@ -420,9 +420,9 @@ def test_server_handle_request_say_without_active_still_ok(tmp_path, monkeypatch
 
 
 def test_server_handle_request_wraps_pm_exceptions(tmp_path, monkeypatch):
-    from plugins.google_meet.node.server import NodeServer
-    from plugins.google_meet.node import protocol
-    from plugins.google_meet import process_manager as pm
+    from zermes.plugins.google_meet.node.server import NodeServer
+    from zermes.plugins.google_meet.node import protocol
+    from zermes.plugins.google_meet import process_manager as pm
 
     def boom():
         raise ValueError("kaboom")
@@ -478,8 +478,8 @@ def _install_fake_ws(monkeypatch, reply_builder):
 
 
 def test_client_rpc_sends_correct_envelope_and_parses_response(monkeypatch):
-    from plugins.google_meet.node.client import NodeClient
-    from plugins.google_meet.node import protocol
+    from zermes.plugins.google_meet.node.client import NodeClient
+    from zermes.plugins.google_meet.node import protocol
 
     def reply(raw_out):
         req = protocol.decode(raw_out)
@@ -500,8 +500,8 @@ def test_client_rpc_sends_correct_envelope_and_parses_response(monkeypatch):
 
 
 def test_client_rpc_raises_on_error_envelope(monkeypatch):
-    from plugins.google_meet.node.client import NodeClient
-    from plugins.google_meet.node import protocol
+    from zermes.plugins.google_meet.node.client import NodeClient
+    from zermes.plugins.google_meet.node import protocol
 
     def reply(raw_out):
         req = protocol.decode(raw_out)
@@ -515,8 +515,8 @@ def test_client_rpc_raises_on_error_envelope(monkeypatch):
 
 
 def test_client_rpc_raises_on_id_mismatch(monkeypatch):
-    from plugins.google_meet.node.client import NodeClient
-    from plugins.google_meet.node import protocol
+    from zermes.plugins.google_meet.node.client import NodeClient
+    from zermes.plugins.google_meet.node import protocol
 
     def reply(raw_out):
         return protocol.encode(protocol.make_response("different-id", {"ok": True}))
@@ -529,8 +529,8 @@ def test_client_rpc_raises_on_id_mismatch(monkeypatch):
 
 
 def test_client_convenience_methods_hit_correct_types(monkeypatch):
-    from plugins.google_meet.node.client import NodeClient
-    from plugins.google_meet.node import protocol
+    from zermes.plugins.google_meet.node.client import NodeClient
+    from zermes.plugins.google_meet.node import protocol
 
     seen = []
 
@@ -560,7 +560,7 @@ def test_client_convenience_methods_hit_correct_types(monkeypatch):
 
 
 def test_client_init_rejects_bad_args():
-    from plugins.google_meet.node.client import NodeClient
+    from zermes.plugins.google_meet.node.client import NodeClient
 
     with pytest.raises(ValueError):
         NodeClient("", "t")
@@ -573,7 +573,7 @@ def test_client_init_rejects_bad_args():
 # ---------------------------------------------------------------------------
 
 def _build_parser():
-    from plugins.google_meet.node.cli import register_cli
+    from zermes.plugins.google_meet.node.cli import register_cli
 
     parser = argparse.ArgumentParser(prog="meet-node-test")
     register_cli(parser)
@@ -581,7 +581,7 @@ def _build_parser():
 
 
 def test_cli_approve_list_remove(capsys):
-    from plugins.google_meet.node.registry import NodeRegistry
+    from zermes.plugins.google_meet.node.registry import NodeRegistry
 
     p = _build_parser()
 
@@ -619,8 +619,8 @@ def test_cli_remove_missing_returns_nonzero():
 
 
 def test_cli_status_pings_via_node_client(capsys, monkeypatch):
-    from plugins.google_meet.node.registry import NodeRegistry
-    from plugins.google_meet.node import cli as node_cli
+    from zermes.plugins.google_meet.node.registry import NodeRegistry
+    from zermes.plugins.google_meet.node import cli as node_cli
 
     NodeRegistry().add("mac", "ws://mac:1", "tok")
 
@@ -652,8 +652,8 @@ def test_cli_status_unknown_node_fails(capsys):
 
 
 def test_cli_status_reports_client_error(capsys, monkeypatch):
-    from plugins.google_meet.node.registry import NodeRegistry
-    from plugins.google_meet.node import cli as node_cli
+    from zermes.plugins.google_meet.node.registry import NodeRegistry
+    from zermes.plugins.google_meet.node import cli as node_cli
 
     NodeRegistry().add("mac", "ws://mac:1", "tok")
 

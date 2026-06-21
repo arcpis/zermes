@@ -5,7 +5,7 @@ future provider that returns an image-too-large error):
 
   1. agent/error_classifier.py: 400 with "image exceeds 5 MB maximum"
      gets FailoverReason.image_too_large, not context_overflow.
-  2. run_agent._try_shrink_image_parts_in_messages mutates the API
+  2. zermes.run_agent._try_shrink_image_parts_in_messages mutates the API
      payload in-place, re-encoding native data: URL image parts to fit
      under 4 MB using vision_tools._resize_image_for_vision.
 
@@ -22,7 +22,7 @@ from pathlib import Path
 
 import pytest
 
-from agent.error_classifier import FailoverReason, classify_api_error
+from zermes.agent.error_classifier import FailoverReason, classify_api_error
 
 
 class _FakeApiError(Exception):
@@ -94,7 +94,7 @@ def _big_png_data_url(size_kb: int) -> str:
 
 def _make_agent():
     """Build a bare AIAgent for method-level testing, no provider setup."""
-    from run_agent import AIAgent
+    from zermes.run_agent import AIAgent
     agent = object.__new__(AIAgent)
     agent.provider = "anthropic"
     agent.model = "claude-sonnet-4-6"
@@ -122,7 +122,7 @@ class TestShrinkImagePartsHelper:
 
         resize_hits = {"count": 0}
         monkeypatch.setattr(
-            "tools.vision_tools._resize_image_for_vision",
+            "zermes.tools.vision_tools._resize_image_for_vision",
             lambda *a, **kw: resize_hits.__setitem__("count", resize_hits["count"] + 1) or small_url,
             raising=False,
         )
@@ -149,7 +149,7 @@ class TestShrinkImagePartsHelper:
             return shrunk
 
         monkeypatch.setattr(
-            "tools.vision_tools._resize_image_for_vision",
+            "zermes.tools.vision_tools._resize_image_for_vision",
             _fake_resize,
             raising=False,
         )
@@ -172,7 +172,7 @@ class TestShrinkImagePartsHelper:
         shrunk = "data:image/jpeg;base64," + "B" * 1000
 
         monkeypatch.setattr(
-            "tools.vision_tools._resize_image_for_vision",
+            "zermes.tools.vision_tools._resize_image_for_vision",
             lambda *a, **kw: shrunk,
             raising=False,
         )
@@ -195,7 +195,7 @@ class TestShrinkImagePartsHelper:
         shrunk = "data:image/jpeg;base64," + "C" * 500
 
         monkeypatch.setattr(
-            "tools.vision_tools._resize_image_for_vision",
+            "zermes.tools.vision_tools._resize_image_for_vision",
             lambda *a, **kw: shrunk,
             raising=False,
         )
@@ -219,7 +219,7 @@ class TestShrinkImagePartsHelper:
 
         resize_hits = {"count": 0}
         monkeypatch.setattr(
-            "tools.vision_tools._resize_image_for_vision",
+            "zermes.tools.vision_tools._resize_image_for_vision",
             lambda *a, **kw: resize_hits.__setitem__("count", resize_hits["count"] + 1) or "shrunk",
             raising=False,
         )
@@ -240,7 +240,7 @@ class TestShrinkImagePartsHelper:
         oversized_url = _big_png_data_url(5000)
 
         monkeypatch.setattr(
-            "tools.vision_tools._resize_image_for_vision",
+            "zermes.tools.vision_tools._resize_image_for_vision",
             lambda *a, **kw: None,  # resize returned nothing usable
             raising=False,
         )
@@ -261,7 +261,7 @@ class TestShrinkImagePartsHelper:
         even_bigger = "data:image/png;base64," + "Z" * (10 * 1024 * 1024)
 
         monkeypatch.setattr(
-            "tools.vision_tools._resize_image_for_vision",
+            "zermes.tools.vision_tools._resize_image_for_vision",
             lambda *a, **kw: even_bigger,
             raising=False,
         )

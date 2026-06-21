@@ -1,8 +1,8 @@
 import pytest
 
-from worker_agents.storage import WorkerAgentProfileStore, WorkerAgentRuntimeDataStore
-from worker_agents.storage.task_store import WorkerTaskStore
-from worker_agents.task_state import WorkerTaskError, WorkerTaskState
+from zermes.worker_agents.storage import WorkerAgentProfileStore, WorkerAgentRuntimeDataStore
+from zermes.worker_agents.storage.task_store import WorkerTaskStore
+from zermes.worker_agents.task_state import WorkerTaskError, WorkerTaskState
 
 
 def _state(task_id="task-1"):

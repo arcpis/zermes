@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from hermes_cli.worker_agents_product import write_management_state_for_tests
-from worker_agents.organization import MAIN_AGENT_ID
+from zermes.hermes_cli.worker_agents_product import write_management_state_for_tests
+from zermes.worker_agents.organization import MAIN_AGENT_ID
 
 
 def _state():
@@ -123,7 +123,7 @@ def cli_home(tmp_path, monkeypatch):
 
 
 def _run_cli(monkeypatch, capsys, *args):
-    from hermes_cli.main import main
+    from zermes.hermes_cli.main import main
 
     monkeypatch.setattr(sys, "argv", ["hermes", *args])
     try:
@@ -135,7 +135,7 @@ def _run_cli(monkeypatch, capsys, *args):
 
 
 def test_worker_agents_help_smoke(monkeypatch, capsys, cli_home):
-    from hermes_cli.main import main
+    from zermes.hermes_cli.main import main
 
     monkeypatch.setattr(sys, "argv", ["hermes", "worker-agents", "--help"])
     with pytest.raises(SystemExit) as exc:
@@ -354,7 +354,7 @@ def test_direct_chat_command_creates_worker_thread(monkeypatch, capsys, cli_home
 
 
 def test_chat_send_rejects_read_only_thread(monkeypatch, capsys, cli_home):
-    from hermes_cli.main import main
+    from zermes.hermes_cli.main import main
 
     monkeypatch.setattr(
         sys,
@@ -377,7 +377,7 @@ def test_chat_send_rejects_read_only_thread(monkeypatch, capsys, cli_home):
 
 
 def test_high_risk_approval_requires_confirmation(monkeypatch, capsys, cli_home):
-    from hermes_cli.main import main
+    from zermes.hermes_cli.main import main
 
     monkeypatch.setattr(
         sys,

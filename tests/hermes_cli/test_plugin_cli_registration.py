@@ -16,7 +16,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from hermes_cli.plugins import (
+from zermes.hermes_cli.plugins import (
     PluginContext,
     PluginManager,
     PluginManifest,
@@ -72,7 +72,7 @@ class TestMemoryPluginCliDiscovery:
         plugin_dir = tmp_path / "testplugin"
         plugin_dir.mkdir()
         (plugin_dir / "__init__.py").write_text("pass\n")
-        (plugin_dir / "cli.py").write_text(
+        (plugin_dir / "zermes.cli.py").write_text(
             "def register_cli(subparser):\n"
             "    subparser.add_argument('--test')\n"
             "\n"
@@ -87,14 +87,14 @@ class TestMemoryPluginCliDiscovery:
         other_dir = tmp_path / "otherplugin"
         other_dir.mkdir()
         (other_dir / "__init__.py").write_text("pass\n")
-        (other_dir / "cli.py").write_text(
+        (other_dir / "zermes.cli.py").write_text(
             "def register_cli(subparser):\n"
             "    subparser.add_argument('--other')\n"
         )
 
-        import plugins.memory as pm
+        import zermes.plugins.memory as pm
         original_dir = pm._MEMORY_PLUGINS_DIR
-        mod_key = "plugins.memory.testplugin.cli"
+        mod_key = "zermes.plugins.memory.testplugin.cli"
         sys.modules.pop(mod_key, None)
 
         monkeypatch.setattr(pm, "_MEMORY_PLUGINS_DIR", tmp_path)
@@ -118,11 +118,11 @@ class TestMemoryPluginCliDiscovery:
         plugin_dir = tmp_path / "testplugin"
         plugin_dir.mkdir()
         (plugin_dir / "__init__.py").write_text("pass\n")
-        (plugin_dir / "cli.py").write_text(
+        (plugin_dir / "zermes.cli.py").write_text(
             "def register_cli(subparser):\n    pass\n"
         )
 
-        import plugins.memory as pm
+        import zermes.plugins.memory as pm
         original_dir = pm._MEMORY_PLUGINS_DIR
         monkeypatch.setattr(pm, "_MEMORY_PLUGINS_DIR", tmp_path)
         monkeypatch.setattr(pm, "_get_active_memory_provider", lambda: None)
@@ -138,9 +138,9 @@ class TestMemoryPluginCliDiscovery:
         plugin_dir = tmp_path / "noplugin"
         plugin_dir.mkdir()
         (plugin_dir / "__init__.py").write_text("pass\n")
-        (plugin_dir / "cli.py").write_text("def some_other_fn():\n    pass\n")
+        (plugin_dir / "zermes.cli.py").write_text("def some_other_fn():\n    pass\n")
 
-        import plugins.memory as pm
+        import zermes.plugins.memory as pm
         original_dir = pm._MEMORY_PLUGINS_DIR
         monkeypatch.setattr(pm, "_MEMORY_PLUGINS_DIR", tmp_path)
         monkeypatch.setattr(pm, "_get_active_memory_provider", lambda: "noplugin")
@@ -148,7 +148,7 @@ class TestMemoryPluginCliDiscovery:
             cmds = pm.discover_plugin_cli_commands()
         finally:
             monkeypatch.setattr(pm, "_MEMORY_PLUGINS_DIR", original_dir)
-            sys.modules.pop("plugins.memory.noplugin.cli", None)
+            sys.modules.pop("zermes.plugins.memory.noplugin.cli", None)
 
         assert len(cmds) == 0
 
@@ -158,7 +158,7 @@ class TestMemoryPluginCliDiscovery:
         plugin_dir.mkdir()
         (plugin_dir / "__init__.py").write_text("pass\n")
 
-        import plugins.memory as pm
+        import zermes.plugins.memory as pm
         original_dir = pm._MEMORY_PLUGINS_DIR
         monkeypatch.setattr(pm, "_MEMORY_PLUGINS_DIR", tmp_path)
         monkeypatch.setattr(pm, "_get_active_memory_provider", lambda: "nocli")
@@ -179,7 +179,7 @@ class TestMemoryPluginCliDiscovery:
 class TestProviderCollectorCliNoop:
     def test_register_cli_command_is_noop(self):
         """_ProviderCollector.register_cli_command is a no-op (doesn't crash)."""
-        from plugins.memory import _ProviderCollector
+        from zermes.plugins.memory import _ProviderCollector
 
         collector = _ProviderCollector()
         collector.register_cli_command(

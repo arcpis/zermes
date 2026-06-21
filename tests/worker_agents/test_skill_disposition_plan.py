@@ -1,16 +1,16 @@
 import pytest
 
-from worker_agents.department_skills import (
+from zermes.worker_agents.department_skills import (
     DepartmentSkillBindingRecord,
     DepartmentSkillBindingState,
 )
-from worker_agents.department_tool_policies import (
+from zermes.worker_agents.department_tool_policies import (
     DepartmentToolPolicySnapshot,
     DepartmentToolPolicyRecord,
     DepartmentToolRiskLevel,
     DepartmentToolRuleEffect,
 )
-from worker_agents.organization_asset_disposition import (
+from zermes.worker_agents.organization_asset_disposition import (
     GovernanceDispositionPolicy,
     OrganizationAssetDispositionError,
     PermissionDispositionDecision,
@@ -30,9 +30,9 @@ from worker_agents.organization_asset_disposition import (
     tool_policy_disposition_plan_from_dict,
     tool_policy_disposition_plan_to_dict,
 )
-from worker_agents.private_assets import PrivateAssetSensitivity
-from worker_agents.private_skill_experience import PrivateSkillExperience
-from worker_agents.tool_permission_snapshot import WorkerToolPermissionSnapshot
+from zermes.worker_agents.private_assets import PrivateAssetSensitivity
+from zermes.worker_agents.private_skill_experience import PrivateSkillExperience
+from zermes.worker_agents.tool_permission_snapshot import WorkerToolPermissionSnapshot
 
 
 def _binding(

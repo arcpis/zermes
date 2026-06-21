@@ -2,11 +2,11 @@
 
 from unittest.mock import MagicMock, patch
 
-from agent.context_compressor import ContextCompressor, SUMMARY_PREFIX
+from zermes.agent.context_compressor import ContextCompressor, SUMMARY_PREFIX
 
 
 def _compressor() -> ContextCompressor:
-    with patch("agent.context_compressor.get_model_context_length", return_value=100000):
+    with patch("zermes.agent.context_compressor.get_model_context_length", return_value=100000):
         return ContextCompressor(
             model="test/model",
             threshold_percent=0.85,
@@ -40,7 +40,7 @@ def test_existing_previous_summary_is_not_serialized_again_as_new_turn():
     old_summary = "OLD-SUMMARY-BODY unique continuity facts"
     compressor._previous_summary = old_summary
 
-    with patch("agent.context_compressor.call_llm", return_value=_response("updated summary")) as mock_call:
+    with patch("zermes.agent.context_compressor.call_llm", return_value=_response("updated summary")) as mock_call:
         compressor.compress(_messages_with_handoff(old_summary))
 
     prompt = mock_call.call_args.kwargs["messages"][0]["content"]
@@ -56,7 +56,7 @@ def test_resume_rehydrates_previous_summary_from_handoff_message():
     old_summary = "RESUMED-SUMMARY-BODY durable continuity facts"
     assert compressor._previous_summary is None
 
-    with patch("agent.context_compressor.call_llm", return_value=_response("updated summary")) as mock_call:
+    with patch("zermes.agent.context_compressor.call_llm", return_value=_response("updated summary")) as mock_call:
         compressor.compress(_messages_with_handoff(old_summary))
 
     prompt = mock_call.call_args.kwargs["messages"][0]["content"]

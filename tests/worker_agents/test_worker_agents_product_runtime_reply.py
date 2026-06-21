@@ -1,7 +1,7 @@
 import json
 
-from hermes_cli import worker_agents_product as product
-from worker_agents.runtime_contract import RuntimeResult, RuntimeState, RuntimeType
+from zermes.hermes_cli import worker_agents_product as product
+from zermes.worker_agents.runtime_contract import RuntimeResult, RuntimeState, RuntimeType
 
 
 def _worker(worker_id: str) -> dict:

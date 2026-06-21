@@ -75,7 +75,7 @@ class TestCapabilityGatedRegistration:
         """Context7-shaped server (tools only, no prompts / resources) should
         get zero utility stubs registered — this is the exact scenario
         from the #18051 bug report."""
-        from tools.mcp_tool import _select_utility_schemas
+        from zermes.tools.mcp_tool import _select_utility_schemas
 
         server = _make_fake_server(
             initialize_result=_make_init_result(resources=False, prompts=False)
@@ -87,7 +87,7 @@ class TestCapabilityGatedRegistration:
         )
 
     def test_resources_only_server_gets_resource_stubs_only(self):
-        from tools.mcp_tool import _select_utility_schemas
+        from zermes.tools.mcp_tool import _select_utility_schemas
 
         server = _make_fake_server(
             initialize_result=_make_init_result(resources=True, prompts=False)
@@ -96,7 +96,7 @@ class TestCapabilityGatedRegistration:
         assert _handler_keys(selected) == {"list_resources", "read_resource"}
 
     def test_prompts_only_server_gets_prompt_stubs_only(self):
-        from tools.mcp_tool import _select_utility_schemas
+        from zermes.tools.mcp_tool import _select_utility_schemas
 
         server = _make_fake_server(
             initialize_result=_make_init_result(resources=False, prompts=True)
@@ -105,7 +105,7 @@ class TestCapabilityGatedRegistration:
         assert _handler_keys(selected) == {"list_prompts", "get_prompt"}
 
     def test_fully_capable_server_gets_all_four_stubs(self):
-        from tools.mcp_tool import _select_utility_schemas
+        from zermes.tools.mcp_tool import _select_utility_schemas
 
         server = _make_fake_server(
             initialize_result=_make_init_result(resources=True, prompts=True)
@@ -117,11 +117,11 @@ class TestCapabilityGatedRegistration:
 
 
 class TestConfigFilterStillApplies:
-    """Per-server config flags ``tools.resources: false`` / ``tools.prompts: false``
+    """Per-server config flags ``zermes.tools.resources: false`` / ``zermes.tools.prompts: false``
     must continue to override even when the server DOES advertise the capability."""
 
     def test_config_disables_resources_even_when_advertised(self):
-        from tools.mcp_tool import _select_utility_schemas
+        from zermes.tools.mcp_tool import _select_utility_schemas
 
         server = _make_fake_server(
             initialize_result=_make_init_result(resources=True, prompts=True)
@@ -134,7 +134,7 @@ class TestConfigFilterStillApplies:
         assert _handler_keys(selected) == {"list_prompts", "get_prompt"}
 
     def test_config_disables_prompts_even_when_advertised(self):
-        from tools.mcp_tool import _select_utility_schemas
+        from zermes.tools.mcp_tool import _select_utility_schemas
 
         server = _make_fake_server(
             initialize_result=_make_init_result(resources=True, prompts=True)
@@ -153,7 +153,7 @@ class TestLegacyFallback:
     check so pre-existing tests and servers keep working."""
 
     def test_no_initialize_result_falls_back_to_hasattr_check(self):
-        from tools.mcp_tool import _select_utility_schemas
+        from zermes.tools.mcp_tool import _select_utility_schemas
 
         server = _make_fake_server(initialize_result=None)
         # With the legacy fallback, session.spec includes all four methods,
@@ -166,7 +166,7 @@ class TestLegacyFallback:
     def test_no_initialize_result_respects_session_spec(self):
         """Legacy fallback still filters by ``hasattr(session, method)``, so
         a session whose spec lacks a method is correctly skipped."""
-        from tools.mcp_tool import _select_utility_schemas
+        from zermes.tools.mcp_tool import _select_utility_schemas
 
         server = _make_fake_server(initialize_result=None)
         # Override session to a spec that only has list_resources

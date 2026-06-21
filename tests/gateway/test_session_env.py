@@ -3,10 +3,10 @@ import os
 
 import pytest
 
-from gateway.config import Platform
-from gateway.run import GatewayRunner
-from gateway.session import SessionContext, SessionSource
-from gateway.session_context import (
+from zermes.gateway.config import Platform
+from zermes.gateway.run import GatewayRunner
+from zermes.gateway.session import SessionContext, SessionSource
+from zermes.gateway.session_context import (
     get_session_env,
     set_session_vars,
     clear_session_vars,

@@ -1,4 +1,4 @@
-"""Tests for trajectory_compressor.py — config, metrics, and compression logic."""
+"""Tests for zermes.trajectory_compressor.py — config, metrics, and compression logic."""
 
 import importlib
 import json
@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, patch, MagicMock
 
 import pytest
 
-from trajectory_compressor import (
+from zermes.trajectory_compressor import (
     CompressionConfig,
     TrajectoryMetrics,
     AggregateMetrics,
@@ -314,7 +314,7 @@ class TestFindProtectedIndices:
     def test_basic_trajectory(self):
         tc = _make_compressor()
         trajectory = [
-            {"from": "system", "value": "You are an agent."},
+            {"from": "system", "value": "You are an zermes.agent."},
             {"from": "human", "value": "Do something."},
             {"from": "gpt", "value": "I will use a tool."},
             {"from": "tool", "value": "Tool result."},

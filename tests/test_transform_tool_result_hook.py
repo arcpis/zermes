@@ -1,5 +1,5 @@
 """Tests for the ``transform_tool_result`` plugin hook wired into
-``model_tools.handle_function_call``.
+``zermes.model_tools.handle_function_call``.
 
 Mirrors the ``transform_terminal_output`` hook tests from Phase 1 but
 targets the generic tool-result seam that runs for every tool dispatch.
@@ -10,8 +10,8 @@ import os
 from pathlib import Path
 from unittest.mock import MagicMock
 
-import hermes_cli.plugins as plugins_mod
-import model_tools
+import zermes.hermes_cli.plugins as plugins_mod
+import zermes.model_tools as model_tools
 
 
 _UNSET = object()
@@ -26,7 +26,7 @@ def _run_handle_function_call(
     invoke_hook=_UNSET,
 ):
     """Drive ``handle_function_call`` with a mocked registry dispatch."""
-    from tools.registry import registry
+    from zermes.tools.registry import registry
 
     monkeypatch.setattr(
         registry, "dispatch",
@@ -37,9 +37,9 @@ def _run_handle_function_call(
 
     if invoke_hook is not _UNSET:
         # Patch the symbol actually imported inside handle_function_call.
-        monkeypatch.setattr("hermes_cli.plugins.invoke_hook", invoke_hook)
+        monkeypatch.setattr("zermes.hermes_cli.plugins.invoke_hook", invoke_hook)
 
-    return model_tools.handle_function_call(
+    return zermes.model_tools.handle_function_call(
         tool_name,
         tool_args or {},
         task_id="t1",
@@ -174,7 +174,7 @@ def test_transform_tool_result_integration_with_real_plugin(monkeypatch, tmp_pat
         'lambda **kw: f\'CANON[{kw["tool_name"]}]\' + kw["result"])\n',
         encoding="utf-8",
     )
-    # Plugins are opt-in — must be listed in plugins.enabled to load.
+    # Plugins are opt-in — must be listed in zermes.plugins.enabled to load.
     cfg_path = hermes_home / "config.yaml"
     cfg_path.write_text(
         yaml.safe_dump({"plugins": {"enabled": ["transform_result_canon"]}}),

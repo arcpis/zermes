@@ -14,7 +14,7 @@ from unittest.mock import Mock
 
 import pytest
 
-import tools.browser_tool as browser_tool
+import zermes.tools.browser_tool as browser_tool
 
 
 @pytest.fixture(autouse=True)

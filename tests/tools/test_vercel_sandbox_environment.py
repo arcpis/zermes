@@ -215,12 +215,12 @@ def vercel_sdk(monkeypatch):
 
 @pytest.fixture()
 def vercel_module(vercel_sdk, monkeypatch):
-    monkeypatch.setattr("tools.environments.base.is_interrupted", lambda: False)
-    monkeypatch.setattr("tools.credential_files.get_credential_file_mounts", lambda: [])
-    monkeypatch.setattr("tools.credential_files.iter_skills_files", lambda **kwargs: [])
-    monkeypatch.setattr("tools.credential_files.iter_cache_files", lambda **kwargs: [])
+    monkeypatch.setattr("zermes.tools.environments.base.is_interrupted", lambda: False)
+    monkeypatch.setattr("zermes.tools.credential_files.get_credential_file_mounts", lambda: [])
+    monkeypatch.setattr("zermes.tools.credential_files.iter_skills_files", lambda **kwargs: [])
+    monkeypatch.setattr("zermes.tools.credential_files.iter_cache_files", lambda **kwargs: [])
 
-    module = importlib.import_module("tools.environments.vercel_sandbox")
+    module = importlib.import_module("zermes.tools.environments.vercel_sandbox")
     return importlib.reload(module)
 
 
@@ -282,7 +282,7 @@ class TestFileSync:
         src = tmp_path / "token.txt"
         src.write_text("secret-token")
         monkeypatch.setattr(
-            "tools.credential_files.get_credential_file_mounts",
+            "zermes.tools.credential_files.get_credential_file_mounts",
             lambda: [
                 {
                     "host_path": str(src),
@@ -290,8 +290,8 @@ class TestFileSync:
                 }
             ],
         )
-        monkeypatch.setattr("tools.credential_files.iter_skills_files", lambda **kwargs: [])
-        monkeypatch.setattr("tools.credential_files.iter_cache_files", lambda **kwargs: [])
+        monkeypatch.setattr("zermes.tools.credential_files.iter_skills_files", lambda **kwargs: [])
+        monkeypatch.setattr("zermes.tools.credential_files.iter_cache_files", lambda **kwargs: [])
 
         make_env()
 
@@ -309,7 +309,7 @@ class TestFileSync:
         src = tmp_path / "token.txt"
         src.write_text("secret-token")
         monkeypatch.setattr(
-            "tools.credential_files.get_credential_file_mounts",
+            "zermes.tools.credential_files.get_credential_file_mounts",
             lambda: [
                 {
                     "host_path": str(src),
@@ -317,8 +317,8 @@ class TestFileSync:
                 }
             ],
         )
-        monkeypatch.setattr("tools.credential_files.iter_skills_files", lambda **kwargs: [])
-        monkeypatch.setattr("tools.credential_files.iter_cache_files", lambda **kwargs: [])
+        monkeypatch.setattr("zermes.tools.credential_files.iter_skills_files", lambda **kwargs: [])
+        monkeypatch.setattr("zermes.tools.credential_files.iter_cache_files", lambda **kwargs: [])
 
         env = make_env()
         src.write_text("updated-secret-token")
@@ -343,7 +343,7 @@ class TestFileSync:
         src = tmp_path / "token.txt"
         src.write_text("host-token")
         monkeypatch.setattr(
-            "tools.credential_files.get_credential_file_mounts",
+            "zermes.tools.credential_files.get_credential_file_mounts",
             lambda: [
                 {
                     "host_path": str(src),
@@ -352,11 +352,11 @@ class TestFileSync:
             ],
         )
         monkeypatch.setattr(
-            "tools.credential_files.iter_skills_files",
+            "zermes.tools.credential_files.iter_skills_files",
             lambda **kwargs: [],
         )
         monkeypatch.setattr(
-            "tools.credential_files.iter_cache_files",
+            "zermes.tools.credential_files.iter_cache_files",
             lambda **kwargs: [],
         )
         env = make_env()
@@ -387,7 +387,7 @@ class TestFileSync:
         src = tmp_path / "token.txt"
         src.write_text("host-token")
         monkeypatch.setattr(
-            "tools.credential_files.get_credential_file_mounts",
+            "zermes.tools.credential_files.get_credential_file_mounts",
             lambda: [
                 {
                     "host_path": str(src),
@@ -396,11 +396,11 @@ class TestFileSync:
             ],
         )
         monkeypatch.setattr(
-            "tools.credential_files.iter_skills_files",
+            "zermes.tools.credential_files.iter_skills_files",
             lambda **kwargs: [],
         )
         monkeypatch.setattr(
-            "tools.credential_files.iter_cache_files",
+            "zermes.tools.credential_files.iter_cache_files",
             lambda **kwargs: [],
         )
         env = make_env()
@@ -415,7 +415,7 @@ class TestFileSync:
                 _FakeRunResult(""),
             ]
         )
-        monkeypatch.setattr("tools.environments.file_sync.time.sleep", lambda _delay: None)
+        monkeypatch.setattr("zermes.tools.environments.file_sync.time.sleep", lambda _delay: None)
 
         env.cleanup()
 

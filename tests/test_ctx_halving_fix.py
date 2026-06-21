@@ -37,7 +37,7 @@ class TestParseAvailableOutputTokens:
     """Pure-function tests; no I/O required."""
 
     def _parse(self, msg):
-        from agent.model_metadata import parse_available_output_tokens_from_error
+        from zermes.agent.model_metadata import parse_available_output_tokens_from_error
         return parse_available_output_tokens_from_error(msg)
 
     # ── Should detect and extract ────────────────────────────────────────
@@ -111,7 +111,7 @@ class TestBuildAnthropicKwargsClamping:
     """
 
     def _build(self, model, max_tokens=None, context_length=None):
-        from agent.anthropic_adapter import build_anthropic_kwargs
+        from zermes.agent.anthropic_adapter import build_anthropic_kwargs
         return build_anthropic_kwargs(
             model=model,
             messages=[{"role": "user", "content": "hi"}],
@@ -159,7 +159,7 @@ class TestEphemeralMaxOutputTokens:
     def _make_agent(self):
         """Return a minimal AIAgent with api_mode='anthropic_messages' and
         a stubbed context_compressor, bypassing full __init__ cost."""
-        from run_agent import AIAgent
+        from zermes.run_agent import AIAgent
         agent = object.__new__(AIAgent)
         # Minimal attributes used by _build_api_kwargs
         agent.api_mode = "anthropic_messages"
@@ -228,8 +228,8 @@ class TestContextNotHalvedOnOutputCapError:
     """
 
     def _make_agent_with_compressor(self, context_length=200_000):
-        from run_agent import AIAgent
-        from agent.context_compressor import ContextCompressor
+        from zermes.run_agent import AIAgent
+        from zermes.agent.context_compressor import ContextCompressor
 
         agent = object.__new__(AIAgent)
         agent.api_mode = "anthropic_messages"
@@ -260,15 +260,15 @@ class TestContextNotHalvedOnOutputCapError:
     def test_output_cap_error_sets_ephemeral_not_context_length(self):
         """On 'max_tokens too large' error, _ephemeral_max_output_tokens is set
         and compressor.context_length is left unchanged."""
-        from agent.model_metadata import parse_available_output_tokens_from_error
-        from agent.model_metadata import get_next_probe_tier
+        from zermes.agent.model_metadata import parse_available_output_tokens_from_error
+        from zermes.agent.model_metadata import get_next_probe_tier
 
         error_msg = (
             "max_tokens: 128000 > context_window: 200000 "
             "- input_tokens: 180000 = available_tokens: 20000"
         )
 
-        # Simulate the handler logic from run_agent.py
+        # Simulate the handler logic from zermes.run_agent.py
         agent = self._make_agent_with_compressor(context_length=200_000)
         old_ctx = agent.context_compressor.context_length
 
@@ -284,8 +284,8 @@ class TestContextNotHalvedOnOutputCapError:
 
     def test_prompt_too_long_still_triggers_probe_tier(self):
         """Genuine prompt-too-long errors must still use get_next_probe_tier."""
-        from agent.model_metadata import parse_available_output_tokens_from_error
-        from agent.model_metadata import get_next_probe_tier
+        from zermes.agent.model_metadata import parse_available_output_tokens_from_error
+        from zermes.agent.model_metadata import get_next_probe_tier
 
         error_msg = "prompt is too long: 205000 tokens > 200000 maximum"
 
@@ -298,7 +298,7 @@ class TestContextNotHalvedOnOutputCapError:
 
     def test_output_cap_error_safety_margin(self):
         """The ephemeral value includes a 64-token safety margin below available_out."""
-        from agent.model_metadata import parse_available_output_tokens_from_error
+        from zermes.agent.model_metadata import parse_available_output_tokens_from_error
 
         error_msg = (
             "max_tokens: 32768 > context_window: 200000 "
@@ -310,7 +310,7 @@ class TestContextNotHalvedOnOutputCapError:
 
     def test_safety_margin_never_goes_below_one(self):
         """When available_out is very small, safe_out must be at least 1."""
-        from agent.model_metadata import parse_available_output_tokens_from_error
+        from zermes.agent.model_metadata import parse_available_output_tokens_from_error
 
         error_msg = (
             "max_tokens: 10 > context_window: 200000 "

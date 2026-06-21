@@ -1,6 +1,6 @@
 import pytest
 
-from worker_agents.department_memory import (
+from zermes.worker_agents.department_memory import (
     DepartmentMemoryError,
     DepartmentMemoryKind,
     DepartmentMemoryProposal,
@@ -11,11 +11,11 @@ from worker_agents.department_memory import (
     proposal_from_private_asset_input,
     proposal_from_routed_department_asset,
 )
-from worker_agents.private_assets import (
+from zermes.worker_agents.private_assets import (
     PrivateAssetProposalInput,
     PrivateAssetSensitivity,
 )
-from worker_agents.result_routing import (
+from zermes.worker_agents.result_routing import (
     RoutedProposalKind,
     RoutedProposalRecord,
 )

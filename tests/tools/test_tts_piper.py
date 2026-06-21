@@ -14,8 +14,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from tools import tts_tool
-from tools.tts_tool import (
+from zermes.tools import tts_tool
+from zermes.tools.tts_tool import (
     BUILTIN_TTS_PROVIDERS,
     DEFAULT_PIPER_VOICE,
     PROVIDER_MAX_TEXT_LENGTH,
@@ -67,7 +67,7 @@ class TestResolvePiperVoicePath:
         (tmp_path / f"{voice}.onnx").write_bytes(b"model")
         (tmp_path / f"{voice}.onnx.json").write_text("{}")
 
-        with patch("tools.tts_tool.subprocess.run") as mock_run:
+        with patch("zermes.tools.tts_tool.subprocess.run") as mock_run:
             result = _resolve_piper_voice_path(voice, tmp_path)
 
         mock_run.assert_not_called()
@@ -82,7 +82,7 @@ class TestResolvePiperVoicePath:
             (tmp_path / f"{voice}.onnx.json").write_text("{}")
             return MagicMock(returncode=0, stderr="", stdout="")
 
-        with patch("tools.tts_tool.subprocess.run", side_effect=fake_run) as mock_run:
+        with patch("zermes.tools.tts_tool.subprocess.run", side_effect=fake_run) as mock_run:
             result = _resolve_piper_voice_path(voice, tmp_path)
 
         mock_run.assert_called_once()
@@ -97,7 +97,7 @@ class TestResolvePiperVoicePath:
     def test_download_failure_raises_runtime(self, tmp_path):
         voice = "en_US-broken-medium"
         fake_result = MagicMock(returncode=1, stderr="voice not found", stdout="")
-        with patch("tools.tts_tool.subprocess.run", return_value=fake_result):
+        with patch("zermes.tools.tts_tool.subprocess.run", return_value=fake_result):
             with pytest.raises(RuntimeError, match="Piper voice download failed"):
                 _resolve_piper_voice_path(voice, tmp_path)
 
@@ -105,7 +105,7 @@ class TestResolvePiperVoicePath:
         voice = "en_US-weird-medium"
         fake_result = MagicMock(returncode=0, stderr="", stdout="")
         # Subprocess "succeeds" but doesn't actually write the files.
-        with patch("tools.tts_tool.subprocess.run", return_value=fake_result):
+        with patch("zermes.tools.tts_tool.subprocess.run", return_value=fake_result):
             with pytest.raises(RuntimeError, match="completed but .+ is missing"):
                 _resolve_piper_voice_path(voice, tmp_path)
 

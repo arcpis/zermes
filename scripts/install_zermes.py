@@ -1226,7 +1226,7 @@ def create_launcher_scripts(
     posix_path = Path(plan.bin_dir) / "zermes"
     posix_gateway_path = Path(plan.bin_dir) / "zermes-gateway"
     windows_path = Path(plan.bin_dir) / "zermes.bat"
-    windows_gateway_path = Path(plan.bin_dir) / "zermes-gateway.bat"
+    windows_gateway_path = Path(plan.bin_dir) / "zermes-zermes.gateway.bat"
     if dry_run:
         return (launcher_path, posix_path, posix_gateway_path, windows_path, windows_gateway_path)
     if not launcher_source.exists():
@@ -1368,7 +1368,7 @@ def verification_commands(
         [plan.python_path, "-m", "pip", "--version"],
     ]
     if verify_cli:
-        commands.append([plan.python_path, "-m", "hermes_cli.main", "--help"])
+        commands.append([plan.python_path, "-m", "zermes.hermes_cli.main", "--help"])
     return tuple(commands)
 
 

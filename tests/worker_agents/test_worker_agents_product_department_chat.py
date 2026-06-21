@@ -1,6 +1,6 @@
 import json
 
-from hermes_cli import worker_agents_product as product
+from zermes.hermes_cli import worker_agents_product as product
 
 
 def _worker(worker_id: str, *, status: str = "enabled") -> dict:

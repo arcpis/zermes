@@ -4,8 +4,8 @@ propagation into concurrent tool worker threads.
 Background
 ----------
 Gateway adapters (Slack, Telegram, Discord, ...) set
-``tools.approval._approval_session_key`` as a ContextVar before calling
-``agent.run_conversation`` so that dangerous-command approval prompts route
+``zermes.tools.approval._approval_session_key`` as a ContextVar before calling
+``zermes.agent.run_conversation`` so that dangerous-command approval prompts route
 back to the channel/session that initiated the tool call. When the agent
 dispatches multiple tools in parallel, it uses
 ``concurrent.futures.ThreadPoolExecutor.submit(...)`` — and ``submit`` runs
@@ -18,7 +18,7 @@ most recently* — not the one that raised the prompt. Confirmed in the
 wild on Slack with two concurrent channels: session A's `rm -rf`
 approval card was delivered to session B.
 
-The fix (4 LOC in ``run_agent.py``) snapshots the caller's context with
+The fix (4 LOC in ``zermes.run_agent.py``) snapshots the caller's context with
 ``copy_context()`` and submits ``ctx.run(_run_tool, …)`` instead of
 ``_run_tool`` directly. Mirrors ``asyncio.to_thread`` semantics.
 
@@ -46,7 +46,7 @@ def test_executor_submit_without_copy_context_does_not_propagate():
     approval-session routing race in the gateway before #16660.
 
     If this test ever fails — i.e. submit() starts propagating
-    ContextVars by default — the copy_context() wrapper in run_agent.py
+    ContextVars by default — the copy_context() wrapper in zermes.run_agent.py
     becomes redundant but not harmful, and the call-site test below
     should be updated accordingly.
     """
@@ -95,16 +95,16 @@ def test_run_tool_worker_sees_parent_approval_session_key():
     """End-to-end call-site guard.
 
     Mirrors the exact shape of the fixed call site in
-    ``run_agent.py::_execute_tool_calls_concurrent`` — a
+    ``zermes.run_agent.py::_execute_tool_calls_concurrent`` — a
     ``ThreadPoolExecutor`` with ``executor.submit(ctx.run, fn, *args)``.
-    Sets the real ``tools.approval._approval_session_key`` ContextVar
+    Sets the real ``zermes.tools.approval._approval_session_key`` ContextVar
     in the caller and asserts the worker observes it via
-    ``tools.approval.get_current_session_key()``.
+    ``zermes.tools.approval.get_current_session_key()``.
 
     If the PR's ``copy_context().run`` wrapper is reverted, this test
     fails with ``Expected 'session-A' but worker saw 'default'``.
     """
-    from tools.approval import (
+    from zermes.tools.approval import (
         _approval_session_key,
         get_current_session_key,
     )
@@ -117,7 +117,7 @@ def test_run_tool_worker_sees_parent_approval_session_key():
         observed["session_key"] = get_current_session_key(default="FALLBACK")
         barrier.set()
 
-    # Set the ContextVar the gateway would set before calling agent.run.
+    # Set the ContextVar the gateway would set before calling zermes.agent.run.
     token = _approval_session_key.set("session-A")
     try:
         with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
@@ -142,16 +142,16 @@ def test_run_agent_concurrent_executor_wraps_submit_with_copy_context():
     """Source-level guard that the fix stays at the REAL call site.
 
     The behavioral tests above exercise the pattern in isolation and
-    pass regardless of whether ``run_agent.py`` actually uses it.
+    pass regardless of whether ``zermes.run_agent.py`` actually uses it.
     This guard inspects ``_execute_tool_calls_concurrent`` directly and
     asserts that ``executor.submit`` is called with ``ctx.run`` (or
     ``copy_context()`` appears within a few lines) — so reverting the
-    wrapper in ``run_agent.py`` fails this test with a clear message.
+    wrapper in ``zermes.run_agent.py`` fails this test with a clear message.
     """
     import ast
     import inspect
 
-    import run_agent
+    import zermes.run_agent as run_agent
 
     src_path = inspect.getsourcefile(run_agent)
     assert src_path is not None
@@ -168,7 +168,7 @@ def test_run_agent_concurrent_executor_wraps_submit_with_copy_context():
 
     # Filter to the submit call inside the concurrent tool executor —
     # identifiable by passing `_run_tool` as its target. Other submit()
-    # call sites in run_agent.py (e.g. auxiliary client warm-up) are
+    # call sites in zermes.run_agent.py (e.g. auxiliary client warm-up) are
     # out of scope for this regression.
     tool_submits = []
     for call in submit_calls_in_agent:
@@ -191,12 +191,12 @@ def test_run_agent_concurrent_executor_wraps_submit_with_copy_context():
 
     assert tool_submits, (
         "Could not locate `executor.submit(... _run_tool ...)` in "
-        "run_agent.py. The call site may have been renamed — update this "
+        "zermes.run_agent.py. The call site may have been renamed — update this "
         "guard along with the refactor."
     )
     unfixed = [c for kind, c in tool_submits if kind == "unfixed"]
     assert not unfixed, (
-        "run_agent.py contains `executor.submit(_run_tool, ...)` without a "
+        "zermes.run_agent.py contains `executor.submit(_run_tool, ...)` without a "
         "`ctx.run` wrapper. This is the pre-#16660 shape: worker threads "
         "will read a fresh ContextVar and approval-session routing "
         "collapses to the os.environ fallback. Wrap with "
@@ -214,7 +214,7 @@ def test_two_concurrent_tool_batches_keep_session_keys_isolated():
     snapshot across callers (which would collapse isolation the same way
     the unfixed ``submit`` does).
     """
-    from tools.approval import (
+    from zermes.tools.approval import (
         _approval_session_key,
         get_current_session_key,
     )

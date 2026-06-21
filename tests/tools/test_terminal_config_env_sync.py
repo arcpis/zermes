@@ -72,7 +72,7 @@ def _extract_dict_keys(source: str, dict_name: str) -> set[str]:
 
 def _cli_env_map_keys() -> set[str]:
     """terminal config keys bridged by cli.load_cli_config()."""
-    import cli
+    import zermes.cli as cli
     source = inspect.getsource(cli.load_cli_config)
     return _extract_dict_keys(source, "env_mappings")
 
@@ -81,14 +81,14 @@ def _gateway_env_map_keys() -> set[str]:
     """terminal config keys bridged by gateway/run.py at module load."""
     # gateway/run.py builds the dict at module top-level (not inside a
     # function), so inspect the whole module source.
-    import gateway.run as gr
+    import zermes.gateway.run as gr
     source = inspect.getsource(gr)
     return _extract_dict_keys(source, "_terminal_env_map")
 
 
 def _save_config_env_sync_keys() -> set[str]:
     """terminal config keys bridged by ``hermes config set foo bar``."""
-    from hermes_cli import config as hc_config
+    from zermes.hermes_cli import config as hc_config
     source = inspect.getsource(hc_config.set_config_value)
     keys = _extract_dict_keys(source, "_config_to_env_sync")
     # set_config_value uses fully-qualified ``terminal.foo`` keys; strip the
@@ -114,7 +114,7 @@ _CLI_ONLY_OK = frozenset({
 
 def _terminal_tool_env_var_names() -> set[str]:
     """All TERMINAL_* env vars actually consumed by terminal_tool."""
-    import tools.terminal_tool as tt
+    import zermes.tools.terminal_tool as tt
     source = inspect.getsource(tt)
     # Naive scan: every os.getenv("TERMINAL_X", ...) and _parse_env_var("TERMINAL_X", ...).
     import re
@@ -123,7 +123,7 @@ def _terminal_tool_env_var_names() -> set[str]:
 
 
 def test_cli_and_gateway_env_maps_agree():
-    """cli.py and gateway/run.py must bridge the same set of terminal keys.
+    """zermes.cli.py and gateway/run.py must bridge the same set of terminal keys.
 
     Both feed the same downstream consumer (terminal_tool).  Drift between
     them means a config.yaml setting that "works in CLI mode but not gateway

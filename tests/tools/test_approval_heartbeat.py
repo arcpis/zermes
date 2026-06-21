@@ -4,7 +4,7 @@ Regression test for false gateway inactivity timeouts firing while the agent
 is legitimately blocked waiting for a user to respond to a dangerous-command
 approval prompt.  Before the fix, ``entry.event.wait(timeout=...)`` blocked
 silently — no ``_touch_activity()`` calls — and the gateway's inactivity
-watchdog (``agent.gateway_timeout``, default 1800s) would kill the agent
+watchdog (``zermes.agent.gateway_timeout``, default 1800s) would kill the agent
 while the user was still choosing whether to approve.
 
 The fix polls the event in short slices and fires ``touch_activity_if_due``
@@ -19,7 +19,7 @@ from unittest.mock import patch
 
 def _clear_approval_state():
     """Reset all module-level approval state between tests."""
-    from tools import approval as mod
+    from zermes.tools import approval as mod
     mod._gateway_queues.clear()
     mod._gateway_notify_cbs.clear()
     mod._session_approved.clear()

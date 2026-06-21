@@ -10,7 +10,7 @@ from __future__ import annotations
 
 
 def _extract_last_reasoning(messages):
-    """Replica of the extraction loop in run_agent.py (~line 13867).
+    """Replica of the extraction loop in zermes.run_agent.py (~line 13867).
 
     Tests pin the loop's behaviour so that refactors can't silently
     regress the per-turn semantic.

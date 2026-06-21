@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import copy
 
-from tools.schema_sanitizer import sanitize_tool_schemas, strip_pattern_and_format
+from zermes.tools.schema_sanitizer import sanitize_tool_schemas, strip_pattern_and_format
 
 
 def _tool(name: str, parameters: dict) -> dict:

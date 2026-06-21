@@ -1,4 +1,4 @@
-from worker_agents.runtime_resources import (
+from zermes.worker_agents.runtime_resources import (
     RuntimeConcurrencyDecisionKind,
     RuntimeConcurrencyDimension,
     RuntimeConcurrencyGate,

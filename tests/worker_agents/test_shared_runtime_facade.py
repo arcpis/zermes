@@ -1,6 +1,6 @@
 import pytest
 
-from worker_agents.runtime_boundary import (
+from zermes.worker_agents.runtime_boundary import (
     AgentRuntimeBoundaryError,
     AgentRuntimeLifecycle,
     AgentRuntimePersona,
@@ -12,7 +12,7 @@ from worker_agents.runtime_boundary import (
     RuntimePermissionSnapshot,
     RuntimeProfileSummary,
 )
-from worker_agents.runtime_facade import SharedAgentRuntimeFacade
+from zermes.worker_agents.runtime_facade import SharedAgentRuntimeFacade
 
 
 def _budget():

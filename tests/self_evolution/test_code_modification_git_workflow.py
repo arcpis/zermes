@@ -1,6 +1,6 @@
 import subprocess
 
-from code_modification.git_workflow import (
+from zermes.code_modification.git_workflow import (
     GitWorkflowError,
     create_or_switch_development_branch,
     current_branch,

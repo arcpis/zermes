@@ -22,8 +22,8 @@ import pytest
 from aiohttp import web
 from aiohttp.test_utils import AioHTTPTestCase, TestClient, TestServer
 
-from gateway.config import GatewayConfig, Platform, PlatformConfig
-from gateway.platforms.api_server import (
+from zermes.gateway.config import GatewayConfig, Platform, PlatformConfig
+from zermes.gateway.platforms.api_server import (
     APIServerAdapter,
     ResponseStore,
     _IdempotencyCache,
@@ -44,7 +44,7 @@ class TestCheckRequirements:
     def test_returns_true_when_aiohttp_available(self):
         assert check_api_server_requirements() is True
 
-    @patch("gateway.platforms.api_server.AIOHTTP_AVAILABLE", False)
+    @patch("zermes.gateway.platforms.api_server.AIOHTTP_AVAILABLE", False)
     def test_returns_false_without_aiohttp(self):
         assert check_api_server_requirements() is False
 
@@ -253,26 +253,26 @@ class TestAdapterInit:
             def __init__(self, **kwargs):
                 captured.update(kwargs)
 
-        monkeypatch.setattr("run_agent.AIAgent", FakeAgent)
+        monkeypatch.setattr("zermes.run_agent.AIAgent", FakeAgent)
         monkeypatch.setattr(
-            "gateway.run._resolve_runtime_agent_kwargs",
+            "zermes.gateway.run._resolve_runtime_agent_kwargs",
             lambda: {
                 "provider": "openai-codex",
                 "base_url": "https://example.test/v1",
                 "api_mode": "codex_responses",
             },
         )
-        monkeypatch.setattr("gateway.run._resolve_gateway_model", lambda: "gpt-5.5")
+        monkeypatch.setattr("zermes.gateway.run._resolve_gateway_model", lambda: "gpt-5.5")
         monkeypatch.setattr(
-            "gateway.run._load_gateway_config",
+            "zermes.gateway.run._load_gateway_config",
             lambda: {"agent": {"reasoning_effort": "xhigh"}},
         )
         monkeypatch.setattr(
-            "gateway.run.GatewayRunner._load_reasoning_config",
+            "zermes.gateway.run.GatewayRunner._load_reasoning_config",
             staticmethod(lambda: {"enabled": True, "effort": "xhigh"}),
         )
-        monkeypatch.setattr("gateway.run.GatewayRunner._load_fallback_model", staticmethod(lambda: None))
-        monkeypatch.setattr("hermes_cli.tools_config._get_platform_tools", lambda *_: set())
+        monkeypatch.setattr("zermes.gateway.run.GatewayRunner._load_fallback_model", staticmethod(lambda: None))
+        monkeypatch.setattr("zermes.hermes_cli.tools_config._get_platform_tools", lambda *_: set())
 
         adapter = APIServerAdapter(PlatformConfig(enabled=True))
         monkeypatch.setattr(adapter, "_ensure_session_db", lambda: None)
@@ -395,7 +395,7 @@ class TestAgentExecution:
                 session_id="session-123",
             )
 
-        # _run_agent annotates result with the effective agent.session_id
+        # _run_agent annotates result with the effective zermes.agent.session_id
         # when it's a real string, so the response-header writer can track
         # compression-triggered session rotations (#16938). The mock agent
         # here doesn't set an explicit session_id string so the guard skips
@@ -457,7 +457,7 @@ class TestHealthDetailedEndpoint:
     async def test_health_detailed_returns_ok(self, adapter):
         """GET /health/detailed returns status, platform, and runtime fields."""
         app = _create_app(adapter)
-        with patch("gateway.status.read_runtime_status", return_value={
+        with patch("zermes.gateway.status.read_runtime_status", return_value={
             "gateway_state": "running",
             "platforms": {"telegram": {"state": "connected"}},
             "active_agents": 2,
@@ -480,7 +480,7 @@ class TestHealthDetailedEndpoint:
     async def test_health_detailed_no_runtime_status(self, adapter):
         """When gateway_state.json is missing, fields are None."""
         app = _create_app(adapter)
-        with patch("gateway.status.read_runtime_status", return_value=None):
+        with patch("zermes.gateway.status.read_runtime_status", return_value=None):
             async with TestClient(TestServer(app)) as cli:
                 resp = await cli.get("/health/detailed")
                 assert resp.status == 200
@@ -493,7 +493,7 @@ class TestHealthDetailedEndpoint:
     async def test_health_detailed_does_not_require_auth(self, auth_adapter):
         """Health detailed endpoint should be accessible without auth, like /health."""
         app = _create_app(auth_adapter)
-        with patch("gateway.status.read_runtime_status", return_value=None):
+        with patch("zermes.gateway.status.read_runtime_status", return_value=None):
             async with TestClient(TestServer(app)) as cli:
                 resp = await cli.get("/health/detailed")
                 assert resp.status == 200
@@ -520,7 +520,7 @@ class TestModelsEndpoint:
     @pytest.mark.asyncio
     async def test_models_returns_profile_name(self):
         """When running under a named profile, /v1/models advertises the profile name."""
-        with patch("gateway.platforms.api_server.APIServerAdapter._resolve_model_name", return_value="lucas"):
+        with patch("zermes.gateway.platforms.api_server.APIServerAdapter._resolve_model_name", return_value="lucas"):
             adapter = _make_adapter()
         app = _create_app(adapter)
         async with TestClient(TestServer(app)) as cli:
@@ -543,12 +543,12 @@ class TestModelsEndpoint:
 
     def test_resolve_model_name_default_profile(self):
         """Default profile falls back to 'hermes-agent'."""
-        with patch("hermes_cli.profiles.get_active_profile_name", return_value="default"):
+        with patch("zermes.hermes_cli.profiles.get_active_profile_name", return_value="default"):
             assert APIServerAdapter._resolve_model_name("") == "hermes-agent"
 
     def test_resolve_model_name_named_profile(self):
         """Named profile uses the profile name as model name."""
-        with patch("hermes_cli.profiles.get_active_profile_name", return_value="lucas"):
+        with patch("zermes.hermes_cli.profiles.get_active_profile_name", return_value="lucas"):
             assert APIServerAdapter._resolve_model_name("") == "lucas"
 
     @pytest.mark.asyncio
@@ -685,7 +685,7 @@ class TestChatCompletionsEndpoint:
     async def test_stream_sends_keepalive_during_quiet_tool_gap(self, adapter):
         """Idle SSE streams should send keepalive comments while tools run silently."""
         import asyncio
-        import gateway.platforms.api_server as api_server_mod
+        import zermes.gateway.platforms.api_server as api_server_mod
 
         app = _create_app(adapter)
         async with TestClient(TestServer(app)) as cli:
@@ -1012,7 +1012,7 @@ class TestChatCompletionsEndpoint:
 
     @pytest.mark.asyncio
     async def test_successful_completion(self, adapter):
-        """Test a successful chat completion with mocked agent."""
+        """Test a successful chat completion with mocked zermes.agent."""
         mock_result = {
             "final_response": "Hello! How can I help you today?",
             "messages": [],
@@ -1862,7 +1862,7 @@ class TestResponsesStreaming:
                 written_payloads.append(payload)
 
         # Patch web.StreamResponse for the duration of the writer call.
-        import gateway.platforms.api_server as api_mod
+        import zermes.gateway.platforms.api_server as api_mod
         import queue as _q
 
         stream_q: _q.Queue = _q.Queue()
@@ -1933,7 +1933,7 @@ class TestResponsesStreaming:
                 if write_call_count["n"] >= 3:
                     raise ConnectionResetError("simulated client disconnect")
 
-        import gateway.platforms.api_server as api_mod
+        import zermes.gateway.platforms.api_server as api_mod
         import queue as _q
 
         stream_q: _q.Queue = _q.Queue()
@@ -2022,14 +2022,14 @@ class TestConfigIntegration:
 
     def test_env_override_enables_api_server(self, monkeypatch):
         monkeypatch.setenv("API_SERVER_ENABLED", "true")
-        from gateway.config import load_gateway_config
+        from zermes.gateway.config import load_gateway_config
         config = load_gateway_config()
         assert Platform.API_SERVER in config.platforms
         assert config.platforms[Platform.API_SERVER].enabled is True
 
     def test_env_override_with_key(self, monkeypatch):
         monkeypatch.setenv("API_SERVER_KEY", "sk-mykey")
-        from gateway.config import load_gateway_config
+        from zermes.gateway.config import load_gateway_config
         config = load_gateway_config()
         assert Platform.API_SERVER in config.platforms
         assert config.platforms[Platform.API_SERVER].extra.get("key") == "sk-mykey"
@@ -2038,7 +2038,7 @@ class TestConfigIntegration:
         monkeypatch.setenv("API_SERVER_ENABLED", "true")
         monkeypatch.setenv("API_SERVER_PORT", "9999")
         monkeypatch.setenv("API_SERVER_HOST", "0.0.0.0")
-        from gateway.config import load_gateway_config
+        from zermes.gateway.config import load_gateway_config
         config = load_gateway_config()
         assert config.platforms[Platform.API_SERVER].extra.get("port") == 9999
         assert config.platforms[Platform.API_SERVER].extra.get("host") == "0.0.0.0"
@@ -2049,7 +2049,7 @@ class TestConfigIntegration:
             "API_SERVER_CORS_ORIGINS",
             "http://localhost:3000, http://127.0.0.1:3000",
         )
-        from gateway.config import load_gateway_config
+        from zermes.gateway.config import load_gateway_config
         config = load_gateway_config()
         assert config.platforms[Platform.API_SERVER].extra.get("cors_origins") == [
             "http://localhost:3000",
@@ -2764,7 +2764,7 @@ class TestSessionIdHeader:
         app = _create_app(auth_adapter)
         async with TestClient(TestServer(app)) as cli:
             with patch.object(auth_adapter, "_run_agent", new_callable=AsyncMock) as mock_run, \
-                 patch("hermes_state.SessionDB", side_effect=Exception("DB unavailable")):
+                 patch("zermes.hermes_state.SessionDB", side_effect=Exception("DB unavailable")):
                 mock_run.return_value = (mock_result, {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0})
 
                 resp = await cli.post(

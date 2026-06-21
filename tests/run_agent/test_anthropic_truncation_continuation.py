@@ -51,7 +51,7 @@ class TestTruncatedAnthropicResponseNormalization:
 
     def test_text_only_truncation_produces_text_content_no_tool_calls(self):
         """Pure-text Anthropic truncation → continuation path should fire."""
-        from agent.transports import get_transport
+        from zermes.agent.transports import get_transport
 
         response = _make_anthropic_response(
             [_make_anthropic_text_block("partial response that was cut off")]
@@ -71,7 +71,7 @@ class TestTruncatedAnthropicResponseNormalization:
 
     def test_truncated_tool_call_produces_tool_calls(self):
         """Tool-use truncation → tool-call retry path should fire."""
-        from agent.transports import get_transport
+        from zermes.agent.transports import get_transport
 
         response = _make_anthropic_response(
             [
@@ -89,7 +89,7 @@ class TestTruncatedAnthropicResponseNormalization:
 
     def test_empty_content_does_not_crash(self):
         """Empty response.content — defensive: treat as a truncation with no text."""
-        from agent.transports import get_transport
+        from zermes.agent.transports import get_transport
 
         response = _make_anthropic_response([])
         nr = get_transport("anthropic_messages").normalize_response(response)
@@ -104,7 +104,7 @@ class TestContinuationLogicBranching:
 
     @pytest.mark.parametrize("api_mode", ["chat_completions", "bedrock_converse", "anthropic_messages"])
     def test_all_three_api_modes_hit_continuation_branch(self, api_mode):
-        # The guard in run_agent.py is:
+        # The guard in zermes.run_agent.py is:
         #   if self.api_mode in ("chat_completions", "bedrock_converse", "anthropic_messages"):
         assert api_mode in ("chat_completions", "bedrock_converse", "anthropic_messages")
 

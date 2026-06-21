@@ -19,7 +19,7 @@ import yaml
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 
-from agent.model_metadata import (
+from zermes.agent.model_metadata import (
     CONTEXT_PROBE_TIERS,
     DEFAULT_CONTEXT_LENGTHS,
     _strip_provider_prefix,
@@ -179,12 +179,12 @@ class TestDefaultContextLengths:
     def test_grok_substring_matching(self):
         # Longest-first substring matching must resolve the real xAI model
         # IDs to the correct fallback entries without 128k probe-down.
-        from agent.model_metadata import get_model_context_length
+        from zermes.agent.model_metadata import get_model_context_length
         from unittest.mock import patch as mock_patch
 
         # Fake the provider/API/cache layers so the lookup falls through
         # to DEFAULT_CONTEXT_LENGTHS.
-        with mock_patch("agent.model_metadata.fetch_model_metadata", return_value={}),              mock_patch("agent.model_metadata.fetch_endpoint_model_metadata", return_value={}),              mock_patch("agent.model_metadata.get_cached_context_length", return_value=None):
+        with mock_patch("zermes.agent.model_metadata.fetch_model_metadata", return_value={}),              mock_patch("zermes.agent.model_metadata.fetch_endpoint_model_metadata", return_value={}),              mock_patch("zermes.agent.model_metadata.get_cached_context_length", return_value=None):
             cases = [
                 ("grok-4.20-0309-reasoning", 2000000),
                 ("grok-4.20-0309-non-reasoning", 2000000),
@@ -211,7 +211,7 @@ class TestDefaultContextLengths:
                 )
 
     def test_deepseek_v4_models_1m_context(self):
-        from agent.model_metadata import get_model_context_length
+        from zermes.agent.model_metadata import get_model_context_length
         from unittest.mock import patch as mock_patch
 
         expected_keys = {
@@ -230,9 +230,9 @@ class TestDefaultContextLengths:
         # ids (native DeepSeek) and the vendor-prefixed forms (OpenRouter
         # / Nous Portal) to 1M without probing down to the legacy 128K
         # ``deepseek`` substring fallback.
-        with mock_patch("agent.model_metadata.fetch_model_metadata", return_value={}), \
-             mock_patch("agent.model_metadata.fetch_endpoint_model_metadata", return_value={}), \
-             mock_patch("agent.model_metadata.get_cached_context_length", return_value=None):
+        with mock_patch("zermes.agent.model_metadata.fetch_model_metadata", return_value={}),\
+             mock_patch("zermes.agent.model_metadata.fetch_endpoint_model_metadata", return_value={}),\
+             mock_patch("zermes.agent.model_metadata.get_cached_context_length", return_value=None):
             cases = [
                 ("deepseek-v4-pro", 1_000_000),
                 ("deepseek-v4-flash", 1_000_000),
@@ -267,7 +267,7 @@ class TestCodexOAuthContextLength:
     """
 
     def setup_method(self):
-        import agent.model_metadata as mm
+        import zermes.agent.model_metadata as mm
         mm._codex_oauth_context_cache = {}
         mm._codex_oauth_context_cache_time = 0.0
 
@@ -275,10 +275,10 @@ class TestCodexOAuthContextLength:
         """With no access token, the hardcoded Codex fallback table wins
         over models.dev (which reports 1.05M for gpt-5.5 but Codex is 272k).
         """
-        from agent.model_metadata import get_model_context_length
+        from zermes.agent.model_metadata import get_model_context_length
 
-        with patch("agent.model_metadata.get_cached_context_length", return_value=None), \
-             patch("agent.model_metadata.save_context_length"):
+        with patch("zermes.agent.model_metadata.get_cached_context_length", return_value=None),\
+             patch("zermes.agent.model_metadata.save_context_length"):
             for model in (
                 "gpt-5.5",
                 "gpt-5.4",
@@ -302,7 +302,7 @@ class TestCodexOAuthContextLength:
     def test_live_probe_overrides_fallback(self):
         """When a token is provided, the live /models probe is preferred
         and its context_window drives the result."""
-        from agent.model_metadata import get_model_context_length
+        from zermes.agent.model_metadata import get_model_context_length
 
         fake_response = MagicMock()
         fake_response.status_code = 200
@@ -313,9 +313,9 @@ class TestCodexOAuthContextLength:
             ]
         }
 
-        with patch("agent.model_metadata.requests.get", return_value=fake_response), \
-             patch("agent.model_metadata.get_cached_context_length", return_value=None), \
-             patch("agent.model_metadata.save_context_length"):
+        with patch("zermes.agent.model_metadata.requests.get", return_value=fake_response),\
+             patch("zermes.agent.model_metadata.get_cached_context_length", return_value=None),\
+             patch("zermes.agent.model_metadata.save_context_length"):
             ctx_55 = get_model_context_length(
                 model="gpt-5.5",
                 base_url="https://chatgpt.com/backend-api/codex",
@@ -334,15 +334,15 @@ class TestCodexOAuthContextLength:
     def test_probe_failure_falls_back_to_hardcoded(self):
         """If the probe fails (non-200 / network error), we still return
         the hardcoded 272k rather than leaking through to models.dev 1.05M."""
-        from agent.model_metadata import get_model_context_length
+        from zermes.agent.model_metadata import get_model_context_length
 
         fake_response = MagicMock()
         fake_response.status_code = 401
         fake_response.json.return_value = {}
 
-        with patch("agent.model_metadata.requests.get", return_value=fake_response), \
-             patch("agent.model_metadata.get_cached_context_length", return_value=None), \
-             patch("agent.model_metadata.save_context_length"):
+        with patch("zermes.agent.model_metadata.requests.get", return_value=fake_response),\
+             patch("zermes.agent.model_metadata.get_cached_context_length", return_value=None),\
+             patch("zermes.agent.model_metadata.save_context_length"):
             ctx = get_model_context_length(
                 model="gpt-5.5",
                 base_url="https://chatgpt.com/backend-api/codex",
@@ -355,16 +355,16 @@ class TestCodexOAuthContextLength:
         """Resolving gpt-5.5 on non-Codex providers must NOT use the Codex
         272k override — OpenRouter / direct OpenAI API have different limits.
         """
-        from agent.model_metadata import get_model_context_length
+        from zermes.agent.model_metadata import get_model_context_length
 
         # OpenRouter — should hit its own catalog path first; when mocked
         # empty, falls through to hardcoded DEFAULT_CONTEXT_LENGTHS (1.05M,
         # matching the real direct-API value — Codex OAuth's 272k cap is
         # provider-specific and must not leak here).
-        with patch("agent.model_metadata.fetch_model_metadata", return_value={}), \
-             patch("agent.model_metadata.fetch_endpoint_model_metadata", return_value={}), \
-             patch("agent.model_metadata.get_cached_context_length", return_value=None), \
-             patch("agent.models_dev.lookup_models_dev_context", return_value=None):
+        with patch("zermes.agent.model_metadata.fetch_model_metadata", return_value={}),\
+             patch("zermes.agent.model_metadata.fetch_endpoint_model_metadata", return_value={}),\
+             patch("zermes.agent.model_metadata.get_cached_context_length", return_value=None),\
+             patch("zermes.agent.models_dev.lookup_models_dev_context", return_value=None):
             ctx = get_model_context_length(
                 model="openai/gpt-5.5",
                 base_url="https://openrouter.ai/api/v1",
@@ -383,7 +383,7 @@ class TestCodexOAuthContextLength:
         Codex OAuth caps at 272k for every slug, so any cached Codex
         entry >= 400k must be dropped and re-resolved via the live probe.
         """
-        from agent import model_metadata as mm
+        from zermes.agent import model_metadata as mm
 
         # Isolate the cache file to tmp_path
         cache_file = tmp_path / "context_length_cache.yaml"
@@ -404,8 +404,8 @@ class TestCodexOAuthContextLength:
             "models": [{"slug": "gpt-5.5", "context_window": 272_000}]
         }
 
-        with patch("agent.model_metadata.requests.get", return_value=fake_response), \
-             patch("agent.model_metadata.save_context_length") as mock_save:
+        with patch("zermes.agent.model_metadata.requests.get", return_value=fake_response),\
+             patch("zermes.agent.model_metadata.save_context_length") as mock_save:
             ctx = mm.get_model_context_length(
                 model="gpt-5.5",
                 base_url=base_url,
@@ -424,7 +424,7 @@ class TestCodexOAuthContextLength:
     def test_fresh_codex_cache_under_400k_is_respected(self, tmp_path, monkeypatch):
         """Codex entries at the correct 272k must NOT be invalidated —
         only stale pre-fix values (>= 400k) get dropped."""
-        from agent import model_metadata as mm
+        from zermes.agent import model_metadata as mm
 
         cache_file = tmp_path / "context_length_cache.yaml"
         monkeypatch.setattr(mm, "_get_context_cache_path", lambda: cache_file)
@@ -436,7 +436,7 @@ class TestCodexOAuthContextLength:
         }}))
 
         # If the invalidation incorrectly fired, this would be called; assert it isn't.
-        with patch("agent.model_metadata.requests.get") as mock_get:
+        with patch("zermes.agent.model_metadata.requests.get") as mock_get:
             ctx = mm.get_model_context_length(
                 model="gpt-5.5",
                 base_url=base_url,
@@ -449,7 +449,7 @@ class TestCodexOAuthContextLength:
     def test_stale_invalidation_scoped_to_codex_provider(self, tmp_path, monkeypatch):
         """A cached 1M entry for a non-Codex provider (e.g. Anthropic opus on
         OpenRouter, legitimately 1M) must NOT be invalidated by this guard."""
-        from agent import model_metadata as mm
+        from zermes.agent import model_metadata as mm
 
         cache_file = tmp_path / "context_length_cache.yaml"
         monkeypatch.setattr(mm, "_get_context_cache_path", lambda: cache_file)
@@ -474,76 +474,76 @@ class TestCodexOAuthContextLength:
 # =========================================================================
 
 class TestGetModelContextLength:
-    @patch("agent.model_metadata.fetch_model_metadata")
+    @patch("zermes.agent.model_metadata.fetch_model_metadata")
     def test_known_model_from_api(self, mock_fetch):
         mock_fetch.return_value = {
             "test/model": {"context_length": 32000}
         }
         assert get_model_context_length("test/model") == 32000
 
-    @patch("agent.model_metadata.fetch_model_metadata")
+    @patch("zermes.agent.model_metadata.fetch_model_metadata")
     def test_fallback_to_defaults(self, mock_fetch):
         mock_fetch.return_value = {}
         assert get_model_context_length("anthropic/claude-sonnet-4") == 200000
 
-    @patch("agent.model_metadata.fetch_model_metadata")
+    @patch("zermes.agent.model_metadata.fetch_model_metadata")
     def test_unknown_model_returns_first_probe_tier(self, mock_fetch):
         mock_fetch.return_value = {}
         assert get_model_context_length("unknown/never-heard-of-this") == CONTEXT_PROBE_TIERS[0]
 
-    @patch("agent.model_metadata.fetch_model_metadata")
+    @patch("zermes.agent.model_metadata.fetch_model_metadata")
     def test_partial_match_in_defaults(self, mock_fetch):
         mock_fetch.return_value = {}
         assert get_model_context_length("openai/gpt-4o") == 128000
 
-    @patch("agent.model_metadata.fetch_model_metadata")
+    @patch("zermes.agent.model_metadata.fetch_model_metadata")
     def test_qwen3_coder_plus_context_length(self, mock_fetch):
         """qwen3-coder-plus has a 1M context window, not the generic 128K Qwen default."""
         mock_fetch.return_value = {}
         assert get_model_context_length("qwen3-coder-plus") == 1000000
 
-    @patch("agent.model_metadata.fetch_model_metadata")
+    @patch("zermes.agent.model_metadata.fetch_model_metadata")
     def test_qwen3_coder_context_length(self, mock_fetch):
         """qwen3-coder has a 256K context window, not the generic 128K Qwen default."""
         mock_fetch.return_value = {}
         assert get_model_context_length("qwen3-coder") == 262144
 
-    @patch("agent.model_metadata.fetch_model_metadata")
+    @patch("zermes.agent.model_metadata.fetch_model_metadata")
     def test_qwen_generic_context_length(self, mock_fetch):
         """Generic qwen models still get the 128K default."""
         mock_fetch.return_value = {}
         assert get_model_context_length("qwen3-plus") == 131072
 
-    @patch("agent.model_metadata.fetch_model_metadata")
+    @patch("zermes.agent.model_metadata.fetch_model_metadata")
     def test_api_missing_context_length_key(self, mock_fetch):
         """Model in API but without context_length → defaults to the top
         probe tier (currently 256K)."""
         mock_fetch.return_value = {"test/model": {"name": "Test"}}
         assert get_model_context_length("test/model") == CONTEXT_PROBE_TIERS[0]
 
-    @patch("agent.model_metadata.fetch_model_metadata")
+    @patch("zermes.agent.model_metadata.fetch_model_metadata")
     def test_cache_takes_priority_over_api(self, mock_fetch, tmp_path):
         """Persistent cache should be checked BEFORE API metadata."""
         mock_fetch.return_value = {"my/model": {"context_length": 999999}}
         cache_file = tmp_path / "cache.yaml"
-        with patch("agent.model_metadata._get_context_cache_path", return_value=cache_file):
+        with patch("zermes.agent.model_metadata._get_context_cache_path", return_value=cache_file):
             save_context_length("my/model", "http://local", 32768)
             result = get_model_context_length("my/model", base_url="http://local")
             assert result == 32768  # cache wins over API's 999999
 
-    @patch("agent.model_metadata.fetch_model_metadata")
+    @patch("zermes.agent.model_metadata.fetch_model_metadata")
     def test_no_base_url_skips_cache(self, mock_fetch, tmp_path):
         """Without base_url, cache lookup is skipped."""
         mock_fetch.return_value = {}
         cache_file = tmp_path / "cache.yaml"
-        with patch("agent.model_metadata._get_context_cache_path", return_value=cache_file):
+        with patch("zermes.agent.model_metadata._get_context_cache_path", return_value=cache_file):
             save_context_length("custom/model", "http://local", 32768)
             # No base_url → cache skipped → falls to probe tier
             result = get_model_context_length("custom/model")
             assert result == CONTEXT_PROBE_TIERS[0]
 
-    @patch("agent.model_metadata.fetch_model_metadata")
-    @patch("agent.model_metadata.fetch_endpoint_model_metadata")
+    @patch("zermes.agent.model_metadata.fetch_model_metadata")
+    @patch("zermes.agent.model_metadata.fetch_endpoint_model_metadata")
     def test_custom_endpoint_metadata_beats_fuzzy_default(self, mock_endpoint_fetch, mock_fetch):
         mock_fetch.return_value = {}
         mock_endpoint_fetch.return_value = {
@@ -558,8 +558,8 @@ class TestGetModelContextLength:
 
         assert result == 65536
 
-    @patch("agent.model_metadata.fetch_model_metadata")
-    @patch("agent.model_metadata.fetch_endpoint_model_metadata")
+    @patch("zermes.agent.model_metadata.fetch_model_metadata")
+    @patch("zermes.agent.model_metadata.fetch_endpoint_model_metadata")
     def test_custom_endpoint_without_metadata_skips_name_based_default(self, mock_endpoint_fetch, mock_fetch):
         mock_fetch.return_value = {}
         mock_endpoint_fetch.return_value = {}
@@ -572,8 +572,8 @@ class TestGetModelContextLength:
 
         assert result == CONTEXT_PROBE_TIERS[0]
 
-    @patch("agent.model_metadata.fetch_model_metadata")
-    @patch("agent.model_metadata.fetch_endpoint_model_metadata")
+    @patch("zermes.agent.model_metadata.fetch_model_metadata")
+    @patch("zermes.agent.model_metadata.fetch_endpoint_model_metadata")
     def test_custom_endpoint_single_model_fallback(self, mock_endpoint_fetch, mock_fetch):
         """Single-model servers: use the only model even if name doesn't match."""
         mock_fetch.return_value = {}
@@ -589,8 +589,8 @@ class TestGetModelContextLength:
 
         assert result == 131072
 
-    @patch("agent.model_metadata.fetch_model_metadata")
-    @patch("agent.model_metadata.fetch_endpoint_model_metadata")
+    @patch("zermes.agent.model_metadata.fetch_model_metadata")
+    @patch("zermes.agent.model_metadata.fetch_endpoint_model_metadata")
     def test_custom_endpoint_fuzzy_substring_match(self, mock_endpoint_fetch, mock_fetch):
         """Fuzzy match: configured model name is substring of endpoint model."""
         mock_fetch.return_value = {}
@@ -607,7 +607,7 @@ class TestGetModelContextLength:
 
         assert result == 131072
 
-    @patch("agent.model_metadata.fetch_model_metadata")
+    @patch("zermes.agent.model_metadata.fetch_model_metadata")
     def test_config_context_length_overrides_all(self, mock_fetch):
         """Explicit config_context_length takes priority over everything."""
         mock_fetch.return_value = {
@@ -621,7 +621,7 @@ class TestGetModelContextLength:
 
         assert result == 65536
 
-    @patch("agent.model_metadata.fetch_model_metadata")
+    @patch("zermes.agent.model_metadata.fetch_model_metadata")
     def test_config_context_length_zero_is_ignored(self, mock_fetch):
         """config_context_length=0 should be treated as unset."""
         mock_fetch.return_value = {}
@@ -633,7 +633,7 @@ class TestGetModelContextLength:
 
         assert result == 200000
 
-    @patch("agent.model_metadata.fetch_model_metadata")
+    @patch("zermes.agent.model_metadata.fetch_model_metadata")
     def test_config_context_length_none_is_ignored(self, mock_fetch):
         """config_context_length=None should be treated as unset."""
         mock_fetch.return_value = {}
@@ -662,7 +662,7 @@ class TestBedrockContextResolution:
     Fix: promote the Bedrock branch ahead of the custom-endpoint probe.
     """
 
-    @patch("agent.model_metadata.fetch_endpoint_model_metadata")
+    @patch("zermes.agent.model_metadata.fetch_endpoint_model_metadata")
     def test_bedrock_provider_returns_static_table_before_probe(self, mock_fetch):
         """provider='bedrock' resolves via static table, bypasses /models probe."""
         ctx = get_model_context_length(
@@ -675,7 +675,7 @@ class TestBedrockContextResolution:
         assert ctx == 200000
         mock_fetch.assert_not_called()
 
-    @patch("agent.model_metadata.fetch_endpoint_model_metadata")
+    @patch("zermes.agent.model_metadata.fetch_endpoint_model_metadata")
     def test_bedrock_url_without_provider_hint(self, mock_fetch):
         """bedrock-runtime host infers Bedrock even when provider is omitted."""
         ctx = get_model_context_length(
@@ -685,7 +685,7 @@ class TestBedrockContextResolution:
         assert ctx == 200000
         mock_fetch.assert_not_called()
 
-    @patch("agent.model_metadata.fetch_endpoint_model_metadata")
+    @patch("zermes.agent.model_metadata.fetch_endpoint_model_metadata")
     def test_non_bedrock_url_still_probes(self, mock_fetch):
         """Non-Bedrock hosts still reach the custom-endpoint probe."""
         mock_fetch.return_value = {"some-model": {"context_length": 50000}}
@@ -723,7 +723,7 @@ class TestStripProviderPrefix:
         assert _strip_provider_prefix("gpt-4o") == "gpt-4o"
         assert _strip_provider_prefix("anthropic/claude-sonnet-4") == "anthropic/claude-sonnet-4"
 
-    @patch("agent.model_metadata.fetch_model_metadata")
+    @patch("zermes.agent.model_metadata.fetch_model_metadata")
     def test_ollama_model_tag_not_mangled_in_context_lookup(self, mock_fetch):
         """Ensure 'qwen3.5:27b' is NOT reduced to '27b' during context length lookup.
 
@@ -731,8 +731,8 @@ class TestStripProviderPrefix:
         must reach the endpoint metadata lookup intact.
         """
         mock_fetch.return_value = {}
-        with patch("agent.model_metadata.fetch_endpoint_model_metadata") as mock_ep, \
-             patch("agent.model_metadata._is_custom_endpoint", return_value=True):
+        with patch("zermes.agent.model_metadata.fetch_endpoint_model_metadata") as mock_ep,\
+             patch("zermes.agent.model_metadata._is_custom_endpoint", return_value=True):
             mock_ep.return_value = {"qwen3.5:27b": {"context_length": 32768}}
             result = get_model_context_length(
                 "qwen3.5:27b",
@@ -747,11 +747,11 @@ class TestStripProviderPrefix:
 
 class TestFetchModelMetadata:
     def _reset_cache(self):
-        import agent.model_metadata as mm
+        import zermes.agent.model_metadata as mm
         mm._model_metadata_cache = {}
         mm._model_metadata_cache_time = 0
 
-    @patch("agent.model_metadata.requests.get")
+    @patch("zermes.agent.model_metadata.requests.get")
     def test_caches_result(self, mock_get):
         self._reset_cache()
         mock_response = MagicMock()
@@ -769,17 +769,17 @@ class TestFetchModelMetadata:
         assert "test/model" in result2
         assert mock_get.call_count == 1  # cached
 
-    @patch("agent.model_metadata.requests.get")
+    @patch("zermes.agent.model_metadata.requests.get")
     def test_api_failure_returns_empty_on_cold_cache(self, mock_get):
         self._reset_cache()
         mock_get.side_effect = Exception("Network error")
         result = fetch_model_metadata(force_refresh=True)
         assert result == {}
 
-    @patch("agent.model_metadata.requests.get")
+    @patch("zermes.agent.model_metadata.requests.get")
     def test_api_failure_returns_stale_cache(self, mock_get):
         """On API failure with existing cache, stale data is returned."""
-        import agent.model_metadata as mm
+        import zermes.agent.model_metadata as mm
         mm._model_metadata_cache = {"old/model": {"context_length": 50000}}
         mm._model_metadata_cache_time = 0  # expired
 
@@ -788,7 +788,7 @@ class TestFetchModelMetadata:
         assert "old/model" in result
         assert result["old/model"]["context_length"] == 50000
 
-    @patch("agent.model_metadata.requests.get")
+    @patch("zermes.agent.model_metadata.requests.get")
     def test_canonical_slug_aliasing(self, mock_get):
         """Models with canonical_slug get indexed under both IDs."""
         self._reset_cache()
@@ -810,7 +810,7 @@ class TestFetchModelMetadata:
         assert "anthropic/claude-3.5-sonnet" in result
         assert result["anthropic/claude-3.5-sonnet"]["context_length"] == 200000
 
-    @patch("agent.model_metadata.requests.get")
+    @patch("zermes.agent.model_metadata.requests.get")
     def test_provider_prefixed_models_get_bare_aliases(self, mock_get):
         self._reset_cache()
         mock_response = MagicMock()
@@ -829,10 +829,10 @@ class TestFetchModelMetadata:
         assert result["provider/test-model"]["context_length"] == 123456
         assert result["test-model"]["context_length"] == 123456
 
-    @patch("agent.model_metadata.requests.get")
+    @patch("zermes.agent.model_metadata.requests.get")
     def test_ttl_expiry_triggers_refetch(self, mock_get):
         """Cache expires after _MODEL_CACHE_TTL seconds."""
-        import agent.model_metadata as mm
+        import zermes.agent.model_metadata as mm
         self._reset_cache()
 
         mock_response = MagicMock()
@@ -850,7 +850,7 @@ class TestFetchModelMetadata:
         fetch_model_metadata()
         assert mock_get.call_count == 2  # refetched
 
-    @patch("agent.model_metadata.requests.get")
+    @patch("zermes.agent.model_metadata.requests.get")
     def test_malformed_json_no_data_key(self, mock_get):
         """API returns JSON without 'data' key — empty cache, no crash."""
         self._reset_cache()
@@ -968,18 +968,18 @@ class TestParseContextLimitFromError:
 class TestContextLengthCache:
     def test_save_and_load(self, tmp_path):
         cache_file = tmp_path / "cache.yaml"
-        with patch("agent.model_metadata._get_context_cache_path", return_value=cache_file):
+        with patch("zermes.agent.model_metadata._get_context_cache_path", return_value=cache_file):
             save_context_length("test/model", "http://localhost:8080/v1", 32768)
             assert get_cached_context_length("test/model", "http://localhost:8080/v1") == 32768
 
     def test_missing_cache_returns_none(self, tmp_path):
         cache_file = tmp_path / "nonexistent.yaml"
-        with patch("agent.model_metadata._get_context_cache_path", return_value=cache_file):
+        with patch("zermes.agent.model_metadata._get_context_cache_path", return_value=cache_file):
             assert get_cached_context_length("test/model", "http://x") is None
 
     def test_multiple_models_cached(self, tmp_path):
         cache_file = tmp_path / "cache.yaml"
-        with patch("agent.model_metadata._get_context_cache_path", return_value=cache_file):
+        with patch("zermes.agent.model_metadata._get_context_cache_path", return_value=cache_file):
             save_context_length("model-a", "http://a", 64000)
             save_context_length("model-b", "http://b", 128000)
             assert get_cached_context_length("model-a", "http://a") == 64000
@@ -987,7 +987,7 @@ class TestContextLengthCache:
 
     def test_same_model_different_providers(self, tmp_path):
         cache_file = tmp_path / "cache.yaml"
-        with patch("agent.model_metadata._get_context_cache_path", return_value=cache_file):
+        with patch("zermes.agent.model_metadata._get_context_cache_path", return_value=cache_file):
             save_context_length("llama-3", "http://local:8080", 32768)
             save_context_length("llama-3", "https://openrouter.ai/api/v1", 131072)
             assert get_cached_context_length("llama-3", "http://local:8080") == 32768
@@ -995,7 +995,7 @@ class TestContextLengthCache:
 
     def test_idempotent_save(self, tmp_path):
         cache_file = tmp_path / "cache.yaml"
-        with patch("agent.model_metadata._get_context_cache_path", return_value=cache_file):
+        with patch("zermes.agent.model_metadata._get_context_cache_path", return_value=cache_file):
             save_context_length("model", "http://x", 32768)
             save_context_length("model", "http://x", 32768)
             with open(cache_file) as f:
@@ -1005,7 +1005,7 @@ class TestContextLengthCache:
     def test_update_existing_value(self, tmp_path):
         """Saving a different value for the same key overwrites it."""
         cache_file = tmp_path / "cache.yaml"
-        with patch("agent.model_metadata._get_context_cache_path", return_value=cache_file):
+        with patch("zermes.agent.model_metadata._get_context_cache_path", return_value=cache_file):
             save_context_length("model", "http://x", 128000)
             save_context_length("model", "http://x", 64000)
             assert get_cached_context_length("model", "http://x") == 64000
@@ -1014,21 +1014,21 @@ class TestContextLengthCache:
         """Corrupted cache file is handled gracefully."""
         cache_file = tmp_path / "cache.yaml"
         cache_file.write_text("{{{{not valid yaml: [[[")
-        with patch("agent.model_metadata._get_context_cache_path", return_value=cache_file):
+        with patch("zermes.agent.model_metadata._get_context_cache_path", return_value=cache_file):
             assert get_cached_context_length("model", "http://x") is None
 
     def test_wrong_structure_returns_none(self, tmp_path):
         """YAML that loads but has wrong structure."""
         cache_file = tmp_path / "cache.yaml"
         cache_file.write_text("just_a_string\n")
-        with patch("agent.model_metadata._get_context_cache_path", return_value=cache_file):
+        with patch("zermes.agent.model_metadata._get_context_cache_path", return_value=cache_file):
             assert get_cached_context_length("model", "http://x") is None
 
-    @patch("agent.model_metadata.fetch_model_metadata")
+    @patch("zermes.agent.model_metadata.fetch_model_metadata")
     def test_cached_value_takes_priority(self, mock_fetch, tmp_path):
         mock_fetch.return_value = {}
         cache_file = tmp_path / "cache.yaml"
-        with patch("agent.model_metadata._get_context_cache_path", return_value=cache_file):
+        with patch("zermes.agent.model_metadata._get_context_cache_path", return_value=cache_file):
             save_context_length("unknown/model", "http://local", 65536)
             assert get_model_context_length("unknown/model", base_url="http://local") == 65536
 
@@ -1037,6 +1037,6 @@ class TestContextLengthCache:
         cache_file = tmp_path / "cache.yaml"
         model = "anthropic/claude-3.5-sonnet:beta"
         url = "https://api.example.com/v1"
-        with patch("agent.model_metadata._get_context_cache_path", return_value=cache_file):
+        with patch("zermes.agent.model_metadata._get_context_cache_path", return_value=cache_file):
             save_context_length(model, url, 200000)
             assert get_cached_context_length(model, url) == 200000
