@@ -1,0 +1,1 @@
+"""Tests for service/ package — EventBus, AgentService, CommandService."""

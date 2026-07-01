@@ -47,6 +47,8 @@ logger = logging.getLogger(__name__)
 import fire
 
 from zermes.run_agent import AIAgent
+from zermes.service.agent_service import AgentService
+from zermes.service.config_types import AgentConfig, ProviderRoutingConfig, RuntimeConfig
 from zermes.toolset_distributions import (
     list_distributions, 
     sample_toolsets_from_distribution,
@@ -322,27 +324,31 @@ def _process_single_prompt(
         
         # Initialize agent with sampled toolsets and log prefix for identification
         log_prefix = f"[B{batch_num}:P{prompt_index}]"
-        agent = AIAgent(
-            base_url=config.get("base_url"),
-            api_key=config.get("api_key"),
+        agent = AgentService().create_agent(AgentConfig(
+            runtime=RuntimeConfig(
+                base_url=config.get("base_url"),
+                api_key=config.get("api_key"),
+            ),
             model=config["model"],
             max_iterations=config["max_iterations"],
             enabled_toolsets=selected_toolsets,
-            save_trajectories=False,  # We handle saving ourselves
+            save_trajectories=False,
             verbose_logging=config.get("verbose", False),
             ephemeral_system_prompt=config.get("ephemeral_system_prompt"),
             log_prefix_chars=config.get("log_prefix_chars", 100),
             log_prefix=log_prefix,
-            providers_allowed=config.get("providers_allowed"),
-            providers_ignored=config.get("providers_ignored"),
-            providers_order=config.get("providers_order"),
-            provider_sort=config.get("provider_sort"),
+            provider_routing=ProviderRoutingConfig(
+                providers_allowed=config.get("providers_allowed"),
+                providers_ignored=config.get("providers_ignored"),
+                providers_order=config.get("providers_order"),
+                provider_sort=config.get("provider_sort"),
+            ),
             max_tokens=config.get("max_tokens"),
             reasoning_config=config.get("reasoning_config"),
             prefill_messages=config.get("prefill_messages"),
-            skip_context_files=True,  # Don't pollute trajectories with SOUL.md/AGENTS.md
-            skip_memory=True,  # Don't use persistent memory in batch runs
-        )
+            skip_context_files=True,
+            skip_memory=True,
+        ))
 
         # Run the agent with task_id to ensure each task gets its own isolated VM
         result = agent.run_conversation(prompt, task_id=task_id)

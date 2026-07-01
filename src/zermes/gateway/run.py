@@ -13486,6 +13486,8 @@ class GatewayRunner:
             )
 
         from zermes.run_agent import AIAgent
+        from zermes.service.agent_service import AgentService
+        from zermes.service.config_types import AgentConfig, ProviderRoutingConfig, RuntimeConfig
         import queue
 
         def _run_still_current() -> bool:
@@ -14188,9 +14190,9 @@ class GatewayRunner:
 
             if agent is None:
                 # Config changed or first message — create fresh agent
-                agent = AIAgent(
+                agent = AgentService().create_agent(AgentConfig(
+                    runtime=RuntimeConfig.from_dict(turn_route["runtime"]),
                     model=turn_route["model"],
-                    **turn_route["runtime"],
                     max_iterations=max_iterations,
                     quiet_mode=True,
                     verbose_logging=False,
@@ -14201,12 +14203,14 @@ class GatewayRunner:
                     reasoning_config=reasoning_config,
                     service_tier=self._service_tier,
                     request_overrides=turn_route.get("request_overrides"),
-                    providers_allowed=pr.get("only"),
-                    providers_ignored=pr.get("ignore"),
-                    providers_order=pr.get("order"),
-                    provider_sort=pr.get("sort"),
-                    provider_require_parameters=pr.get("require_parameters", False),
-                    provider_data_collection=pr.get("data_collection"),
+                    provider_routing=ProviderRoutingConfig(
+                        providers_allowed=pr.get("only"),
+                        providers_ignored=pr.get("ignore"),
+                        providers_order=pr.get("order"),
+                        provider_sort=pr.get("sort"),
+                        provider_require_parameters=pr.get("require_parameters", False),
+                        provider_data_collection=pr.get("data_collection"),
+                    ),
                     session_id=session_id,
                     platform=platform_key,
                     user_id=source.user_id,
@@ -14218,7 +14222,7 @@ class GatewayRunner:
                     gateway_session_key=session_key,
                     session_db=self._session_db,
                     fallback_model=self._fallback_model,
-                )
+                ))
                 if _cache_lock and _cache is not None:
                     with _cache_lock:
                         _cache[session_key] = (agent, _sig)

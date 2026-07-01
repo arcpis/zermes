@@ -215,6 +215,8 @@ def _run_agent(
     from zermes.hermes_cli.runtime_provider import resolve_runtime_provider
     from zermes.hermes_cli.tools_config import _get_platform_tools
     from zermes.run_agent import AIAgent
+    from zermes.service.agent_service import AgentService
+    from zermes.service.config_types import AgentConfig, RuntimeConfig
 
     cfg = load_config()
 
@@ -284,29 +286,14 @@ def _run_agent(
     if toolsets_list is None and use_config_toolsets:
         toolsets_list = sorted(_get_platform_tools(cfg, "cli"))
 
-    agent = AIAgent(
-        api_key=runtime.get("api_key"),
-        base_url=runtime.get("base_url"),
-        provider=runtime.get("provider"),
-        api_mode=runtime.get("api_mode"),
+    agent = AgentService().create_agent(AgentConfig(
+        runtime=RuntimeConfig.from_dict(runtime),
         model=effective_model,
         enabled_toolsets=toolsets_list,
         quiet_mode=True,
         platform="cli",
-        credential_pool=runtime.get("credential_pool"),
-        # Interactive callbacks are intentionally NOT wired beyond this
-        # one.  In oneshot mode there's no user sitting at a terminal:
-        #   - clarify  → returns a synthetic "pick a default" instruction
-        #                so the agent continues instead of stalling on
-        #                the tool's built-in "not available" error
-        #   - sudo password prompt → terminal_tool gates on
-        #                HERMES_INTERACTIVE which we never set
-        #   - shell-hook approval → auto-approved via HERMES_ACCEPT_HOOKS=1
-        #                (set above); also falls back to deny on non-tty
-        #   - dangerous-command approval → bypassed via HERMES_YOLO_MODE=1
-        #   - skill secret capture → returns gracefully when no callback set
         clarify_callback=_oneshot_clarify_callback,
-    )
+    ))
 
     # Belt-and-braces: make sure AIAgent doesn't invoke any streaming
     # display callbacks that would bypass our stdout capture.

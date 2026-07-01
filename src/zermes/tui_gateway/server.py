@@ -1855,6 +1855,8 @@ def _reset_session_agent(sid: str, session: dict) -> dict:
 
 def _make_agent(sid: str, key: str, session_id: str | None = None):
     from zermes.run_agent import AIAgent
+    from zermes.service.agent_service import AgentService
+    from zermes.service.config_types import AgentConfig, RuntimeConfig
     from zermes.hermes_cli.runtime_provider import resolve_runtime_provider
 
     cfg = _load_cfg()
@@ -1879,16 +1881,10 @@ def _make_agent(sid: str, key: str, session_id: str | None = None):
         requested=requested_provider,
         target_model=model or None,
     )
-    return AIAgent(
+    return AgentService().create_agent(AgentConfig(
+        runtime=RuntimeConfig.from_dict(runtime),
         model=model,
         max_iterations=_cfg_max_turns(cfg, 90),
-        provider=runtime.get("provider"),
-        base_url=runtime.get("base_url"),
-        api_key=runtime.get("api_key"),
-        api_mode=runtime.get("api_mode"),
-        acp_command=runtime.get("command"),
-        acp_args=runtime.get("args"),
-        credential_pool=runtime.get("credential_pool"),
         quiet_mode=True,
         verbose_logging=_load_tool_progress_mode() == "verbose",
         reasoning_config=_load_reasoning_config(),
@@ -1903,7 +1899,7 @@ def _make_agent(sid: str, key: str, session_id: str | None = None):
         skip_context_files=is_truthy_value(os.environ.get("HERMES_IGNORE_RULES")),
         skip_memory=is_truthy_value(os.environ.get("HERMES_IGNORE_RULES")),
         **_agent_cbs(sid),
-    )
+    ))
 
 
 def _init_session(sid: str, key: str, agent, history: list, cols: int = 80):
